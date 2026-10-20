@@ -1,0 +1,12 @@
+skill: nix-audit-operator
+positives:
+  - "Use nix-audit to inspect my current NixOS generation without changing anything"
+  - "How do I compare two NixOS generations with nix-audit and interpret scanner completeness?"
+  - "Run nix-audit in report-only mode before I switch Lenovo"
+hard_negatives:
+  - "Create a NixOS module for another CLI tool" # -> nix-flake-development
+  - "File a GitHub issue for a wrong nix-audit policy result" # -> tooling-feedback
+  - "Use Pi to automate a Clippy refactor" # -> pi-offload
+true_negatives:
+  - "Find an Indian restaurant"
+  - "Explain borrow checking in Rust"
