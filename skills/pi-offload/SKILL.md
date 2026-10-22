@@ -15,6 +15,8 @@ Pi sees committed files at `HEAD`; uncommitted and untracked source-checkout cha
 - The task is mechanical and small: lint/clippy fixes, adding tests for existing behaviour, renames, small refactors, repetitive edits.
 - A crisp check command decides success (`cargo test -p X`, `cargo clippy -p X -- -D warnings`, `devenv tasks run ...`).
 
+Use Pi when the expected iteration or verification savings justify its context and latency; do trivial edits locally. A one-round budget limits retries, not tokens: even a seven-line Herman test patch used 78,469 tokens over 88 seconds. Check `pi-view` results periodically, and do not describe free-tier inference as zero-cost.
+
 ## Do not offload
 
 - Design, architecture, or anything judgement-heavy.
