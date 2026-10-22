@@ -32,8 +32,9 @@ For a Rust failure, if the source repo's pinned Factum CLI is available, collect
 ## How
 
 ```bash
-pi-offload --repo . --task "Fix all clippy warnings in crate foo" --check "cargo clippy -p foo -- -D warnings" --via codex --issue owner/repo#12
+pi-offload --repo . --task "Fix all clippy warnings in crate foo" --check "cargo clippy -p foo -- -D warnings"
 # devenv repos: add --runner "devenv shell --"
+# Add --issue REAL_REPO#N only for a real linked issue; use --via only if auto-detection is insufficient.
 ```
 
 Optional check-mode flags include `--rounds N`, `--check-timeout S`, `--model homelab/{auto|best|local}` (default `auto`), `--runner CMD`, and `--keep`. Provenance flags are `--via NAME`, `--issue REF`, and `--on-behalf-of TEXT`; Codex/Claude callers are detected when possible. Use these to identify the caller and related issue. The runner's [provenance documentation](https://github.com/sammasak/devenv-platform/blob/main/agents/pi/offload/README.md#who-ran-this-and-why) describes recorded fields and masking limits.
