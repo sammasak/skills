@@ -25,7 +25,7 @@ The free tiers are small (Gemini Flash 20 requests/day, Cloudflare 10k neurons/d
 
 ## Deterministic evidence
 
-For a Rust failure, if the source repo's pinned Factum CLI is available, collect `factum diagnostics --tool check` or `--tool clippy` before delegation; for a committed change, `factum brief --diff <patch>` gives a bounded packet (6,144 bytes by default). Put only the relevant findings in `--task`. Avoid pasting raw `tests-for` inventories or entire build logs; a lockfile change can widen selection to the whole workspace. Factum is advisory: the configured `--check` or `--sdlc` remains the acceptance gate. Keep evidence consistent with what Pi can see at committed `HEAD`.
+For a Rust failure, if the source repo's pinned Factum CLI is available, collect `factum diagnostics --tool check` or `--tool clippy` before delegation; for a committed change, `factum brief --diff <patch>` gives a bounded packet (6,144 bytes by default). Put only the relevant findings in `--task`. A lockfile change can widen selection to the whole workspace, and `brief` may omit detailed `unverified` lane records. When those caveats may apply, inspect full `factum tests-for --diff <patch>` output locally and pass only the relevant lane name, reason and replay command—not the inventory. Avoid pasting raw `tests-for` inventories or entire build logs. Factum is advisory: the configured `--check` or `--sdlc` remains the acceptance gate. Keep evidence consistent with what Pi can see at committed `HEAD`.
 
 ## How
 
