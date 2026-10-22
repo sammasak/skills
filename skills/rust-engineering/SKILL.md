@@ -21,6 +21,16 @@ devenv is the full dev environment (packages, tasks, git hooks); central policy 
 
 Repos with `platform.sdlc` are driven by the `sdlc-pipeline` skill. Toolchain is pinned stable via `rust-toolchain.toml`; no nightly.
 
+## Factum evidence (optional)
+
+When the project's pinned Factum CLI is available, use its read-only evidence before asking Pi or another model to interpret a long Rust failure log:
+
+- `factum diagnostics --tool check` or `--tool clippy` summarizes workspace diagnostics.
+- For a change, generate a standard Git patch and use `factum brief --diff /tmp/change.patch` as the model packet; it defaults to a 6,144-byte budget. Use `factum tests-for --diff /tmp/change.patch` locally when you need the full candidate inventory, but do not pass that full output to a model by default—it can select and list the whole workspace, especially for lockfile changes.
+- Pass the brief's schema tag and any skipped/ambiguous/unverified fields it actually includes, plus only the necessary log tail. Briefs may omit detailed lane records present in full `tests-for` output; inspect and pass that output separately when those caveats matter. Do not send the whole build or test inventory by default.
+
+Factum is advisory: an empty report or test selection is not a correctness claim. Read skipped and `list_failed` fields, and still run the required project checks (`rust:ci`, tests, security checks and review). If Factum is not installed or its evidence is incomplete, continue with the normal deterministic workflow rather than installing an unpinned tool or treating missing evidence as success.
+
 ## Lints
 
 `[workspace.lints.clippy]` denies `all` + `pedantic` + `nursery` plus the panic-prevention pack (`unwrap_used`, `expect_used`, `indexing_slicing`, `arithmetic_side_effects`, `panic`, `exit`, `as_conversions`, `string_slice`, ...) and `allow_attributes_without_reason`. `clippy.toml` allows unwrap/expect/panic/indexing in tests. Suppress with `#[expect(lint, reason = "...")]`. A `[profile.clippy]` is required (separate artifact dir, avoids the cold-clippy rebuild cliff).
