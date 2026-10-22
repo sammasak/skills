@@ -38,7 +38,7 @@ Before sharing, **remove** API keys, bearer headers, SOPS/age private identities
 
 ## Issue draft format
 
-```markdown
+````markdown
 ### Problem and impact
 What task was attempted, and why this matters to a real user.
 

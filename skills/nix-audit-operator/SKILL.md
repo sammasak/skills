@@ -6,7 +6,7 @@ allowed-tools: Bash, Read
 
 # nix-audit operator
 
-Use the **installed and pinned** `nix-audit` executable, not an old `target/release` binary. Source of truth: [upstream README](https://github.com/sammasak/nix-audit/blob/main/README.md) and the version-matched [operator guide](https://github.com/sammasak/nix-audit/blob/main/docs/USER-GUIDE.md). Current source maturity is a **candidate for read-only use**, not an automatically approved deploy-security gate.
+Use the **installed and pinned** `nix-audit` executable, not an old `target/release` binary. Source of truth: [upstream README](https://github.com/sammasak/nix-audit/blob/main/README.md). Current source maturity is a **candidate for read-only use**, not an automatically approved deploy-security gate.
 
 ## First run (safe, read-only)
 
