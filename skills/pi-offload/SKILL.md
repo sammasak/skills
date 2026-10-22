@@ -23,6 +23,10 @@ Pi sees committed files at `HEAD`; uncommitted and untracked source-checkout cha
 
 The free tiers are small (Gemini Flash 20 requests/day, Cloudflare 10k neurons/day, flash-lite 15 RPM) and shared by every host and project through the gateway: keep tasks small.
 
+## Deterministic evidence
+
+For a Rust failure, if the source repo's pinned Factum CLI is available, collect `factum diagnostics --tool check` or `--tool clippy` before delegation; for a committed change, `factum brief --diff <patch>` gives a bounded packet (6,144 bytes by default). Put only the relevant findings in `--task`. Avoid pasting raw `tests-for` inventories or entire build logs; a lockfile change can widen selection to the whole workspace. Factum is advisory: the configured `--check` or `--sdlc` remains the acceptance gate. Keep evidence consistent with what Pi can see at committed `HEAD`.
+
 ## How
 
 ```bash
