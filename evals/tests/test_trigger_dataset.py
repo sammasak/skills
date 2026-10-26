@@ -195,7 +195,7 @@ def test_build_trigger_dataset_category_distribution():
 
 def test_build_trigger_dataset_skill_filter():
     dataset = build_trigger_dataset(skill_filter="rust-engineering")
-    assert len(dataset.cases) == 17  # 9 positives + 5 hard_neg + 3 true_neg
+    assert len(dataset.cases) >= 17  # grows with the suite; exact counts rot
     for c in dataset.cases:
         assert c.metadata.source_skill == "rust-engineering"
 

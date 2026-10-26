@@ -3,10 +3,14 @@ positives:
   - "Use nix-audit to inspect my current NixOS generation without changing anything"
   - "How do I compare two NixOS generations with nix-audit and interpret scanner completeness?"
   - "Run nix-audit in report-only mode before I switch Lenovo"
+  - "nix-audit scan exited 3 with vulnix failed: no local derivation; is the candidate generation safe?"
+  - "Snapshot the running and candidate closures with nix-audit and diff them under our policy"
 hard_negatives:
   - "Create a NixOS module for another CLI tool" # → nix-flake-development
   - "File a GitHub issue for a wrong nix-audit policy result" # → tooling-feedback
   - "Use Pi to automate a Clippy refactor" # → pi-offload
+  - "Add grype and vulnix to the Lenovo host packages"  # → nix-flake-development
+  - "The nix-audit-operator skill tells me to use a flag the installed nix-audit rejects; report that"  # → tooling-feedback
 true_negatives:
   - "Find an Indian restaurant"
   - "Explain borrow checking in Rust"
