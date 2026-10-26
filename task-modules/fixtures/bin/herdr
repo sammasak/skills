@@ -15,8 +15,8 @@ want_state() { local s="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = --until ] &&
 agent_info() { printf '{"id":"cli:agent:%s","result":{"agent":{"pane_id":"%s","agent":"claude","agent_status":"%s","state_change_seq":%s,"revision":3},"type":"agent_info"}}\n' "$1" "$2" "$3" "$4"; }
 case "$1 $2" in
   "agent list") cat "${FAKE_HERDR_LIST:?}" ;;
-  "agent read") # options come before `--`; a positional id before `--lines` means the task got the order wrong
-    [ "$3" = -- ] && { echo "fake herdr: unexpected argument order ($*)" >&2; exit 2; }
+  "agent read") # like herdr 0.9.5: <TARGET> comes first; an option or `--` in its place is "unknown option"
+    case "$3" in -*|"") echo "unknown option: ${3:-<none>}" >&2; exit 2 ;; esac
     cat "${FAKE_HERDR_READ:?}" ;;
   "agent get") agent_info get "$3" "$(state)" "${FAKE_HERDR_SEQ:-7}" ;;
   "agent prompt") case "${FAKE_HERDR_PROMPT:-ok}" in

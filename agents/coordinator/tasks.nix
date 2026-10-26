@@ -38,9 +38,9 @@ in
                 | ([$g.issues[] | select(.number == $n)]) as $is
                 | (any($ps[]; .merged_at != null and ((.closes // []) | index($n)) != null)) as $closed_by_merge
                 | (any($ps[]; .merged_at != null)) as $merged | (any($ps[]; .state == "OPEN")) as $open
-                | (($g.issues | length) >= $limit) as $issues_truncated
-                | if $merged and ($open | not) and ($closed_by_merge or (($is | length) == 0 and ($issues_truncated | not))) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes #\($n), nothing still open"]}
-                  elif $merged and ($open | not) and $issues_truncated and ($is | length) == 0 then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but the open-issue list is truncated at \($limit); cannot confirm #\($n) is closed"]}
+                | (($g.issues | length) >= $limit) as $issues_truncated | (($g.prs | length) >= $limit) as $prs_truncated
+                | if $merged and ($open | not) and ($is | length) == 0 and ($closed_by_merge or ($issues_truncated | not)) and ($prs_truncated | not) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes #\($n), nothing still open"]}
+                  elif $merged and ($open | not) and ($is | length) == 0 then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but the issue or PR list is truncated at \($limit); cannot confirm nothing is still open"]}
                   elif $merged and ($open | not) then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but issue #\($n) is still open in \($repo.gh)"]}
                   elif $open then {verdict:"unverified", refs:[$ps[] | select(.state=="OPEN") | .url],
                        reasons:(["open PR for #\($n) in \($repo.gh), not merged"] + [$ps[] | select(.state=="OPEN") | select(any(.checks[]?; . != "SUCCESS")) | "PR #\(.number) has non-green checks"])}

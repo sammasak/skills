@@ -65,6 +65,13 @@ FAKE_HERDR_LIST="$TMP/local44.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" 
 FAKE_HERDR_LIST="$TMP/local44.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json" --option coordinator.ghLimit:int 2
 [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unverified ] && ok || bad "truncated issue list must not verify"
 jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q truncated && ok || bad "truncation reason"
+# a merged PR that "closes" #16 while issue #16 is still open and PR 17 is open => unverified (open wins; closing link does not)
+FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
+[ "$(jqr '.items[] | select(.agent_id=="wF:p1") | .work_verdict')" = unverified ] && ok || bad "merged-closes-but-open PR => unverified"
+jq 'map(select(.number != 17))' "$FX/gh/sammasak__skills.prs.json" > "$TMP/prs-no17.json"; mkdir -p "$TMP/gh" && cp "$FX/gh/"*.json "$TMP/gh/" && cp "$TMP/prs-no17.json" "$TMP/gh/sammasak__skills.prs.json"
+FAKE_GH_DIR="$TMP/gh" FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
+[ "$(jqr '.items[] | select(.agent_id=="wF:p1") | .work_verdict')" = unverified ] && ok || bad "merged PR closing #16 while #16 is open => unverified, got $(jqr '.items[] | select(.agent_id=="wF:p1") | .work_verdict')"
+jqr '.items[] | select(.agent_id=="wF:p1") | .reasons[0]' | grep -q 'still open' && ok || bad "closing-link-but-open reason"
 # a subdirectory of the checkout still resolves the repo (and keeps the checkout reasons)
 jq '.result.agents[1].cwd += "/sub/dir"' "$TMP/local.json" > "$TMP/localsub.json"
 FAKE_HERDR_LIST="$TMP/localsub.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
