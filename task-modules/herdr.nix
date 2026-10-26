@@ -172,7 +172,7 @@ in
           res=$(timeout -k 1 $((t + 5)) ${cfg.sshCommand} -o BatchMode=yes -o ConnectTimeout=${toString cfg.timeoutSeconds} -o StrictHostKeyChecking=accept-new "$target" herdr agent wait "$agent" --until idle --until done --until blocked --timeout "$ms" 2>/dev/null) || rc=$?
         fi
         case "$rc" in
-          0) state=$(jq -r '.result.status // .result.agent_status // "unknown"' <<<"$res" 2>/dev/null || echo unknown)
+          0) state=$(jq -r '.result.agent.agent_status // .result.status // "unknown"' <<<"$res" 2>/dev/null || echo unknown)
              emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg s "$state" --argjson t "$t" \
                '{schema_version:1, task:"herdr:await", host:$h, agent_id:$a, started_at:$at, timeout_s:$t, herdr_state:$s, reached:true,
                  worker_done:($s == "idle" or $s == "done"), needs_owner:($s == "blocked"), accepted:false,
