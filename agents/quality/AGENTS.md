@@ -50,10 +50,21 @@ retry with a variation.
   described as such; the `.devenv/` evaluation cache is not covered either.
 - **Global hooks file.** `~/.codex/hooks.json` is per user, so a guard
   registered there applies to every Codex session on the host; the launcher
-  has to use a dedicated `CODEX_HOME` for role sessions. Unverified until the
-  Codex half of the parity run happens: the exact PreToolUse payload shape
-  (`tool_input.command` as a string) and how Codex treats
-  `permissionDecision`.
+  has to use a dedicated `CODEX_HOME` for role sessions (hooks are a stable,
+  default-on feature in codex-cli 0.162.1). Unverified until the Codex half of
+  the parity run happens: the exact PreToolUse payload shape
+  (`tool_input.command` as a string), how Codex treats `permissionDecision`,
+  and whether a per-call working directory arrives as `tool_input.workdir`.
+  The guard refuses any `workdir`/`cwd`/`working_directory` field that is not
+  the checkout, because a planted `devenv.nix` in a new subdirectory is not
+  caught by the manifest and would evaluate instead of the checkout's.
+- **Sandbox scratch.** With `/tmp` and `$TMPDIR` excluded from the writable
+  roots (so the agent cannot reach its own guard copy), the tasks still need
+  somewhere to write (`mktemp` in `quality:report`, devenv's runtime dir); the
+  parity script gives them one dedicated writable root and points `TMPDIR` and
+  `DEVENV_RUNTIME` at it. Whether the sandboxed shell inherits those variables
+  is unverified until the first live run; the run reports INCOMPLETE rather
+  than parity if it does not.
 - **Skills are not preloaded**; read them as above.
 - **Not yet run** on this fleet: Codex has no credentials on the test host, so
   the parity script skips it and says so.

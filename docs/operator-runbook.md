@@ -38,8 +38,9 @@ agents/quality/AGENTS.md)"$'\n\n'"<request>"` with the guard in a dedicated
 exports `COORDINATOR_REQUIRE_INTEGRITY=1` and `COORDINATOR_INTEGRITY_SHA256`
 (the manifest's hash kept outside the checkout; the launcher does this), so a
 missing manifest, a missing pin, a rewritten manifest, a changed listed file, or
-an unlisted `devenv.local.*`, `.claude/settings*.json`, `AGENTS.md`, `CLAUDE.md`,
-`.mcp.json` or `.codex/*` blocks every call. Not
+an unlisted `devenv.local.nix`, `devenv.local.yaml`, `.claude/settings.json`,
+`.claude/settings.local.json`, `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
+`.mcp.json`, `.codex/config.toml` or `.codex/hooks.json` blocks every call. Not
 covered: the `.devenv/` evaluation cache, and clones nobody materialised with a
 manifest and pin. `quality:gate` is
 bounded to 540 s and the launcher settings raise Claude's Bash timeout to

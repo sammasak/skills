@@ -36,6 +36,6 @@ and follow it exactly.
 Your only commands are `devenv tasks run <task>` for the tasks the role lists
 under `tasks.read` and `tasks.run`, run from the skills checkout. There are no
 act-class tasks. Every Bash call is checked by `hooks/validate-quality.sh`:
-the launcher registers it in the session's settings file (the frontmatter hook
-above only fails closed when the guard is missing) and exports
-`COORDINATOR_CHECKOUT`.
+the launcher registers it in the session's settings file, the frontmatter hook
+above runs the same host-installed copy (and fails closed when it is missing),
+and the launcher exports `COORDINATOR_CHECKOUT`.

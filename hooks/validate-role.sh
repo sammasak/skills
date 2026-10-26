@@ -24,6 +24,12 @@ want=$(readlink -e "$COORDINATOR_CHECKOUT" 2>/dev/null) || { echo "$ROLE: COORDI
 if [ "$(readlink -e "$cwd" 2>/dev/null)" != "$want" ]; then
   echo "$ROLE: tasks may only run from $COORDINATOR_CHECKOUT (cwd: ${cwd:-unknown})" >&2; exit 2
 fi
+# a harness may run one call from another directory (Codex's per-call workdir); a planted devenv.nix in a
+# subdirectory would then evaluate instead of the checkout's, so any such field must name the checkout too
+wd=$(jq -r '.tool_input | (.workdir // .cwd // .working_directory // .working_dir // empty)' <<<"$input" 2>/dev/null) || wd=""
+if [ -n "$wd" ] && [ "$(readlink -e "$wd" 2>/dev/null)" != "$want" ]; then
+  echo "$ROLE: the call's working directory must be $COORDINATOR_CHECKOUT (workdir: $wd)" >&2; exit 2
+fi
 
 role_md="$want/agents/$ROLE/ROLE.md"
 [ -r "$role_md" ] || { echo "$ROLE: no role contract at $role_md" >&2; exit 2; }
@@ -46,7 +52,7 @@ if [ -f "$want/.integrity" ]; then
   for must in hooks/validate-role.sh hooks/lib/role-list.awk "agents/$ROLE/ROLE.md" devenv.nix devenv.lock; do
     listed "$must" || { echo "$ROLE: .integrity does not cover $must; refusing" >&2; exit 2; }
   done
-  for extra in devenv.local.nix devenv.local.yaml .claude/settings.json .claude/settings.local.json AGENTS.md CLAUDE.md .mcp.json .codex/config.toml .codex/hooks.json; do
+  for extra in devenv.local.nix devenv.local.yaml .claude/settings.json .claude/settings.local.json AGENTS.md AGENTS.override.md CLAUDE.md .mcp.json .codex/config.toml .codex/hooks.json; do
     [ -e "$want/$extra" ] || continue
     listed "$extra" || { echo "$ROLE: $extra is present but not covered by .integrity; refusing" >&2; exit 2; }
   done
