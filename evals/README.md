@@ -34,6 +34,14 @@ uv sync
 export ANTHROPIC_API_KEY="sk-ant-..."  # or CLAUDE_CODE_OAUTH_TOKEN
 ```
 
+On NixOS the profile Python may lack `_ssl`; use nixpkgs' interpreter and the sops token:
+
+```bash
+nix shell nixpkgs#uv nixpkgs#python312 -c bash -c \
+  'export CLAUDE_CODE_OAUTH_TOKEN="$(cat /run/secrets/claude_oauth_token)"
+   UV_PYTHON=$(command -v python3.12) UV_PYTHON_DOWNLOADS=never uv run python -m runner.trigger'
+```
+
 ## Running trigger evals
 
 ```bash
@@ -124,6 +132,8 @@ JSON reports are saved to:
 - `results/solving-TIMESTAMP.json`
 
 Reports include per-case inputs, outputs, evaluator scores, and reasons. Use `--no-save` on either runner to skip writing the report.
+
+Latest measured comparison (tool skills, baseline vs branch): `docs/plans/2026-10-26-eval-results.md`.
 
 ## Current baselines (2026-10-09)
 
