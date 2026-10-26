@@ -100,47 +100,38 @@ in
       description = "ACT: send a confirmed coord:handoff draft to its agent; audit log, duplicate detection, never to a blocked agent.";
       input = { handoff_id = null; confirm = null; resend = null; };
       exec = ''
-        set -uo pipefail
-        . ${cfg.lib}
+        ${cfg.prelude}
         id=$(input .handoff_id); confirm=$(input .confirm); resend=$(input .resend)
-        ctx() { jq -cn --arg i "$id" '{task:"herdr:message",handoff_id:$i}'; }
-        [[ "$id" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "handoff_id must be a 12-hex coord:handoff id" "$(ctx)"
+        ctx=$(jq -cn --arg i "$id" '{task:"herdr:message",handoff_id:$i}')
+        [[ "$id" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "handoff_id must be a 12-hex coord:handoff id" "$ctx"
         draft="${cfg.stateDir}/handoffs/$id.json"
-        [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$(ctx)"
+        [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"
         host=$(jq -r .host "$draft"); agent=$(jq -r .agent_id "$draft"); text=$(jq -r .text "$draft")
-        [ "$confirm" = "$host/$agent" ] || fail 3 not_confirmed "confirm must equal the draft target '$host/$agent' (got '$confirm')" "$(ctx)"
-        valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$(ctx)"
-        target=""
-        case "$host" in
-          ${lib.concatMapStringsSep "\n          " (h: ''${h.name}) target="${sshTarget h}" ;;'') cfg.hosts}
-          *) fail 3 invalid_input "draft host not in fleet: $host" "$(ctx)" ;;
-        esac
+        [ "$confirm" = "$host/$agent" ] || fail 3 not_confirmed "confirm must equal the draft target '$host/$agent' (got '$confirm')" "$ctx"
+        valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$ctx"
+        ${cfg.hostCase}
         audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
         prior=$(jq -c --arg i "$id" 'select(.handoff_id == $i and .phase == "attempt")' "$audit" | tail -1)
         if [ -n "$prior" ]; then
           pid=$(jq -r .audit_id <<<"$prior")
-          [ "$resend" = "$pid" ] || fail 3 duplicate "handoff $id was already sent (audit $pid, outcome $(jq -r --arg a "$pid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)); pass resend=\"$pid\" to send again" "$(ctx)"
+          [ "$resend" = "$pid" ] || fail 3 duplicate "handoff $id was already sent (audit $pid, outcome $(jq -r --arg a "$pid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)); pass resend=\"$pid\" to send again" "$ctx"
         fi
-        run_h() { # argv after the herdr binary
-          if [ -z "$target" ]; then timeout -k 1 "$1" ${cfg.herdrCommand} "''${@:2}"
-          else timeout -k 1 "$1" ${cfg.sshCommand} -o BatchMode=yes -o ConnectTimeout=${toString cfg.timeoutSeconds} -o StrictHostKeyChecking=accept-new "$target" herdr "''${@:2}"; fi
-        }
-        rc=0; st=$(run_h ${toString cfg.timeoutSeconds} agent get "$agent" 2>/dev/null) || rc=$?
-        [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get $agent failed on $host (exit $rc)" "$(ctx)"
-        state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$st")
-        [ "$state" != blocked ] || fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$(ctx)"
+        rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>/dev/null) || rc=$?
+        [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get: $(rc_kind $rc) for $host/$agent (exit $rc)" "$ctx"
+        state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$st"); seq=$(jq -r '.result.agent.state_change_seq // 0' <<<"$st")
+        [ "$state" != blocked ] || fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx"
         aid=$(printf '%s|%s' "$id" "$(now_iso)" | sha256sum | cut -c1-12); at=$(now_iso)
-        jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" \
-          '{audit_id:$a, handoff_id:$i, phase:"attempt", host:$h, agent_id:$ag, at:$at, confirm:$c, state_before:$s}' >> "$audit"
-        rc=0; resp=$(run_h ${toString cfg.messageTimeoutSeconds} agent prompt "$agent" "$text" 2>"${cfg.stateDir}/last-prompt.err") || rc=$?
+        jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" \
+          '{audit_id:$a, handoff_id:$i, phase:"attempt", host:$h, agent_id:$ag, at:$at, confirm:$c, state_before:$s, seq_before:$q}' >> "$audit"
+        rc=0; herdr_on ${toString cfg.messageTimeoutSeconds} "$target" agent prompt "$agent" "$text" >/dev/null 2>"${cfg.stateDir}/last-prompt.err" || rc=$?
         case "$rc" in
           0) outcome=delivered ;;
           124) outcome=unknown_delivery ;;
           *) outcome=$(jq -r '.error.code // "command_failed"' "${cfg.stateDir}/last-prompt.err" 2>/dev/null || echo command_failed) ;;
         esac
         jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" --argjson rc "$rc" '{audit_id:$a, handoff_id:$i, phase:"outcome", at:$at, outcome:$o, exit:$rc}' >> "$audit"
-        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" \
-          '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, agent_id:$ag, sent_at:$at, state_before:$s, outcome:$o,
+        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" \
+          '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, agent_id:$ag, sent_at:$at, state_before:$s, seq_before:$q, outcome:$o,
             receipt:($o == "delivered"), worker_done:false, accepted:false,
             error:(if $o == "delivered" then null elif $o == "unknown_delivery" then {kind:"timeout", message:"prompt timed out; delivery unknown, do not resend blindly (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt failed"} end)}')
         [ "$outcome" = delivered ] && jq -c '.sent = true' "$draft" > "$draft.tmp" && mv "$draft.tmp" "$draft"
@@ -150,37 +141,48 @@ in
     };
 
     "herdr:await" = {
-      description = "Bounded wait for an agent to reach idle/done/blocked; reports herdr_state only, never acceptance.";
-      input = { host = null; agent_id = null; timeout_s = 120; };
+      description = "Bounded wait for an agent's turn to END: first observes the turn start (working/blocked or a state_change_seq advance), then idle/done/blocked. Reports herdr_state only, never acceptance.";
+      input = { host = null; agent_id = null; timeout_s = 120; since_seq = null; start_timeout_s = 20; };
       exec = ''
-        set -uo pipefail
-        . ${cfg.lib}
-        host=$(input .host); agent=$(input .agent_id); t=$(input .timeout_s)
-        ctx() { jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:await",host:$h,agent_id:$a}'; }
-        [ -n "$host" ] && [ -n "$agent" ] || fail 3 invalid_input "host and agent_id are required" "$(ctx)"
-        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$(ctx)"
-        [[ "$t" =~ ^[0-9]+$ ]] && [ "$t" -ge 1 ] && [ "$t" -le 1800 ] || fail 3 invalid_input "timeout_s must be 1..1800" "$(ctx)"
-        target=""
-        case "$host" in
-          ${lib.concatMapStringsSep "\n          " (h: ''${h.name}) target="${sshTarget h}" ;;'') cfg.hosts}
-          *) fail 3 invalid_input "host not in fleet: $host" "$(ctx)" ;;
-        esac
-        ms=$((t * 1000)); at=$(now_iso); rc=0
-        if [ -z "$target" ]; then
-          res=$(timeout -k 1 $((t + 5)) ${cfg.herdrCommand} agent wait "$agent" --until idle --until done --until blocked --timeout "$ms" 2>/dev/null) || rc=$?
+        ${cfg.prelude}
+        host=$(input .host); agent=$(input .agent_id); tmo=$(input .timeout_s); since=$(input .since_seq); start_t=$(input .start_timeout_s)
+        ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:await",host:$h,agent_id:$a}')
+        [ -n "$host" ] && [ -n "$agent" ] || fail 3 invalid_input "host and agent_id are required" "$ctx"
+        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$ctx"
+        [[ "$tmo" =~ ^[0-9]+$ ]] && [ "$tmo" -ge 1 ] && [ "$tmo" -le 1800 ] || fail 3 invalid_input "timeout_s must be 1..1800" "$ctx"
+        [[ "$start_t" =~ ^[0-9]+$ ]] || start_t=20; [ "$start_t" -lt "$tmo" ] || start_t=$tmo
+        [ -z "$since" ] || [[ "$since" =~ ^[0-9]+$ ]] || fail 3 invalid_input "since_seq must be an integer" "$ctx"
+        ${cfg.hostCase}
+        at=$(now_iso); deadline=$(( $(now_epoch) + tmo ))
+        # phase 1: the turn must have started. An agent that is still idle at the same state_change_seq has not seen the prompt yet.
+        rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>/dev/null) || rc=$?
+        [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get: $(rc_kind $rc) (exit $rc)" "$ctx"
+        state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$st"); seq=$(jq -r '.result.agent.state_change_seq // 0' <<<"$st")
+        turn_seen=false
+        if [ "$state" = working ] || [ "$state" = blocked ] || { [ -n "$since" ] && [ "$seq" -gt "$since" ]; }; then turn_seen=true
         else
-          res=$(timeout -k 1 $((t + 5)) ${cfg.sshCommand} -o BatchMode=yes -o ConnectTimeout=${toString cfg.timeoutSeconds} -o StrictHostKeyChecking=accept-new "$target" herdr agent wait "$agent" --until idle --until done --until blocked --timeout "$ms" 2>/dev/null) || rc=$?
+          rc=0; res=$(herdr_on $((start_t + 5)) "$target" agent wait "$agent" --until working --until blocked --timeout $((start_t * 1000)) 2>/dev/null) || rc=$?
+          if [ "$rc" -eq 0 ]; then turn_seen=true; state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$res")
+          elif [ "$rc" -eq 1 ] || [ "$rc" -eq 124 ]; then
+            fail 2 no_turn_observed "agent $host/$agent stayed $state for ''${start_t}s after the prompt; the message may not have been received" \
+              "$(jq -cn --arg h "$host" --arg a "$agent" --arg s "$state" --argjson q "$seq" '{task:"herdr:await",host:$h,agent_id:$a,herdr_state:$s,state_change_seq:$q,turn_observed:false,reached:false,accepted:false}')"
+          else fail 2 "$(rc_kind $rc)" "herdr agent wait: $(rc_kind $rc) (exit $rc)" "$ctx"; fi
         fi
-        case "$rc" in
-          0) state=$(jq -r '.result.agent.agent_status // .result.status // "unknown"' <<<"$res" 2>/dev/null || echo unknown)
-             emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg s "$state" --argjson t "$t" \
-               '{schema_version:1, task:"herdr:await", host:$h, agent_id:$a, started_at:$at, timeout_s:$t, herdr_state:$s, reached:true,
-                 worker_done:($s == "idle" or $s == "done"), needs_owner:($s == "blocked"), accepted:false,
-                 note:"accepted is decided by work:status evidence, never by this task", error:null}')" ;;
-          124|1) fail 2 timeout "agent $host/$agent did not reach idle/done/blocked within ''${t}s" "$(jq -cn --arg h "$host" --arg a "$agent" --argjson t "$t" '{task:"herdr:await",host:$h,agent_id:$a,timeout_s:$t,reached:false,accepted:false}')" ;;
-          255) fail 2 unreachable "ssh could not connect" "$(ctx)" ;;
-          *) fail 2 command_failed "herdr agent wait exited $rc" "$(ctx)" ;;
-        esac
+        # phase 2: wait for the turn to end
+        if [ "$state" != blocked ]; then
+          remaining=$(( deadline - $(now_epoch) )); [ "$remaining" -ge 1 ] || remaining=1
+          rc=0; res=$(herdr_on $((remaining + 5)) "$target" agent wait "$agent" --until idle --until done --until blocked --timeout $((remaining * 1000)) 2>/dev/null) || rc=$?
+          case "$rc" in
+            0) state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$res") ;;
+            1|124) fail 2 timeout "agent $host/$agent did not finish its turn within ''${tmo}s" \
+                     "$(jq -cn --arg h "$host" --arg a "$agent" --argjson t "$tmo" '{task:"herdr:await",host:$h,agent_id:$a,timeout_s:$t,turn_observed:true,reached:false,accepted:false}')" ;;
+            *) fail 2 "$(rc_kind $rc)" "herdr agent wait: $(rc_kind $rc) (exit $rc)" "$ctx" ;;
+          esac
+        fi
+        emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg s "$state" --argjson t "$tmo" --argjson seen "$turn_seen" \
+          '{schema_version:1, task:"herdr:await", host:$h, agent_id:$a, started_at:$at, timeout_s:$t, herdr_state:$s, turn_observed:$seen, reached:true,
+            worker_done:($s == "idle" or $s == "done"), needs_owner:($s == "blocked"), accepted:false,
+            note:"accepted is decided by work:status evidence, never by this task", error:null}')"
       '';
     };
   };

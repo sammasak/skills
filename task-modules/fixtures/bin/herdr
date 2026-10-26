@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
-# Fake herdr for task tests. FAKE_HERDR_LIST=<file> is what `agent list` prints;
-# FAKE_HERDR_READ=<file> what `agent read` prints; FAKE_HERDR_EXIT forces an exit code.
+# Fake herdr for task tests. FAKE_HERDR_LIST=<file> is what `agent list` prints; FAKE_HERDR_READ=<file>
+# what `agent read` prints; FAKE_HERDR_EXIT forces an exit code; FAKE_HERDR_SLEEP delays.
+# FAKE_HERDR_STATE drives `agent get`/`agent wait`; FAKE_HERDR_STATE_SEQ="idle,working,idle" plays one
+# state per call (counter in $FAKE_LOG.seq); FAKE_HERDR_PROMPT=ok|blocked|stalled|timeout drives `agent prompt`.
 echo "herdr $*" >> "${FAKE_LOG:-/dev/null}"
 [ -n "${FAKE_HERDR_SLEEP:-}" ] && sleep "$FAKE_HERDR_SLEEP"
-# FAKE_HERDR_STATE drives `agent get` (agent_status) and `agent wait`; FAKE_HERDR_PROMPT=ok|blocked|stalled|timeout drives `agent prompt`.
+state() {
+  if [ -n "${FAKE_HERDR_STATE_SEQ:-}" ]; then
+    local n; n=$(cat "${FAKE_LOG:-/tmp/fake}.seq" 2>/dev/null || echo 0); IFS=, read -ra arr <<<"$FAKE_HERDR_STATE_SEQ"
+    [ "$n" -lt "${#arr[@]}" ] || n=$(( ${#arr[@]} - 1 )); echo $(( n + 1 )) > "${FAKE_LOG:-/tmp/fake}.seq"; printf '%s' "${arr[$n]}"
+  else printf '%s' "${FAKE_HERDR_STATE:-idle}"; fi
+}
+want_state() { local s="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = --until ] && [ "$2" = "$s" ] && return 0; shift; done; return 1; }
+agent_info() { printf '{"id":"cli:agent:%s","result":{"agent":{"pane_id":"%s","agent":"claude","agent_status":"%s","state_change_seq":%s,"revision":3},"type":"agent_info"}}\n' "$1" "$2" "$3" "$4"; }
 case "$1 $2" in
   "agent list") cat "${FAKE_HERDR_LIST:?}" ;;
-  "agent read") cat "${FAKE_HERDR_READ:?}" ;;
-  "agent get") printf '{"id":"cli:agent:get","result":{"agent":{"pane_id":"%s","agent":"claude","agent_status":"%s","state_change_seq":7,"revision":3},"type":"agent_info"}}\n' "$3" "${FAKE_HERDR_STATE:-idle}" ;;
+  "agent read") # options come before `--`; a positional id before `--lines` means the task got the order wrong
+    [ "$3" = -- ] && { echo "fake herdr: unexpected argument order ($*)" >&2; exit 2; }
+    cat "${FAKE_HERDR_READ:?}" ;;
+  "agent get") agent_info get "$3" "$(state)" "${FAKE_HERDR_SEQ:-7}" ;;
   "agent prompt") case "${FAKE_HERDR_PROMPT:-ok}" in
       ok) printf '{"id":"cli:agent:prompt","result":{"type":"agent_prompt","delivered":true}}\n' ;;
       blocked) echo '{"error":{"code":"agent_blocked","message":"agent is blocked"}}' >&2; exit 1 ;;
@@ -15,8 +26,9 @@ case "$1 $2" in
       timeout) exec sleep 60 ;;
     esac ;;
   "agent wait") [ -n "${FAKE_HERDR_WAIT_SLEEP:-}" ] && sleep "$FAKE_HERDR_WAIT_SLEEP"
-    if [ "${FAKE_HERDR_WAIT:-reached}" = timeout ]; then echo '{"error":{"code":"timeout","message":"state not reached"}}' >&2; exit 1; fi
-    printf '{"id":"cli:agent:wait","result":{"agent":{"pane_id":"%s","agent":"claude","agent_status":"%s","state_change_seq":9,"revision":5},"type":"agent_info"}}\n' "$3" "${FAKE_HERDR_STATE:-idle}" ;;
+    s=$(state)
+    if [ "${FAKE_HERDR_WAIT:-reached}" = timeout ] || ! want_state "$s" "$@"; then echo '{"error":{"code":"timeout","message":"state not reached"}}' >&2; exit 1; fi
+    agent_info wait "$3" "$s" 9 ;;
   *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
 esac
 exit "${FAKE_HERDR_EXIT:-0}"

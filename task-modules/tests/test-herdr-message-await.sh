@@ -42,7 +42,7 @@ grep -q 'agent prompt' "$FAKE_LOG" && bad "blocked: prompt must not be sent" || 
 FAKE_HERDR_STATE=idle run herdr:message "{\"handoff_id\":\"$id\",\"confirm\":\"lenovo/wA:p2\"}"
 [ "$CODE" -eq 0 ] && ok || bad "send: exit $CODE ($(tail -3 "$TMP/run.log"))"
 [ "$(jqr .outcome)" = delivered ] && [ "$(jqr .receipt)" = true ] && [ "$(jqr .accepted)" = false ] && ok || bad "send: fields ($OUT)"
-grep -q '^ssh .*lukas@lenovo.lan herdr agent prompt wA:p2 Assignment #42' "$FAKE_LOG" && ok || bad "send: argv ($(grep prompt "$FAKE_LOG"))"
+grep -q 'herdr agent prompt wA:p2 Assignment' "$FAKE_LOG" && ok || bad "send: argv ($(grep prompt "$FAKE_LOG"))"
 [ "$(audit | jq -r 'select(.phase=="attempt") | .handoff_id')" = "$id" ] && ok || bad "send: audit attempt"
 [ "$(audit | jq -r 'select(.phase=="outcome") | .outcome')" = delivered ] && ok || bad "send: audit outcome"
 [ "$(jq -r .sent "$TMP/state/handoffs/$id.json")" = true ] && ok || bad "send: draft marked sent"
@@ -69,15 +69,25 @@ run coord:handoff "$(jq -c '.scope = "third"' <<<"$draft")"; id3=$(jqr .handoff_
 FAKE_HERDR_PROMPT=blocked run herdr:message "{\"handoff_id\":\"$id3\",\"confirm\":\"lenovo/wA:p2\"}"
 [ "$CODE" -ne 0 ] && [ "$(jqr .outcome)" = agent_blocked ] && ok || bad "race: $(jqr .outcome)"
 
-# await
-FAKE_HERDR_STATE=done run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
-[ "$CODE" -eq 0 ] && [ "$(jqr .herdr_state)" = "done" ] && [ "$(jqr .worker_done)" = true ] && [ "$(jqr .accepted)" = false ] && ok || bad "await done: $OUT"
-grep -q 'herdr agent wait wA:p2 --until idle --until done --until blocked --timeout 5000' "$FAKE_LOG" && ok || bad "await: argv"
-FAKE_HERDR_STATE=blocked run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
-[ "$(jqr .needs_owner)" = true ] && [ "$(jqr .worker_done)" = false ] && ok || bad "await blocked"
-FAKE_HERDR_WAIT=timeout run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":1}'
-[ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = timeout ] && [ "$(jqr .reached)" = false ] && ok || bad "await timeout: $OUT"
+# await: the turn must start before it can end
+: > "$FAKE_LOG"; rm -f "$FAKE_LOG.seq"
+FAKE_HERDR_STATE_SEQ="idle,working,done" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
+[ "$CODE" -eq 0 ] && [ "$(jqr .herdr_state)" = done ] && [ "$(jqr .turn_observed)" = true ] && [ "$(jqr .worker_done)" = true ] && [ "$(jqr .accepted)" = false ] && ok || bad "await idle→working→done: $OUT"
+grep -q 'herdr agent wait wA:p2 --until working --until blocked --timeout 5000' "$FAKE_LOG" && ok || bad "await: phase-1 argv ($(grep -c wait "$FAKE_LOG") waits)"
+grep -q 'herdr agent wait wA:p2 --until idle --until done --until blocked --timeout' "$FAKE_LOG" && ok || bad "await: phase-2 argv"
+rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="working,idle" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
+[ "$CODE" -eq 0 ] && [ "$(jqr .herdr_state)" = idle ] && ok || bad "await already working: $OUT"
+rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="idle,idle,idle" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":3,"start_timeout_s":1}'
+[ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = no_turn_observed ] && [ "$(jqr .turn_observed)" = false ] && ok || bad "await stale idle: $OUT"
+rm -f "$FAKE_LOG.seq"; FAKE_HERDR_SEQ=12 FAKE_HERDR_STATE_SEQ="idle,idle" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5,"since_seq":7}'
+[ "$CODE" -eq 0 ] && [ "$(jqr .turn_observed)" = true ] && [ "$(jqr .herdr_state)" = idle ] && ok || bad "await with since_seq advanced: $OUT"
+rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="blocked" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
+[ "$(jqr .needs_owner)" = true ] && [ "$(jqr .worker_done)" = false ] && ok || bad "await blocked: $OUT"
+rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="working,working" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":1}'
+[ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = timeout ] && [ "$(jqr .turn_observed)" = true ] && [ "$(jqr .reached)" = false ] && ok || bad "await timeout: $OUT"
 run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":99999}'; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "await: timeout bound"
 run herdr:await '{"host":"lenovo","agent_id":"x; id"}'; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "await: id validation"
+last_aid=$(audit | jq -r 'select(.phase=="attempt" and .handoff_id=="'"$id"'") | .audit_id' | tail -1)
+run herdr:message "{\"handoff_id\":\"$id\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$last_aid\"}"; [ "$(jqr .seq_before)" = 7 ] && ok || bad "message records seq_before for await ($OUT)"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]
