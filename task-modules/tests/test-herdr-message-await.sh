@@ -47,6 +47,10 @@ grep -q 'herdr agent prompt wA:p2 Assignment' "$FAKE_LOG" && ok || bad "send: ar
 [ "$(audit | jq -r 'select(.phase=="outcome") | .outcome')" = delivered ] && ok || bad "send: audit outcome"
 [ "$(audit | jq -r 'select(.phase=="attempt") | .session_id')" = sess-1 ] && ok || bad "send: attempt records the session"
 aid=$(jqr .audit_id)
+# a working agent is not a target: no queued prompts
+run coord:handoff "$(jq -c '.scope = "busy"' <<<"$draft")"; idb=$(jqr .handoff_id)
+FAKE_HERDR_STATE=working run herdr:message "{\"handoff_id\":\"$idb\",\"confirm\":\"lenovo/wA:p2\"}"; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = agent_busy ] && ok || bad "working target: $(jqr .error.kind)"
+FAKE_HERDR_MISSING=wA:p2 run herdr:message "{\"handoff_id\":\"$idb\",\"confirm\":\"lenovo/wA:p2\"}"; [ "$(jqr .error.kind)" = agent_not_found ] && ok || bad "missing agent on get: $(jqr .error.kind)"
 
 # duplicate: same handoff refused unless resend names the prior audit id
 : > "$FAKE_LOG"
@@ -70,10 +74,23 @@ FAKE_HERDR_SEQ=9 run herdr:message "{\"handoff_id\":\"$id2\",\"confirm\":\"lenov
 [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = probably_received ] && ok || bad "resend after seq advance must be refused ($(jqr .error.kind))"
 FAKE_HERDR_SEQ=7 run herdr:message "{\"handoff_id\":\"$id2\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$aid2\"}"
 [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "resend with unchanged seq goes through ($(jqr .error.kind))"
-# herdr-side blocked race: prompt rejected with agent_blocked after get said idle
+# herdr-side blocked race: prompt rejected with agent_blocked after get said idle; a later resend after the seq moved is still allowed (nothing was delivered)
 run coord:handoff "$(jq -c '.scope = "third"' <<<"$draft")"; id3=$(jqr .handoff_id)
 FAKE_HERDR_PROMPT=blocked run herdr:message "{\"handoff_id\":\"$id3\",\"confirm\":\"lenovo/wA:p2\"}"
 [ "$CODE" -ne 0 ] && [ "$(jqr .outcome)" = agent_blocked ] && ok || bad "race: $(jqr .outcome)"
+aid3=$(jqr .audit_id)
+FAKE_HERDR_SEQ=50 run herdr:message "{\"handoff_id\":\"$id3\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$aid3\"}"
+[ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "resend after a definite refusal must be allowed ($(jqr .error.kind))"
+# a stalled prompt is delivery-unknown, so a resend after the seq moved is refused
+run coord:handoff "$(jq -c '.scope = "stall"' <<<"$draft")"; ids=$(jqr .handoff_id)
+FAKE_HERDR_PROMPT=stalled run herdr:message "{\"handoff_id\":\"$ids\",\"confirm\":\"lenovo/wA:p2\"}"
+[ "$CODE" -ne 0 ] && [ "$(jqr .outcome)" = agent_prompt_stalled ] && jqr .error.message | grep -q 'input box' && ok || bad "stalled: $(jqr .outcome) $(jqr .error.message)"
+aids=$(jqr .audit_id); FAKE_HERDR_SEQ=8 run herdr:message "{\"handoff_id\":\"$ids\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$aids\"}"
+[ "$(jqr .error.kind)" = probably_received ] && ok || bad "stalled then seq advance: $(jqr .error.kind)"
+# await on an undelivered attempt is refused
+run herdr:await "{\"audit_id\":\"$aid3\",\"timeout_s\":5}"; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delivered ] && ok || bad "await undelivered: $(jqr .error.kind)"
+rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="idle,working,idle" run herdr:await "{\"audit_id\":\"$aids\",\"timeout_s\":5}"
+[ "$CODE" -eq 0 ] && [ "$(jqr .delivery)" = agent_prompt_stalled ] && ok || bad "await after a stall proceeds but reports delivery ($(jqr .delivery))"
 # fail closed on unusable `agent get` output: no send, no attempt
 run coord:handoff "$(jq -c '.scope = "fourth"' <<<"$draft")"; id4=$(jqr .handoff_id); : > "$FAKE_LOG"; n_before=$(audit | grep -c attempt)
 FAKE_HERDR_GET_RAW='not json' run herdr:message "{\"handoff_id\":\"$id4\",\"confirm\":\"lenovo/wA:p2\"}"
@@ -128,7 +145,7 @@ rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="blocked" run herdr:await '{"host":"
 rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="working,working" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":1}'
 [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = timeout ] && [ "$(jqr .turn_observed)" = true ] && [ "$(jqr .reached)" = false ] && ok || bad "await timeout: $OUT"
 FAKE_HERDR_MISSING=wA:p2 run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
-[ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = agent_missing ] && ok || bad "await: agent gone ($(jqr .error.kind))"
+[ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = agent_not_found ] && ok || bad "await: agent gone ($(jqr .error.kind))"
 run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":99999}'; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "await: timeout bound"
 run herdr:await '{"host":"lenovo","agent_id":"x; id"}'; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "await: id validation"
 run herdr:await '{"host":"nope","agent_id":"wA:p2"}'; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "await: wrong host"

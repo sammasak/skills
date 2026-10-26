@@ -116,13 +116,14 @@ in
         ${cfg.hostCase}
         audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
         exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another herdr:message holds the audit lock" "$ctx"
-        prior=$(jq -c --arg i "$id" 'select(.handoff_id == $i and .phase == "attempt")' "$audit" 2>/dev/null | tail -1) \
-          || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"
-        jq -e . "$audit" >/dev/null 2>&1 || [ ! -s "$audit" ] || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"
-        rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>/dev/null) || rc=$?
-        [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get: $(rc_kind $rc) for $host/$agent (exit $rc)" "$ctx"
+        [ ! -s "$audit" ] || jq -e . "$audit" >/dev/null 2>&1 || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"
+        prior=$(jq -c --arg i "$id" 'select(.handoff_id == $i and .phase == "attempt")' "$audit" | tail -1)
+        errf=$(mktemp); rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>"$errf" 9>&-) || rc=$?
+        code=$(jq -rs 'if length == 1 then (.[0].error.code // empty) else empty end' "$errf" 2>/dev/null || true); rm -f "$errf"
+        [ "$rc" -eq 0 ] || fail 2 "''${code:-$(rc_kind $rc)}" "herdr agent get failed for $host/$agent: ''${code:-$(rc_kind $rc)} (exit $rc)" "$ctx"
         state=$(jq -r '.result.agent.agent_status // empty' <<<"$st" 2>/dev/null || true); seq=$(jq -r '.result.agent.state_change_seq // empty' <<<"$st" 2>/dev/null || true); session=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
-        case "$state" in idle|done|working) ;; blocked) fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx" ;;
+        case "$state" in idle|done) ;; blocked) fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx" ;;
+          working) fail 2 agent_busy "agent $host/$agent is mid-turn; a queued prompt would blur which turn answered it. Wait for idle (herdr:await without audit_id) and send then" "$ctx" ;;
           *) fail 2 agent_state_unknown "herdr agent get returned no usable state for $host/$agent; not sending" "$ctx" ;; esac
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then
@@ -132,9 +133,9 @@ in
           pid=$(jq -r .audit_id <<<"$prior"); pseq=$(jq -r '.seq_before // 0' <<<"$prior")
           poutcome=$(jq -r --arg a "$pid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)
           [ "$resend" = "$pid" ] || fail 3 duplicate "handoff $id was already sent (audit $pid, outcome ''${poutcome:-interrupted}); only the owner can decide to send it again (resend=\"$pid\")" "$ctx"
-          if [ "$poutcome" != delivered ] && [ "$seq" -gt "$pseq" ]; then
-            fail 2 probably_received "agent state advanced ($pseq -> $seq) after the earlier attempt $pid with outcome ''${poutcome:-interrupted}; it probably received the message. Inspect with herdr:inspect instead of resending" "$ctx"
-          fi
+          case "''${poutcome:-interrupted}" in unknown_delivery|interrupted|agent_prompt_stalled)
+            [ "$seq" -le "$pseq" ] || fail 2 probably_received "agent state advanced ($pseq -> $seq) after the earlier attempt $pid with outcome ''${poutcome:-interrupted}; it probably received the message. Inspect with herdr:inspect instead of resending" "$ctx" ;;
+          esac
         fi
         aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
         jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" \
@@ -143,16 +144,17 @@ in
         outcome=interrupted
         trap 'jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" "{audit_id:\$a, handoff_id:\$i, phase:\"outcome\", at:\$at, outcome:\$o}" >> "$audit"' EXIT
         errf=$(mktemp); rc=0
-        herdr_on ${toString cfg.messageTimeoutSeconds} "$target" agent prompt "$agent" "$text" >/dev/null 2>"$errf" || rc=$?
+        herdr_on ${toString cfg.messageTimeoutSeconds} "$target" agent prompt "$agent" "$text" >/dev/null 2>"$errf" 9>&- || rc=$?
         if [ "$rc" -eq 0 ]; then outcome=delivered
-        else code=$(jq -rs 'if length == 1 then (.[0].error.code // empty) else empty end' "$errf" 2>/dev/null)
-          case "$code" in agent_blocked|agent_prompt_stalled|agent_not_found) outcome=$code ;; *) outcome=unknown_delivery ;; esac
+        else code=$(jq -rs 'if length == 1 then (.[0].error.code // empty) else empty end' "$errf" 2>/dev/null || true)
+          # a stall means the text may already sit in the input box: delivery unknown, never "refused"
+          case "$code" in agent_blocked|agent_not_found) outcome=$code ;; agent_prompt_stalled) outcome=agent_prompt_stalled ;; *) outcome=unknown_delivery ;; esac
         fi
         rm -f "$errf"
         rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" \
           '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, agent_id:$ag, session_id:(if $ses == "" then null else $ses end), sent_at:$at, state_before:$s, seq_before:$q, outcome:$o,
             receipt:($o == "delivered"), worker_done:false, accepted:false,
-            error:(if $o == "delivered" then null elif $o == "unknown_delivery" then {kind:"unknown_delivery", message:"prompt did not return success; delivery unknown. Inspect the pane; only the owner decides on a resend (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt refused: " + $o} end)}')
+            error:(if $o == "delivered" then null elif ($o == "unknown_delivery" or $o == "agent_prompt_stalled") then {kind:$o, message:"prompt did not confirm; the text may already sit in the input box of the agent. Inspect the pane; only the owner decides on a resend (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt refused: " + $o + "; nothing was delivered"} end)}')
         emit "$rec"
         [ "$outcome" = delivered ] || exit 2
       '';
@@ -165,10 +167,15 @@ in
         ${cfg.prelude}
         aid=$(input .audit_id); host=$(input .host); agent=$(input .agent_id); tmo=$(input .timeout_s); since=$(input .since_seq); start_t=$(input .start_timeout_s); want_session=""
         audit="${cfg.stateDir}/audit.jsonl"
+        delivery=live
         if [ -n "$aid" ]; then
           [[ "$aid" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "audit_id must be 12 hex" '{"task":"herdr:await"}'
+          [ ! -s "$audit" ] || jq -e . "$audit" >/dev/null 2>&1 || fail 2 audit_corrupt "audit log is not valid JSON lines" '{"task":"herdr:await"}'
           att=$(jq -c --arg a "$aid" 'select(.audit_id == $a and .phase == "attempt")' "$audit" 2>/dev/null | tail -1)
           [ -n "$att" ] || fail 3 invalid_input "no herdr:message attempt with audit_id $aid" '{"task":"herdr:await"}'
+          delivery=$(jq -r --arg a "$aid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1); delivery=''${delivery:-interrupted}
+          case "$delivery" in delivered|unknown_delivery|agent_prompt_stalled) ;;
+            *) fail 2 not_delivered "attempt $aid ended with outcome $delivery; nothing was delivered, so there is no turn to await" "$(jq -cn --arg a "$aid" --arg o "$delivery" '{task:"herdr:await",audit_id:$a,outcome:$o}')" ;; esac
           host=$(jq -r .host <<<"$att"); agent=$(jq -r .agent_id <<<"$att"); since=$(jq -r '.seq_before // empty' <<<"$att"); want_session=$(jq -r '.session_id // empty' <<<"$att")
         fi
         ctx=$(jq -cn --arg h "$host" --arg a "$agent" --arg aid "$aid" '{task:"herdr:await",host:$h,agent_id:$a,audit_id:(if $aid == "" then null else $aid end)}')
@@ -181,8 +188,9 @@ in
         at=$(now_iso); deadline=$(( $(now_epoch) + tmo ))
         parse_agent() { state=$(jq -r '.result.agent.agent_status // empty' <<<"$1" 2>/dev/null || true); seq=$(jq -r '.result.agent.state_change_seq // empty' <<<"$1" 2>/dev/null || true); session=$(jq -r '.result.agent.agent_session.value // empty' <<<"$1" 2>/dev/null || true); }
         herdr_err() { jq -rs 'if length == 1 then (.[0].error.code // empty) else empty end' "$1" 2>/dev/null; }
-        rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>/dev/null) || rc=$?
-        [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get: $(rc_kind $rc) for $host/$agent (exit $rc); the agent may have exited" "$ctx"
+        errf=$(mktemp); rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>"$errf") || rc=$?
+        code=$(herdr_err "$errf"); rm -f "$errf"
+        [ "$rc" -eq 0 ] || fail 2 "''${code:-$(rc_kind $rc)}" "herdr agent get failed for $host/$agent: ''${code:-$(rc_kind $rc)} (exit $rc)" "$ctx"
         parse_agent "$st"
         case "$state" in idle|done|working|blocked|unknown) ;; *) fail 2 agent_state_unknown "herdr agent get returned no usable state" "$ctx" ;; esac
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq" "$ctx"
@@ -196,7 +204,7 @@ in
         else
           errf=$(mktemp); rc=0; res=$(herdr_on $((start_t + 5)) "$target" agent wait "$agent" --until working --until blocked --timeout $((start_t * 1000)) 2>"$errf") || rc=$?
           code=$(herdr_err "$errf"); rm -f "$errf"
-          if [ "$rc" -eq 0 ]; then turn_seen=true; parse_agent "$res"
+          if [ "$rc" -eq 0 ]; then turn_seen=true; parse_agent "$res"; [ -n "$state" ] || fail 2 agent_state_unknown "herdr agent wait returned no usable state" "$ctx"
           elif [ "$code" = timeout ] || [ "$rc" -eq 124 ]; then
             fail 2 no_turn_observed "agent $host/$agent stayed $state for ''${start_t}s after the prompt. Do not resend: inspect the pane with herdr:inspect first" \
               "$(jq -cn --argjson c "$ctx" --arg s "$state" --argjson q "$seq" '$c + {herdr_state:$s, state_change_seq:$q, turn_observed:false, reached:false, accepted:false}')"
@@ -207,17 +215,18 @@ in
           remaining=$(( deadline - $(now_epoch) )); [ "$remaining" -ge 1 ] || remaining=1
           errf=$(mktemp); rc=0; res=$(herdr_on $((remaining + 5)) "$target" agent wait "$agent" --until idle --until done --until blocked --timeout $((remaining * 1000)) 2>"$errf") || rc=$?
           code=$(herdr_err "$errf"); rm -f "$errf"
-          if [ "$rc" -eq 0 ]; then parse_agent "$res"
+          if [ "$rc" -eq 0 ]; then parse_agent "$res"; [ -n "$state" ] || fail 2 agent_state_unknown "herdr agent wait returned no usable state" "$ctx"
+            [ -z "$want_session" ] || [ "$session" = "$want_session" ] || fail 2 agent_changed "the pane's session changed during the wait" "$ctx"
           elif [ "$code" = timeout ] || [ "$rc" -eq 124 ]; then
             fail 2 timeout "agent $host/$agent did not finish its turn within ''${tmo}s" \
               "$(jq -cn --argjson c "$ctx" --argjson tm "$tmo" '$c + {timeout_s:$tm, turn_observed:true, reached:false, accepted:false}')"
           elif [ -n "$code" ]; then fail 2 "$code" "herdr agent wait refused: $code (agent gone?)" "$ctx"
           else fail 2 "$(rc_kind $rc)" "herdr agent wait: $(rc_kind $rc) (exit $rc)" "$ctx"; fi
         fi
-        emit "$(jq -cn --argjson c "$ctx" --arg at "$at" --arg s "$state" --argjson tm "$tmo" --argjson seen "$turn_seen" \
-          '$c + {schema_version:1, started_at:$at, timeout_s:$tm, herdr_state:$s, turn_observed:$seen, reached:true,
+        emit "$(jq -cn --argjson c "$ctx" --arg at "$at" --arg s "$state" --argjson tm "$tmo" --argjson seen "$turn_seen" --arg d "$delivery" \
+          '{schema_version:1} + $c + {started_at:$at, timeout_s:$tm, delivery:$d, herdr_state:$s, turn_observed:$seen, reached:true,
             worker_done:($s == "idle" or $s == "done"), needs_owner:($s == "blocked"), accepted:false,
-            note:"accepted is decided by work:status evidence, never by this task", error:null}' | jq -c '{schema_version:1} + .')"
+            note:"accepted is decided by work:status evidence, never by this task", error:null}')"
       '';
     };
   };
