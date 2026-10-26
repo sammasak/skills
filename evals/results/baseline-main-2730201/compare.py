@@ -1,5 +1,5 @@
 # Usage: python3 compare.py <baseline-results-dir> <branch-results-dir>  (2026-10-26 dogfood cycle)
-# "Changed suites" = skills/eval suites changed between main 2730201 and the measured branch skills 570baa1 (needs git).
+# "Changed suites" = skills/eval suites changed between main 2730201 and the measured branch skills 3177cde (needs git).
 import json,sys,glob,collections
 def solving(d):
     r=collections.defaultdict(list)
@@ -26,7 +26,7 @@ for k in sorted(set(b)|set(n)):
         print(f"  {'FIXED ' if n[k][0]==n[k][1] else 'BROKE '} {k[:75]}  base={b[k][0]} branch={n[k][0]} want={n[k][1]}")
 import os,subprocess
 _root=os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","..","..")
-_changed=subprocess.run(["git","-C",_root,"diff","--name-only","2730201..570baa1","--","skills","evals"],capture_output=True,text=True).stdout.split()
+_changed=subprocess.run(["git","-C",_root,"diff","--name-only","2730201..3177cde","--","skills","evals"],capture_output=True,text=True).stdout.split()
 TOUCHED={f.split("/")[1] for f in _changed if f.count("/")>=2 and f.split("/")[1] not in ("runner","tests","results")}
 print("branch trigger failures in suites this branch changed:")
 for k,(o,e) in sorted(n.items()):

@@ -1,5 +1,5 @@
 {
-  "name": "solving-nix-audit-operator-20261026-122135",
+  "name": "solving-nix-audit-operator-20261026-123110",
   "cases": [
     {
       "name": "nix-audit-operator::task-1",
@@ -10,16 +10,16 @@
         "output_filename": "verdict.md"
       },
       "metadata": {
-        "test_script": "/home/lukas/skills/evals/nix-audit-operator/tasks/task-1/test.sh",
+        "test_script": "evals/nix-audit-operator/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
       "output": {
-        "content": "Verdict: UNKNOWN\n\nThe scan exit code 3 and `policy.complete: false` indicate incomplete coverage. Grype found 0 findings, but vulnix (the second scanner) failed because the candidate was built on another host and has no local derivation available.\n\nZero vulnerabilities cannot be claimed when half the policy is not run. The team may report \"grype found 0 findings\" as a scanner-specific statement, but must note that vulnix comparison is missing and full coverage is unknown.\n\nA honest post: \"Candidate grype scan: 0 findings. Vulnix unavailable (built elsewhere); full coverage not confirmed. Compare with baseline using explicit `--scanners grype` if needed.\"",
+        "content": "Verdict: UNKNOWN\n\nExit code 3 and `policy.complete: false` mean this scan has incomplete coverage — vulnix failed because the derivation was built elsewhere. Grype found no findings, but a single scanner is not sufficient for a clean verdict when the intended policy requires more.\n\nThe evidence shows: grype scanned successfully and found nothing. The evidence does not show: whether vulnix would have found vulnerabilities, since it cannot run without the local .drv file.\n\nHonest report: \"Grype scan found 0 findings; vulnix coverage is unavailable (built on another host). Comparison against a baseline requires both scanners to complete.\" If a baseline exists, run `nix-audit diff` to check for new violations relative to the known state, documented as grype-only.\n\nTo claim clean, either rebuild the candidate on this host or use an explicit `--scanners grype` comparison with full acknowledgment of reduced coverage.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-8z078w3b",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-__jt17xi",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 2.673897937987931,
-      "total_duration": 2.687974452972412,
+      "task_duration": 3.3883149989997037,
+      "total_duration": 3.3996660709381104,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -53,16 +53,16 @@
         "output_filename": "snapshot.sh"
       },
       "metadata": {
-        "test_script": "/home/lukas/skills/evals/nix-audit-operator/tasks/task-2/test.sh",
+        "test_script": "evals/nix-audit-operator/tasks/task-2/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
       "output": {
-        "content": "#!/usr/bin/env bash\nset -euo pipefail\n\n# snapshot.sh: safe dual-generation inventory for nix-audit diff\n# Requires: nix-audit (json-only, no --json-out), AUDIT_POLICY set, NEXT_GEN set\n\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"Error: AUDIT_POLICY not set\" >&2\n  exit 2\nfi\n\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"Error: NEXT_GEN not set\" >&2\n  exit 2\nfi\n\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"Error: AUDIT_POLICY file not found: $AUDIT_POLICY\" >&2\n  exit 2\nfi\n\nif [[ ! -e \"$NEXT_GEN\" ]]; then\n  echo \"Error: NEXT_GEN path not found: $NEXT_GEN\" >&2\n  exit 2\nfi\n\n# Use lock to serialize heavy scans on this host\nLOCK_FILE=\"/tmp/$(hostname)-heavy-work.lock\"\nLOCK_TIMEOUT=3600\n\nacquire_lock() {\n  exec {lock_fd}>\"$LOCK_FILE\"\n  if ! flock -w \"$LOCK_TIMEOUT\" \"$lock_fd\"; then\n    echo \"Error: failed to acquire lock within ${LOCK_TIMEOUT}s\" >&2\n    exit 2\n  fi\n}\n\nrelease_lock() {\n  flock -u \"$lock_fd\" 2>/dev/null || true\n}\n\ntrap release_lock EXIT\n\n# Clean up incomplete artifacts before starting\nrm -f gen-now.json gen-now.incomplete.json gen-next.json gen-next.incomplete.json\n\nacquire_lock\n\n# Snapshot current system\necho \"Scanning /run/current-system...\" >&2\nrc_now=0\nnix-audit scan /run/current-system \\\n  --policy \"$AUDIT_POLICY\" \\\n  --json > gen-now.json || rc_now=$?\n\ncase $rc_now in\n  0|1)\n    # Exit 0 or 1 are valid reports (0 = no vulns, 1 = vulns found)\n    echo \"Current system scanned (exit code: $rc_now)\" >&2\n    ;;\n  3)\n    # Exit 3 = incomplete (stale/failed scanner, missing scan section)\n    echo \"Error: current system scan incomplete (exit code 3)\" >&2\n    mv gen-now.json gen-now.incomplete.json\n    exit 3\n    ;;\n  *)\n    # Unexpected exit code\n    echo \"Error: current system scan failed (exit code: $rc_now)\" >&2\n    rm -f gen-now.json\n    exit 2\n    ;;\nesac\n\n# Snapshot candidate generation\necho \"Scanning $NEXT_GEN...\" >&2\nrc_next=0\nnix-audit scan \"$NEXT_GEN\" \\\n  --policy \"$AUDIT_POLICY\" \\\n  --json > gen-next.json || rc_next=$?\n\ncase $rc_next in\n  0|1)\n    echo \"Candidate scanned (exit code: $rc_next)\" >&2\n    ;;\n  3)\n    echo \"Error: candidate scan incomplete (exit code 3)\" >&2\n    mv gen-next.json gen-next.incomplete.json\n    exit 3\n    ;;\n  *)\n    echo \"Error: candidate scan failed (exit code: $rc_next)\" >&2\n    rm -f gen-next.json\n    exit 2\n    ;;\nesac\n\necho \"Snapshots ready: gen-now.json, gen-next.json\" >&2\nexit 0",
+        "content": "#!/bin/bash\nset -euo pipefail\n\n# snapshot.sh: capture two generations for nix-audit diff\n# Requires: $AUDIT_POLICY (absolute path), $NEXT_GEN (absolute path)\n# Produces: gen-now.json, gen-next.json (only if scans complete)\n\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"error: AUDIT_POLICY not set\" >&2\n  exit 2\nfi\n\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"error: AUDIT_POLICY does not exist: $AUDIT_POLICY\" >&2\n  exit 2\nfi\n\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"error: NEXT_GEN not set\" >&2\n  exit 2\nfi\n\nif [[ ! -e \"$NEXT_GEN\" ]]; then\n  echo \"error: NEXT_GEN does not exist: $NEXT_GEN\" >&2\n  exit 2\nfi\n\n# Ensure output directory is writable\n: > gen-now.json.tmp || {\n  echo \"error: cannot write to current directory\" >&2\n  exit 2\n}\nrm -f gen-now.json.tmp\n\n# Use flock to serialize heavy scans if other nix-audit operations are running\nLOCK=\"/tmp/$(hostname)-heavy-work.lock\"\nLOCK_FD=200\n\nexec {LOCK_FD}>\"$LOCK\"\nflock \"$LOCK_FD\"\n\ntrap 'exec {LOCK_FD}>&-' EXIT\n\n# Snapshot current system\necho \"Scanning /run/current-system...\" >&2\nrc_now=0\nnix-audit scan /run/current-system --policy \"$AUDIT_POLICY\" --json > gen-now.json || rc_now=$?\n\ncase $rc_now in\n  0|1)\n    echo \"Current system scanned (exit $rc_now)\" >&2\n    ;;\n  3)\n    echo \"error: scanner failed or incomplete for current system (exit 3)\" >&2\n    rm -f gen-now.json\n    exit 3\n    ;;\n  *)\n    echo \"error: unexpected exit code $rc_now from current system scan\" >&2\n    rm -f gen-now.json\n    exit \"$rc_now\"\n    ;;\nesac\n\n# Snapshot candidate generation\necho \"Scanning $NEXT_GEN...\" >&2\nrc_next=0\nnix-audit scan \"$NEXT_GEN\" --policy \"$AUDIT_POLICY\" --json > gen-next.json || rc_next=$?\n\ncase $rc_next in\n  0|1)\n    echo \"Candidate generation scanned (exit $rc_next)\" >&2\n    ;;\n  3)\n    echo \"error: scanner failed or incomplete for candidate (exit 3)\" >&2\n    rm -f gen-now.json gen-next.json\n    exit 3\n    ;;\n  *)\n    echo \"error: unexpected exit code $rc_next from candidate scan\" >&2\n    rm -f gen-now.json gen-next.json\n    exit \"$rc_next\"\n    ;;\nesac\n\necho \"Snapshots ready: gen-now.json, gen-next.json\" >&2\nexit 0",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-pzgoyfh1",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-mwozljyn",
         "returncode": 0
       },
       "metrics": {},
@@ -72,16 +72,16 @@
       "assertions": {
         "BashGrader": {
           "name": "BashGrader",
-          "value": true,
-          "reason": "PASS",
+          "value": false,
+          "reason": "FAIL: a complete current snapshot must survive the candidate's exit 3",
           "source": {
             "name": "BashGrader",
             "arguments": null
           }
         }
       },
-      "task_duration": 8.887839779024944,
-      "total_duration": 8.999958992004395,
+      "task_duration": 8.415628593997099,
+      "total_duration": 8.560182571411133,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

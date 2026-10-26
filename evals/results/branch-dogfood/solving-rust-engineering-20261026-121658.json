@@ -10,7 +10,7 @@
         "output_filename": "assessment.md"
       },
       "metadata": {
-        "test_script": "/home/lukas/skills/evals/rust-engineering/tasks/task-6/test.sh",
+        "test_script": "evals/rust-engineering/tasks/task-6/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,

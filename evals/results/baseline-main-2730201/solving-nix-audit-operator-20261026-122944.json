@@ -1,5 +1,5 @@
 {
-  "name": "solving-nix-audit-operator-20261026-122055",
+  "name": "solving-nix-audit-operator-20261026-122944",
   "cases": [
     {
       "name": "nix-audit-operator::task-1",
@@ -10,16 +10,16 @@
         "output_filename": "verdict.md"
       },
       "metadata": {
-        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/nix-audit-operator/tasks/task-1/test.sh",
+        "test_script": "evals/nix-audit-operator/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
       "output": {
-        "content": "Verdict: UNKNOWN\n\nThe grype scanner found zero findings, but the scan is incomplete: vulnix failed because the closure was built on another host and local derivations are unavailable. This means vulnix's coverage is unknown, not zero.\n\nScanner incompleteness (exit code 3, policy.incomplete) prevents a clean claim. The candidate may have vulnerabilities that only vulnix would detect, or grype's database may be stale.\n\nWhat can be honestly reported: \"grype found 0 findings; vulnix could not run due to missing local derivations. Full coverage is unknown. A rescan on the build host or with both derivations present is needed before claiming the candidate is clean.\"\n\nDo not post \"no known vulnerabilities\" without completing both scanners and confirming policy.complete.",
+        "content": "Verdict: UNKNOWN\n\nGrype found 0 findings, but Vulnix failed to scan the closure because the store paths were not available locally (built on another host). The policy evaluation is incomplete: Vulnix coverage is missing, so full scanner agreement cannot be confirmed. Exit code 3 signals a non-fatal error, not a successful clean scan.\n\nThe evidence shows only that one of two scanners completed. A truthful report would be: \"Grype found no vulnerabilities; Vulnix could not run due to missing local derivations. Full policy evaluation requires both scanners.\" Do not claim the candidate is clean until Vulnix can access the derivations or the policy is explicitly downgraded to single-scanner confirmation.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-gdfw4gi5",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-cd_gtftt",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 2.8142773080035113,
-      "total_duration": 2.826279401779175,
+      "task_duration": 2.5137813320034184,
+      "total_duration": 2.5263731479644775,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -53,16 +53,16 @@
         "output_filename": "snapshot.sh"
       },
       "metadata": {
-        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/nix-audit-operator/tasks/task-2/test.sh",
+        "test_script": "evals/nix-audit-operator/tasks/task-2/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
       "output": {
-        "content": "#!/usr/bin/env bash\nset -euo pipefail\n\n# snapshot.sh: capture two generations with nix-audit for later diff\n# Produces gen-now.json and gen-next.json, or exits with error if incomplete.\n# Requires: $NEXT_GEN, $AUDIT_POLICY set in environment.\n\nreadonly SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\nreadonly NOW_SNAPSHOT=\"${SCRIPT_DIR}/gen-now.json\"\nreadonly NEXT_SNAPSHOT=\"${SCRIPT_DIR}/gen-next.json\"\nreadonly NOW_TARGET=\"/run/current-system\"\n\n# Validate environment and prerequisites\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"error: \\$NEXT_GEN not set\" >&2\n  exit 1\nfi\n\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"error: \\$AUDIT_POLICY not set\" >&2\n  exit 1\nfi\n\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"error: \\$AUDIT_POLICY not found: $AUDIT_POLICY\" >&2\n  exit 1\nfi\n\nif [[ ! -d \"$NEXT_GEN\" ]]; then\n  echo \"error: \\$NEXT_GEN does not exist: $NEXT_GEN\" >&2\n  exit 1\nfi\n\n# Clean up incomplete snapshots on error\ncleanup() {\n  local exit_code=$?\n  if (( exit_code != 0 )); then\n    rm -f \"$NOW_SNAPSHOT\" \"$NEXT_SNAPSHOT\"\n    echo \"error: snapshot incomplete, cleaned up partial files\" >&2\n  fi\n  return $exit_code\n}\ntrap cleanup EXIT\n\n# Verify nix-audit is available and report version\nif ! command -v nix-audit &>/dev/null; then\n  echo \"error: nix-audit not found in \\$PATH\" >&2\n  exit 1\nfi\n\necho \"nix-audit version: $(nix-audit --version)\"\necho \"policy: $AUDIT_POLICY\"\necho\n\n# Snapshot current system\necho \"Scanning $NOW_TARGET...\"\nif ! nix-audit scan \"$NOW_TARGET\" \\\n  --json \\\n  --policy \"$AUDIT_POLICY\" \\\n  --no-scan \\\n  > \"$NOW_SNAPSHOT.tmp\"; then\n  echo \"error: failed to snapshot current system\" >&2\n  rm -f \"$NOW_SNAPSHOT.tmp\"\n  exit 1\nfi\nmv \"$NOW_SNAPSHOT.tmp\" \"$NOW_SNAPSHOT\"\necho \"✓ $NOW_SNAPSHOT\"\n\n# Snapshot candidate generation\necho \"Scanning $NEXT_GEN...\"\nif ! nix-audit scan \"$NEXT_GEN\" \\\n  --json \\\n  --policy \"$AUDIT_POLICY\" \\\n  --no-scan \\\n  > \"$NEXT_SNAPSHOT.tmp\"; then\n  echo \"error: failed to snapshot candidate generation\" >&2\n  rm -f \"$NEXT_SNAPSHOT.tmp\"\n  exit 1\nfi\nmv \"$NEXT_SNAPSHOT.tmp\" \"$NEXT_SNAPSHOT\"\necho \"✓ $NEXT_SNAPSHOT\"\n\necho\necho \"Snapshots ready for: nix-audit diff $NOW_SNAPSHOT $NEXT_SNAPSHOT\"",
+        "content": "#!/usr/bin/env bash\nset -euo pipefail\n\n# snapshot.sh: Capture two generations with nix-audit for later diff.\n# Requires: nix-audit installed, $NEXT_GEN set, $AUDIT_POLICY set.\n# Produces: gen-now.json, gen-next.json (only on complete success).\n\n# Validate environment and tool.\nif ! command -v nix-audit &>/dev/null; then\n  echo \"error: nix-audit not found in PATH\" >&2\n  exit 1\nfi\n\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"error: NEXT_GEN not set\" >&2\n  exit 1\nfi\n\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"error: AUDIT_POLICY not set\" >&2\n  exit 1\nfi\n\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"error: AUDIT_POLICY file not found: $AUDIT_POLICY\" >&2\n  exit 1\nfi\n\nif [[ ! -e \"$NEXT_GEN\" ]]; then\n  echo \"error: NEXT_GEN path does not exist: $NEXT_GEN\" >&2\n  exit 1\nfi\n\n# Report tool version for provenance.\necho \"info: nix-audit $(nix-audit --version)\" >&2\n\n# Use temp files to avoid partial writes on failure.\ntemp_now=$(mktemp)\ntemp_next=$(mktemp)\ntrap \"rm -f '$temp_now' '$temp_next'\" EXIT\n\necho \"info: scanning /run/current-system...\" >&2\nif ! nix-audit scan /run/current-system \\\n  --json \\\n  --policy \"$AUDIT_POLICY\" \\\n  >\"$temp_now\"; then\n  echo \"error: scan of /run/current-system failed\" >&2\n  exit 1\nfi\n\necho \"info: scanning $NEXT_GEN...\" >&2\nif ! nix-audit scan \"$NEXT_GEN\" \\\n  --json \\\n  --policy \"$AUDIT_POLICY\" \\\n  >\"$temp_next\"; then\n  echo \"error: scan of $NEXT_GEN failed\" >&2\n  exit 1\nfi\n\n# Both scans completed; atomically move to final names.\nmv \"$temp_now\" gen-now.json\nmv \"$temp_next\" gen-next.json\n\necho \"info: snapshots complete: gen-now.json, gen-next.json\" >&2",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-id_ymtun",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-_2c3fod4",
         "returncode": 0
       },
       "metrics": {},
@@ -73,15 +73,15 @@
         "BashGrader": {
           "name": "BashGrader",
           "value": false,
-          "reason": "FAIL: clean scans must leave two valid JSON snapshots (stdout only)",
+          "reason": "FAIL: exit 1 (policy violations) is a valid report and must be kept",
           "source": {
             "name": "BashGrader",
             "arguments": null
           }
         }
       },
-      "task_duration": 8.223291517992038,
-      "total_duration": 8.28142499923706,
+      "task_duration": 6.409405671001878,
+      "total_duration": 6.49542498588562,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

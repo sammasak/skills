@@ -10,7 +10,7 @@
         "output_filename": "status.md"
       },
       "metadata": {
-        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/sdlc-pipeline/tasks/task-1/test.sh",
+        "test_script": "evals/sdlc-pipeline/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,

@@ -10,7 +10,7 @@
         "output_filename": "status.md"
       },
       "metadata": {
-        "test_script": "/home/lukas/skills/evals/sdlc-pipeline/tasks/task-1/test.sh",
+        "test_script": "evals/sdlc-pipeline/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,

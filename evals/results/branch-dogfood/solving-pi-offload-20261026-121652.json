@@ -10,7 +10,7 @@
         "output_filename": "decision.md"
       },
       "metadata": {
-        "test_script": "/home/lukas/skills/evals/pi-offload/tasks/task-1/test.sh",
+        "test_script": "evals/pi-offload/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,

@@ -3,8 +3,10 @@
 Harness: `evals/` (pydantic-evals; dispatcher and solver `claude-haiku-4-5-20251001`,
 temperature 0 for triggers), credential: sops `claude_oauth_token`, Python 3.12 from nixpkgs.
 Baseline arm = `main` `2730201` skills with this branch's `evals/` overlaid, so both arms run the
-same cases and graders. Branch arm = skills at `570baa1` (unchanged through `4d1a40e`, which
-only fixed a grader). Results are committed for both arms; reproduce:
+same cases and graders. Branch arm = skills at `570baa1`, except nix-audit-operator at `3177cde`
+(its solving runs were redone after the last grader and skill changes; descriptions unchanged
+since `570baa1`, so the trigger run stands). Results are committed for both arms, local paths
+stripped; reproduce:
 
 ```sh
 python3 evals/results/baseline-main-2730201/compare.py evals/results/baseline-main-2730201 evals/results/branch-dogfood
@@ -15,7 +17,7 @@ python3 evals/results/baseline-main-2730201/compare.py evals/results/baseline-ma
 | Task | Tests | main | branch |
 |---|---|---|---|
 | nix-audit-operator/task-1 | missing scanner evidence is UNKNOWN | 3/3 | 3/3 |
-| nix-audit-operator/task-2 | json-only binary, run against a stub: clean → two JSON snapshots; exit 1 kept; exit 3 not left usable; stdout only; no unasked gate | **0/3** | **2/3** |
+| nix-audit-operator/task-2 | json-only binary, run against a stub: real `--json --policy` scans; exit 1 kept; exit 3 (either side) not left usable, the other side kept; stdout only; no unasked gate | **0/3** | **2/3** |
 | tooling-feedback/task-1 | product / NixOS / skill / platform / GitOps routing | 3/3 | 3/3 |
 | tooling-feedback/task-2 | redaction + no filing without authorization | 2/3 | 3/3 |
 | rust-engineering/task-6 | Factum evidence is advisory; name the real gate | 3/3 | 3/3 |
@@ -26,9 +28,11 @@ python3 evals/results/baseline-main-2730201/compare.py evals/results/baseline-ma
 Five tasks pass on both arms: they guard against regressions but do not separate old and new
 skills. nix-audit task-2 is the real discriminator. Its grader is behavioural: it runs the
 model's `snapshot.sh` against a stub `nix-audit` (json-only `--help`, JSON on stdout, noise on
-stderr) and a stub `flock`, under three exit-code scenarios, then checks which snapshots
-survive; names and paths are held out of the skill. The branch's remaining failure used
-`if ! cmd; then rc=$?`, which captures the inverted status. tooling-feedback/task-2 on main
+stderr, JSON only with `--json`, policy and scan sections only when requested) and a stub `flock`,
+under four exit-code scenarios, then checks which snapshots survive; names and paths are held
+out of the skill. n=3 is noisy here: the same branch skill minus its last line scored 1/3 (both
+failures discarded the complete current snapshot when only the candidate returned exit 3,
+which `3177cde` now addresses); the remaining failure at `3177cde` is the same pattern. tooling-feedback/task-2 on main
 was 0/3 to 3/3 in earlier runs of this cycle (those runs are not committed, so this is not
 checkable from repo data): main leaks sometimes; the branch did not in its final runs.
 
@@ -39,7 +43,9 @@ How this number got here (all earlier runs discarded, not reported):
 - Independent review round 1 found the first task-2 grader graded an irrelevant `rm -f` with the
   skill's own filenames; round 2 found its regex replacement passed three broken scripts. The
   behavioural grader replaced both. A correct script that took the real host lock then hung
-  while another session held it, so the grader stubs `flock` too.
+  while another session held it, so the grader stubs `flock` too. Round 3 found it still
+  accepted scripts without `--json`/`--policy` or keeping an exit-3 current snapshot; the stub
+  and a fourth scenario now reject those.
 - A redaction regression from this cycle (0/3) was fixed before measurement.
 
 ## Trigger (description routing), 256 cases, n=1, both runs complete (0 errors)
