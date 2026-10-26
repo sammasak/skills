@@ -17,7 +17,7 @@ command -v nix-audit && nix-audit --version   # nix-audit 0.1.0 (<12-char rev>)
 nix-audit scan --help | grep -q -- --json-out && echo json-out || echo json-only
 ```
 
-Installed only on Lenovo (nixos-config `nix-audit-lenovo.nix`, pinned `12d640a`, which predates `--json-out`). Elsewhere it is absent; do not build one to produce an example. Refuse a binary whose version ends `-dirty)` or `(unknown revision)` for any claim about a release.
+Installed only on Lenovo (nixos-config `nix-audit-lenovo.nix`, pinned `12d640a`, which predates `--json-out`; release candidate rc1 = `bbd58d5`, untagged, pin bump awaiting owner approval). Do not build one just to produce an example; if the pilot needs a binary, follow USER-GUIDE §1 (clean build, `devenv tasks run nix-audit:verify-build`). Refuse a binary whose version ends `-dirty)` or `(unknown revision)` for any claim about a release.
 
 ## Read-only runs
 
@@ -25,36 +25,38 @@ Installed only on Lenovo (nixos-config `nix-audit-lenovo.nix`, pinned `12d640a`,
 nix-audit scan /run/current-system --no-scan    # inventory only: no scanners, no root, no vulnerability claim
 ```
 
-Full scans (`--scanners grype,vulnix`, the default) may download databases and vulnix needs network; run them only when asked. `--scanners grype --offline` is the offline option. Do not drop a scanner to get a green result.
+Full scans (`--scanners grype,vulnix`, the default) may download databases and vulnix needs network; run them only when asked. `--scanners grype --offline` is the offline option; it refuses a grype DB older than 5 days (exit 3): check `grype db status`, refresh online with `grype db update`. Do not drop a scanner to get a green result.
 
 ## Compare running vs an already-built candidate
 
-Same binary, scanners and policy on both sides. Remove old snapshots first: a usage error (unknown flag) leaves an existing file in place, and only `--json-out` deletes it on exit 2/3.
+Same binary, scanners and policy on both sides. Remove old snapshots first: a usage error (exit 2) leaves an existing file untouched.
 
 ```sh
 rm -f current.json candidate.json
 # json-out builds:
 nix-audit scan /run/current-system --policy p.toml --json-out current.json
 nix-audit scan "$candidate"        --policy p.toml --json-out candidate.json
-# json-only builds (12d640a): exit 1 still writes a valid report; discard only on 2/3
-#   nix-audit scan … --json > current.json; [ $? -le 1 ] || rm -f current.json
+# json-only builds (12d640a): keep exit-3 output as incomplete evidence, never as a snapshot to gate
+#   nix-audit scan … --json > current.json; [ $? -le 1 ] || mv current.json current.incomplete.json
 nix-audit diff current.json candidate.json --policy p.toml   # add --gate only when explicitly asked
 ```
 
-Do not pipe `diff` into `head` on `12d640a`: it exits 3 on a closed pipe (fixed on main).
+`--json-out` writes the report on exit 0, 1 and 3 (exit 3 = incomplete) and removes FILE only when the scan fails before a report exists (unresolved or unbuilt target). Do not pipe `diff` into `head` on `12d640a`: it exits 3 on a closed pipe (fixed on main).
+
+**Hosts built elsewhere** (deploy-rs targets such as acer/msi) have no local `.drv`: vulnix fails (`no local derivation … (built on another host?)`), scan and `diff --gate` exit 3. Record that first. The documented fallback is an explicit grype-only comparison (`diff a.json b.json --scanners grype --policy p.toml --gate`), which labels itself `[scanners compared: grype only]`; report it as grype-only, never as the full verdict. Config-only upgrades of such hosts can show `unscannable` regressions with `findings: +0`: fail-closed identity matching, not new vulnerabilities.
 
 ## Exit codes and what they prove
 
 | | 0 | 1 | 2 | 3 |
 |---|---|---|---|---|
-| `scan` | no violations **among evidence evaluated** | policy violations | usage / bad policy / bad target | tool failure: nix or a scanner missing or failed (outranks 1); report printed but incomplete |
-| `diff` | computed (even when "not comparable") / `--gate` pass | `--gate` fail | usage / bad snapshot | `--gate` **not evaluated** (incomplete side, not comparable, cross-host) |
+| `scan` | no violations **among evidence evaluated** | policy violations | usage / bad policy / bad target | tool failure: nix or a scanner missing or failed (outranks 1), unwritable output; report incomplete |
+| `diff` | computed (even when "not comparable") / `--gate` pass | `--gate` fail | usage (incl. `--gate`/`--today` without `--policy`) / bad snapshot | unwritable output; `--gate` **not evaluated** (incomplete side, not comparable, cross-host without `--allow-cross-host`) |
 
 - Always read `policy.complete` / `incomplete`: exit 0 with `complete: false` is not clean, and `--no-scan` with finding rules is always incomplete (so gating two `--no-scan` snapshots is exit 3, not evaluated).
 - `gate: pass` means "no new violations vs the baseline", not a strict pass; standing violations still count.
 - Exit 3, a failed or stale scanner, or a missing scan section means **unknown coverage, never zero vulnerabilities**.
 - `confirmed` = two scanners matched an advisory, not proven exploitable.
-- Report `producer`, scanners, offline mode, `policy.complete` and comparability alongside any verdict.
+- Report with any verdict: `producer` (rev, dirty), `policy.source.sha256` (must equal `sha256sum` of the policy file), `scan.scanners[].outcome` (`status`, `tool_version`, `db_built`), offline mode, `policy.complete`, comparability and any `--allow-cross-host`.
 
 ## Feedback
 
