@@ -5,4 +5,6 @@ echo "gh $*" >> "${FAKE_LOG:-/dev/null}"
 repo=""; kind=""; prev=""
 for a in "$@"; do case "$prev" in -R|--repo) repo="$a" ;; esac; prev="$a"; done
 case "$1 $2" in "issue list") kind="issues" ;; "pr list") kind="prs" ;; *) echo "fake gh: unsupported $*" >&2; exit 2 ;; esac
-f="${FAKE_GH_DIR:?}/${repo//\//__}.$kind.json"; [ -r "$f" ] && cat "$f" || echo "[]"
+state=""; prev=""; for a in "$@"; do case "$prev" in --state) state="$a" ;; esac; prev="$a"; done
+f="${FAKE_GH_DIR:?}/${repo//\//__}.$kind.json"
+if [ -r "$f" ]; then case "$kind:$state" in prs:open) jq 'map(select(.state == "OPEN"))' "$f" ;; prs:merged) jq 'map(select(.state == "MERGED"))' "$f" ;; *) cat "$f" ;; esac; else echo "[]"; fi

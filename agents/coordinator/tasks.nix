@@ -36,11 +36,11 @@ in
               | if $g == null then {verdict:"unknown", refs:[], reasons:["no GitHub data for \($repo.name) in this run"]}
                 else ([$g.prs[] | select(((.closes // []) | index($n)) != null or ((.title // "") | test("(^|[^0-9])#\($n)([^0-9]|$)")))]) as $ps
                 | ([$g.issues[] | select(.number == $n)]) as $is
-                | (any($ps[]; .merged_at != null and ((.closes // []) | index($n)) != null)) as $closed_by_merge
                 | (any($ps[]; .merged_at != null)) as $merged | (any($ps[]; .state == "OPEN")) as $open
-                | (($g.issues | length) >= $limit) as $issues_truncated | (($g.prs | length) >= $limit) as $prs_truncated
-                | if $merged and ($open | not) and ($is | length) == 0 and ($closed_by_merge or ($issues_truncated | not)) and ($prs_truncated | not) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes #\($n), nothing still open"]}
-                  elif $merged and ($open | not) and ($is | length) == 0 then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but the issue or PR list is truncated at \($limit); cannot confirm nothing is still open"]}
+                # only the OPEN lists can hide something; a truncated open list means "cannot confirm nothing is still open"
+                | (($g.issues | length) >= $limit) as $issues_truncated | (($g.open_pr_count // 0) >= $limit) as $prs_truncated
+                | if $merged and ($open | not) and ($is | length) == 0 and ($issues_truncated | not) and ($prs_truncated | not) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes or names #\($n); no open issue or PR for it"]}
+                  elif $merged and ($open | not) and ($is | length) == 0 then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but the open issue or PR list is truncated at \($limit); cannot confirm nothing is still open"]}
                   elif $merged and ($open | not) then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but issue #\($n) is still open in \($repo.gh)"]}
                   elif $open then {verdict:"unverified", refs:[$ps[] | select(.state=="OPEN") | .url],
                        reasons:(["open PR for #\($n) in \($repo.gh), not merged"] + [$ps[] | select(.state=="OPEN") | select(any(.checks[]?; . != "SUCCESS")) | "PR #\(.number) has non-green checks"])}

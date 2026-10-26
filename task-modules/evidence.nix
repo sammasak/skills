@@ -18,10 +18,14 @@ let
       at=$(now_iso); rc=0
       issues=$(timeout -k 1 ${ts} ${cfg.ghCommand} issue list -R ${lib.escapeShellArg r.gh} --state open --limit ${toString cfg.ghLimit} --json number,title,state,updatedAt,labels,url 2>/dev/null) || rc=$?
       [ "$rc" -eq 0 ] || { observe_error gh_error "gh issue list exited $rc" "$ctx"; exit 0; }
-      prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R ${lib.escapeShellArg r.gh} --state all --limit ${toString cfg.ghLimit} --json number,title,state,isDraft,reviewDecision,mergedAt,updatedAt,headRefName,url,statusCheckRollup,closingIssuesReferences 2>/dev/null) || rc=$?
-      [ "$rc" -eq 0 ] || { observe_error gh_error "gh pr list exited $rc" "$ctx"; exit 0; }
-      out=$(jq -cn --arg at "$at" --argjson c "$ctx" --argjson i "$issues" --argjson p "$prs" '
-        $c + {schema_version:1, observed_at:$at, error:null,
+      fields=number,title,state,isDraft,reviewDecision,mergedAt,updatedAt,headRefName,url,statusCheckRollup,closingIssuesReferences
+      open_prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R ${lib.escapeShellArg r.gh} --state open --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || rc=$?
+      [ "$rc" -eq 0 ] || { observe_error gh_error "gh pr list (open) exited $rc" "$ctx"; exit 0; }
+      merged_prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R ${lib.escapeShellArg r.gh} --state merged --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || rc=$?
+      [ "$rc" -eq 0 ] || { observe_error gh_error "gh pr list (merged) exited $rc" "$ctx"; exit 0; }
+      prs=$(jq -cn --argjson o "$open_prs" --argjson m "$merged_prs" '$o + $m') || { observe_error malformed "gh returned unexpected JSON" "$ctx"; exit 0; }
+      out=$(jq -cn --arg at "$at" --argjson c "$ctx" --argjson i "$issues" --argjson p "$prs" --argjson no "$(jq 'length' <<<"$open_prs")" '
+        $c + {schema_version:1, observed_at:$at, error:null, open_pr_count:$no,
          issues: ($i | map({number, title, state, updated_at:.updatedAt, labels:((.labels // []) | map(.name)), url})),
          prs: ($p | map({number, title, state, draft:.isDraft, review_decision:(.reviewDecision // ""), merged_at:.mergedAt, updated_at:.updatedAt,
                         branch:.headRefName, url, checks:((.statusCheckRollup // []) | map((.conclusion | select(. != null and . != "")) // .state // "PENDING")),
