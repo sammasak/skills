@@ -29,6 +29,9 @@ run quality:report "{\"checkout\":\"$TMP/repo\"}"
 grep -q "devenv($TMP/repo) shell -q -- sdlc-status --context" "$FAKE_LOG" && ok || bad "report: sdlc-status run inside the checkout"
 grep -q 'tasks run' "$FAKE_LOG" && bad "report: must not run any stage" || ok
 
+# a checkout with no stamps or verdicts at all still reports (unmatched globs)
+rm -f "$TMP/repo/.devenv/state/sdlc/"*; run quality:report "{\"checkout\":\"$TMP/repo\"}"
+[ "$CODE" -eq 0 ] && [ "$(jqr '.red|length')" = 0 ] && [ "$(jqr '.verdicts|length')" = 0 ] && ok || bad "report: empty state dir ($(tail -2 "$TMP/run.log"))"
 run quality:report '{"checkout":"/tmp/not-in-fleet"}'; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "report: non-fleet checkout refused ($(jqr .error.kind))"
 FAKE_SDLC_DIR="$TMP/empty" run quality:report "{\"checkout\":\"$TMP/repo\"}"; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = no_sdlc ] && ok || bad "report: repo without sdlc machine ($(jqr .error.kind))"
 

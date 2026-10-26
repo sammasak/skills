@@ -182,6 +182,11 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 - [ ] Evals: trigger evals for new skills; negative permission tests for quality role (no `git push`, no merge); upgrade/rollback check: pin bump of skills input in nixos-config evaluates (`nix eval`) and `git revert` of the bump evaluates.
 - [ ] `docs/operator-runbook.md` + `docs/adding-a-role.md` (third role by composition, no bespoke scripts). PR; review; owner merge gate.
 
+### M4 progress log
+- [x] `agents/quality/ROLE.md`, `agents/quality.md` (Claude), `agents/quality/AGENTS.md` (Codex), `agents/quality/permissions.json`; shared `hooks/validate-role.sh` reads any role's `tasks.{read,run,act}` from ROLE.md (coordinator/quality are 1-line wrappers); `quality:report` (sdlc-status is the authority) and `quality:gate` (runs one `sdlc:<stage>`), fake devenv + SDLC fixtures, 19 assertions; contract test asserts the awk parser equals the yq parser; negative suite drives the quality guard (95 assertions). Branch `epic-16/m4-quality` @ 8697fd5.
+- [ ] Two-harness proof (`agents/quality/tests/two-harness.sh`): Claude side runs when the guard is registered at settings level (frontmatter-only allow was not honoured — recorded in the RFC); **Codex side blocked: no OpenAI credentials on acer-swift (`codex login status` → Not logged in; nixos seeds from `/run/secrets/openai_api_key` which this host does not have) — owner gate.**
+- [ ] Operator runbook + "add a third role by composition" doc.
+
 ## Slice 6 — Close-out
 
 - [ ] Tick #16 checkboxes only for verified items; link all PRs/SHAs/task exit codes; label activation state honestly; update this file's effort log; final comment with "what the owner must do next" list.

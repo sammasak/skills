@@ -69,6 +69,16 @@ names and targets are validated during evaluation against
 validated again before use and passed as separate argv words. Tests point
 `coordinator.fleetFile` at fixtures with `--option coordinator.fleetFile:path`.
 
+## Guard placement (verified live 2026-10-26)
+
+A PreToolUse `permissionDecision: allow` from an **agent-frontmatter** hook was
+not honoured when the agent ran as the main session (`claude -p --agent quality`):
+every Bash call stayed at the permission prompt and was denied in print mode.
+The same guard registered in a **settings file** passed with `--settings` allowed
+the role's tasks and blocked everything else. The launcher therefore registers
+the guard at settings level; the frontmatter hook stays as the fail-closed
+backstop for hosts that have the adapter but no launcher.
+
 ## Adapters
 
 Claude today (`agents/<role>.md`: tools, `permissionMode: default`, preloaded

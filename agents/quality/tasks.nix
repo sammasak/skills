@@ -47,8 +47,9 @@ in
         state="$checkout/.devenv/state/sdlc"
         reds="[]"; verdicts="[]"
         if [ -d "$state" ]; then
-          reds=$(for f in "$state"/last-red-*.json; do [ -f "$f" ] && jq -c '{stage, guard, at, fingerprint, tail: (.tail // "" | .[-1200:])}' "$f" 2>/dev/null; done | jq -sc '.')
-          verdicts=$(for f in "$state"/verdict-*.json; do [ -f "$f" ] && jq -c --arg n "$(basename "$f" .json)" '{stage: ($n | ltrimstr("verdict-")), grade, fingerprint}' "$f" 2>/dev/null; done | jq -sc '.')
+          # devenv runs execs with errexit: an unmatched glob must not end the loop with a failing status
+          reds=$(for f in "$state"/last-red-*.json; do [ -f "$f" ] || continue; jq -c '{stage, guard, at, fingerprint, tail: (.tail // "" | .[-1200:])}' "$f" 2>/dev/null || true; done | jq -sc '.')
+          verdicts=$(for f in "$state"/verdict-*.json; do [ -f "$f" ] || continue; jq -c --arg n "$(basename "$f" .json)" '{stage: ($n | ltrimstr("verdict-")), grade, fingerprint}' "$f" 2>/dev/null || true; done | jq -sc '.')
         fi
         # stage state from sdlc-status's own context lines: "<stage>: <state>" (fresh|stale|red|unverified|...)
         stages=$(jq -cn --argjson m "$machine" --arg s "$status" '
