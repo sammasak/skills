@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from runner.trigger.dataset import (
     EVALS_ROOT,
@@ -123,7 +124,8 @@ K8S_SKILL_DIR = EVALS_ROOT / "kubernetes-gitops"
 
 def test_load_trigger_cases_returns_cases():
     cases = load_trigger_cases(K8S_SKILL_DIR)
-    assert len(cases) == 19  # 8 positives + 7 hard_neg + 4 true_neg
+    data = yaml.safe_load((K8S_SKILL_DIR / "trigger.yaml").read_text())
+    assert len(cases) == sum(len(data.get(k) or []) for k in ("positives", "hard_negatives", "true_negatives"))
 
 
 def test_load_trigger_cases_positive_expected_output():
@@ -195,7 +197,9 @@ def test_build_trigger_dataset_category_distribution():
 
 def test_build_trigger_dataset_skill_filter():
     dataset = build_trigger_dataset(skill_filter="rust-engineering")
-    assert len(dataset.cases) >= 17  # grows with the suite; exact counts rot
+    data = yaml.safe_load((EVALS_ROOT / "rust-engineering" / "trigger.yaml").read_text())
+    want = sum(len(data.get(k) or []) for k in ("positives", "hard_negatives", "true_negatives"))
+    assert len(dataset.cases) == want  # every YAML case loads; none silently dropped
     for c in dataset.cases:
         assert c.metadata.source_skill == "rust-engineering"
 

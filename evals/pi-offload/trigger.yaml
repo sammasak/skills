@@ -7,7 +7,7 @@ positives:
 
 hard_negatives:
   - "Turn this plan into Pi-ready GitHub issues with red tests"   # → pi-ticket
-  - "Design the conflict-resolution architecture for our CRDT sync layer"   # → none
+  - "Should we pick Postgres or SQLite for the new ledger service?"   # → none
   - "Rotate the age recipients for the homelab SOPS secrets"   # → secrets-management
 
 true_negatives:

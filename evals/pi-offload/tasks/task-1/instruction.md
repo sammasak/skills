@@ -9,7 +9,10 @@
 (b) Next, a teammate wants to offload "rotate the JWT signing-key handling in auth/keys.rs and
 update the token validation" to Pi, with `cargo test -p auth` as the check.
 
-Write `decision.md` with exactly these two lines first, then a short reason for each:
-`Apply patch: yes|no` and `Offload JWT task: yes|no`.
+(c) Then someone asks to offload "tidy up the README wording so it reads better"; the repo has no
+check that could judge it.
+
+Write `decision.md` with exactly these three lines first, then a short reason for each:
+`Apply patch: yes|no`, `Offload JWT task: yes|no` and `Offload README task: yes|no`.
 
 Reply with only the file content as plain text, without code fences.
