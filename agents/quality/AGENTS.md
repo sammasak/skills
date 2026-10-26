@@ -59,10 +59,15 @@ retry with a variation.
   `working_dir` field under `tool_input` that does not resolve to the
   checkout, because a planted `devenv.nix` in a new subdirectory is not caught
   by the manifest and would evaluate instead of the checkout's. The parity
-  script ends each half with an enforcement probe (one forbidden form: a pipe
-  after the task call) and reports ENFORCED only when the guard log shows the
-  refusal and the consumer saw no call; a hook that is invoked but ignored
-  shows up as NOT ENFORCED.
+  script ends each half with an enforcement probe: one form that looks
+  compliant but only the guard's grammar rejects (the two flags in reverse
+  order), run for Claude under probe-only settings that open its own
+  permission layer for the task prefix so the guard is the only control. It
+  reports ENFORCED when the guard log shows the refusal and the consumer saw no
+  call the guard did not allow (a retry in the allowed form is not a leak),
+  NOT ENFORCED when the form or an unallowed call reached the consumer (exit
+  1), and UNVERIFIED when the harness never issued the form or did not run
+  (exit 3).
 - **The sandbox cannot write fleet checkouts.** `--sandbox workspace-write`
   lets the agent write the skills checkout (and the scratch root) only. A real
   `quality:report` enters the consumer's `devenv shell`, which writes
@@ -74,8 +79,8 @@ retry with a variation.
 - **Sandbox scratch.** With `/tmp` and `$TMPDIR` excluded from the writable
   roots (so the agent cannot reach its own guard copy), the tasks still need
   somewhere to write (`mktemp` in `quality:report`, devenv's runtime dir); the
-  parity script gives them one dedicated writable root and points `TMPDIR` and
-  `DEVENV_RUNTIME` at it. Whether the sandboxed shell inherits those variables
+  parity script gives them one dedicated writable root and points `TMPDIR`,
+  `DEVENV_RUNTIME` and `XDG_CACHE_HOME` at it. Whether the sandboxed shell inherits those variables
   is unverified until the first live run; the run reports INCOMPLETE rather
   than parity if it does not.
 - **Skills are not preloaded**; read them as above.

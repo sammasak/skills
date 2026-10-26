@@ -123,6 +123,8 @@ wdcase "tool_input.cwd outside" '{"cwd":"/tmp"}'
 wdcase "working_dir outside" '{"working_dir":"/tmp"}'
 wdcase "one good field and one bad field" "$(jq -cn --arg d "$ROOT" '{workdir:$d, cwd:"/tmp"}')"
 wdcase "non-string workdir" '{"workdir":{"path":"/tmp"}}'
+wdcase "newline-only workdir" '{"workdir":"\n"}'
+wdcase "workdir with an embedded newline" "$(jq -cn --arg d "$ROOT" '{workdir:($d+"\n/tmp")}')"
 # the adapter's hook command refuses when the guard file is absent (fail closed)
 if command -v yq >/dev/null; then
   cmd=$(yq --front-matter=extract -r '.hooks.PreToolUse[0].hooks[0].command' "$ROOT/agents/coordinator.md")
@@ -189,6 +191,19 @@ ghook allow
 ghook allow COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
 echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; ghook "integrity check failed"
 git -C "$ROOT" show HEAD:agents/coordinator/tasks.nix > "$ITMP/agents/coordinator/tasks.nix"; ghook allow
+# the shared predicate itself: arity, pin validation, ./-prefixed manifest lines, a role whose contract is unlisted
+IC="$ITMP/hooks/lib/integrity-check.sh"
+pc() { local want="$1" label="$2"; shift 2; local out code; out=$("$IC" "$@" 2>&1); code=$?; [ "$code" -eq "$want" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(predicate): $label -> $code ($out), want $want"; }; }
+pc 2 "single argument" "$ITMP"
+pc 2 "empty dir" "" "$pin"
+pc 2 "empty pin (never means no pin)" "$ITMP" ""
+pc 2 "short pin" "$ITMP" abc
+pc 0 "no-pin sentinel" "$ITMP" -
+pc 0 "valid pin and role" "$ITMP" "$pin" coordinator
+pc 1 "role whose contract is not listed" "$ITMP" "$pin" nosuchrole
+cp "$ITMP/.integrity" "$ITMP/.integrity.orig"; sed -i 's#^\([0-9a-f]\{64\}\)  #\1  ./#' "$ITMP/.integrity"
+pc 0 "./-prefixed manifest lines" "$ITMP" - coordinator
+mv "$ITMP/.integrity.orig" "$ITMP/.integrity"; pc 0 "manifest restored" "$ITMP" "$pin"
 ghook "without a valid integrity pin" COORDINATOR_REQUIRE_INTEGRITY=1
 mv "$ITMP/.integrity" "$ITMP/.integrity.bak"; ghook "no .integrity manifest" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; ghook "no .integrity manifest" COORDINATOR_INTEGRITY_SHA256="$pin"; mv "$ITMP/.integrity.bak" "$ITMP/.integrity"
 echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; manifest; ghook "does not match the pinned hash" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"

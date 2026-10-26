@@ -12,7 +12,10 @@ ROLE="${ROLE:-coordinator}"
 [[ "$ROLE" =~ ^[a-z][a-z-]*$ ]] || { echo "guard: ROLE must be a lowercase role name" >&2; exit 2; }
 
 input=$(cat)
-jq -e '(.tool_input.command // "") | explode | all(. >= 32 and . != 127)' <<<"$input" >/dev/null 2>&1 \
+# the command and every working-directory field must be strings free of control characters (a newline-only
+# workdir would otherwise read as empty and skip the directory check below)
+jq -e '.tool_input | [.command, .workdir, .cwd, .working_directory, .working_dir] | map(select(. != null))
+       | all(type == "string" and (explode | all(. >= 32 and . != 127)))' <<<"$input" >/dev/null 2>&1 \
   || { echo "$ROLE: control characters or unparseable input" >&2; exit 2; }
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null) || cmd=""
 cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null) || cwd=""
@@ -29,7 +32,7 @@ fi
 # every such field present is checked; a relative one resolves against the session cwd the harness reported
 while IFS= read -r wd; do
   [ -n "$wd" ] || continue
-  if [ "$(cd "$cwd" 2>/dev/null && readlink -e -- "$wd" 2>/dev/null)" != "$want" ]; then
+  if [ "$(cd -- "$cwd" 2>/dev/null && readlink -e -- "$wd" 2>/dev/null)" != "$want" ]; then
     echo "$ROLE: the call's working directory must be $COORDINATOR_CHECKOUT (workdir: $wd)" >&2; exit 2
   fi
 done < <(jq -r '.tool_input | (.workdir, .cwd, .working_directory, .working_dir) | select(. != null) | tostring' <<<"$input" 2>/dev/null)

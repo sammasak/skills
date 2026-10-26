@@ -3,14 +3,20 @@
 # activation (rebuild decision), so a copy the guard refuses is exactly a copy the activation rebuilds.
 # Usage: integrity-check.sh <dir> <pin-sha256|-> [role...]   exit 0 = intact; exit 1 = reason on stderr
 set -uo pipefail
-dir="${1:-}"; pin="${2:--}"; shift 2 2>/dev/null || { echo "usage: integrity-check.sh <dir> <pin|-> [role...]" >&2; exit 2; }
+[ $# -ge 2 ] && [ -n "${1:-}" ] || { echo "usage: integrity-check.sh <dir> <pin|-> [role...]" >&2; exit 2; }
+dir="$1"; pin="$2"; shift 2
+# an empty or malformed pin is a caller bug, never "no pin": only the literal - skips the pin comparison
+[ "$pin" = - ] || [[ "$pin" =~ ^[0-9a-f]{64}$ ]] || { echo "pin must be 64 hex characters or -" >&2; exit 2; }
 [ -f "$dir/.integrity" ] || { echo "no .integrity manifest in $dir" >&2; exit 1; }
+# one private copy of the manifest for every step, so it cannot be swapped between the pin check and the file check
+snap=$(mktemp) || exit 2; trap 'rm -f "$snap"' EXIT
+cp "$dir/.integrity" "$snap" || { echo "cannot read .integrity" >&2; exit 1; }
 if [ "$pin" != - ]; then
-  [ "$(sha256sum "$dir/.integrity" | cut -d' ' -f1)" = "$pin" ] || { echo ".integrity does not match the pinned hash" >&2; exit 1; }
+  [ "$(sha256sum "$snap" | cut -d' ' -f1)" = "$pin" ] || { echo ".integrity does not match the pinned hash" >&2; exit 1; }
 fi
-(cd "$dir" && sha256sum --check --quiet --strict .integrity >/dev/null 2>&1) || { echo "checkout integrity check failed (a listed file changed or is missing)" >&2; exit 1; }
-listed() { grep -qE "^[0-9a-f]{64}  (\./)?${1//./\\.}\$" "$dir/.integrity"; }
-for must in hooks/validate-role.sh hooks/lib/role-list.awk hooks/lib/integrity-check.sh devenv.nix devenv.lock; do
+(cd "$dir" && sha256sum --check --quiet --strict "$snap" >/dev/null 2>&1) || { echo "checkout integrity check failed (a listed file changed or is missing)" >&2; exit 1; }
+listed() { grep -qE "^[0-9a-f]{64}  (\./)?${1//./\\.}\$" "$snap"; }
+for must in hooks/validate-role.sh hooks/lib/role-list.awk hooks/lib/integrity-check.sh devenv.nix devenv.yaml devenv.lock; do
   listed "$must" || { echo ".integrity does not cover $must" >&2; exit 1; }
 done
 for role in "$@"; do
