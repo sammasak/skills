@@ -1,0 +1,8 @@
+# Root evaluation/test graph for the skills repo (epic #16). Home Manager keeps
+# consuming skills/, agents/*.md and global-context.md as plain files; nothing
+# here changes that install path.
+require_version: ">=2.2.2"
+
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling

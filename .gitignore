@@ -7,3 +7,6 @@ evals/.venv/
 evals/results/*.json
 **/__pycache__/
 **/*.pyc
+.devenv/
+.devenv.flake.nix
+.pre-commit-config.yaml
