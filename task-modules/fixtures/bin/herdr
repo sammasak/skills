@@ -2,7 +2,10 @@
 # Fake herdr for task tests. FAKE_HERDR_LIST=<file> is what `agent list` prints; FAKE_HERDR_READ=<file>
 # what `agent read` prints; FAKE_HERDR_EXIT forces an exit code; FAKE_HERDR_SLEEP delays.
 # FAKE_HERDR_STATE drives `agent get`/`agent wait`; FAKE_HERDR_STATE_SEQ="idle,working,idle" plays one
-# state per call (counter in $FAKE_LOG.seq); FAKE_HERDR_PROMPT=ok|blocked|stalled|timeout drives `agent prompt`.
+# state per call (counter in $FAKE_LOG.seq); FAKE_HERDR_SEQ sets state_change_seq, FAKE_HERDR_SESSION the
+# session id, FAKE_HERDR_MISSING=<id> makes get/wait fail with agent_not_found, FAKE_HERDR_GET_RAW replaces
+# the get output; FAKE_HERDR_PROMPT=ok|blocked|stalled|timeout drives `agent prompt` and FAKE_PROMPT_OUT
+# captures the prompt text; FAKE_HERDR_WAIT=timeout / FAKE_HERDR_WAIT_SLEEP shape `agent wait`.
 echo "herdr $*" >> "${FAKE_LOG:-/dev/null}"
 [ -n "${FAKE_HERDR_SLEEP:-}" ] && sleep "$FAKE_HERDR_SLEEP"
 state() {
