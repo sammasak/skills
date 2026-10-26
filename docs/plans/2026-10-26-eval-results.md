@@ -29,8 +29,8 @@ model's `snapshot.sh` against a stub `nix-audit` (json-only `--help`, JSON on st
 stderr) and a stub `flock`, under three exit-code scenarios, then checks which snapshots
 survive; names and paths are held out of the skill. The branch's remaining failure used
 `if ! cmd; then rc=$?`, which captures the inverted status. tooling-feedback/task-2 on main
-varied between 0/3 and 3/3 across this cycle's runs: main leaks sometimes, the branch did not
-in its final runs.
+was 0/3 to 3/3 in earlier runs of this cycle (those runs are not committed, so this is not
+checkable from repo data): main leaks sometimes; the branch did not in its final runs.
 
 How this number got here (all earlier runs discarded, not reported):
 
@@ -48,7 +48,7 @@ How this number got here (all earlier runs discarded, not reported):
 |---|---|---|
 | Accuracy | 229/256 (89.5%) | 231/256 (90.2%) |
 
-A +2 within run-to-run noise (earlier runs of the same arms moved by ±3): **no claimed routing
+A +2, within run-to-run noise (earlier, uncommitted runs of the same arms moved by up to ±3): **no claimed routing
 gain**. Changed outcomes:
 
 - Fixed (6): Factum "which crates does my change affect" and "summarize clippy diagnostics" →
