@@ -49,7 +49,12 @@ For deeper diagnosis dispatch the `k8s-debugger` agent.
 
 ## Telemetry privacy (native OTLP)
 
-`docs/runbooks/native-otlp-ingestion.md` is the boundary: the Alloy collector keeps only allowlisted metrics and sanitized Claude `tool_result` events; raw output, arguments, identifiers, session/user IDs and unbounded label values must never reach Loki or Prometheus, and Codex logs stay dropped. A change to the collector config (`clusters/homelab/infra/observability.yaml`) needs the repo's adversarial fixtures (sanitizer + isolated Alloy/Loki, pending in PR #138). They prove the config scrubs injected fake secrets; they do **not** prove live deployment, metric aggregation or acceptance of the running receiver, which still need a check against the deployed endpoint and owner review.
+Boundary: `docs/runbooks/native-otlp-ingestion.md`. Only allowlisted metrics and sanitized Claude `tool_result` events may leave the collector; raw output, arguments, identifiers, session/user IDs and unbounded label values never reach Loki or Prometheus, and Codex logs stay dropped. A collector change (`clusters/homelab/infra/observability.yaml`) needs both fixtures (added by PR #138, not on main or deployed until it merges):
+
+- `ALLOY_BIN=<alloy> bash scripts/test-native-otlp-sanitizer.sh`: auth, size, redaction and restart at a **debug exporter**; it never touches Loki.
+- `TMPDIR=<scratch> python3 scripts/test-native-otlp-log-loki.py <alloy> <loki>`: real isolated Alloy and Loki from the repo config, asserting the stored log schema. Synthetic local-backend proof only.
+
+Live acceptance additionally needs explicit rollout approval, the applied revision, and an authorized synthetic check at the real receiver and Loki; Ready=True or green fixtures are not acceptance (system gate: homelab-gitops#120). A privacy rollback disables native logs; never restore a known-leaking parent config.
 
 ## Destructive deletes (kyverno-enforced)
 
