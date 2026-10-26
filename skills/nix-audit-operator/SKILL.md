@@ -31,18 +31,29 @@ $L nix-audit scan "$candidate"        --policy "$P" --json-out candidate.json
 nix-audit diff current.json candidate.json --policy "$P"   # --gate only when asked
 ```
 
-On a json-only build (no `--json-out` in `--help`) redirect `--json` and act on the exit code; exit 1 is still a valid report, exit 3 is incomplete evidence, never a snapshot to gate. Set aside (rename, never delete) only the side that failed; the other side's complete report stays evidence, valid for a rescan of the failed side only with the same binary, policy and scanners. Keep stderr out of the JSON file (`2> current.err`, never `2>&1`) and capture the status with `|| rc=$?`; `if ! cmd; then rc=$?` records 0, not the exit code. The snippet sets every exit 3 aside; if its stderr reason is `vulnix failed: no local derivation`, rename it back for the grype-only route below:
+On a json-only build (no `--json-out` in `--help`) redirect `--json`, keep stderr out of the JSON (`2> X.err`, never `2>&1`) and capture the status with `|| rc=$?` (`if ! cmd; then rc=$?` records 0). Keep every report as private evidence: rename, never delete. Classify from the report itself; `scan.scanners[].outcome` exists on every build, the stderr reason line does not:
 
 ```sh
-rc=0; $L nix-audit scan /run/current-system --policy "$P" --json > current.json || rc=$?   # stdout only
-case $rc in 0|1) ;; 3) mv current.json current.incomplete.json ;; *) rm -f current.json ;; esac
+rc=0; $L nix-audit scan /run/current-system --policy "$P" --json > current.json 2> current.err || rc=$?
+case $rc in
+  0|1) ;;                                                  # complete report (1 = violations)
+  3) if jq -e '[.scan.scanners[]? | select(.outcome.status == "failed")] as $f
+         | ($f | length) == 1 and $f[0].scanner == "vulnix"
+           and ($f[0].outcome.detail | startswith("vulnix failed: no local derivation"))
+           and any(.scan.scanners[]; .scanner == "grype" and .outcome.status == "ran")' current.json >/dev/null 2>&1
+     then mv current.json current.grype-only.json          # usable only for the grype-only route
+     else mv current.json current.incomplete.json; fi ;;   # evidence, never gated
+  *) mv current.json current.failed.json ;;                # usage/tool failure: keep, never gate
+esac
 ```
+
+Set aside only the side that failed. Rescanning just that side is valid only if the kept report has the same `producer.revision`, `policy.source.sha256` and scanner selection, with those scanners `ran`; otherwise rescan both. A `.grype-only`, `.incomplete` or `.failed` snapshot is never a complete assessment.
 
 ## Interpret
 
 - Exit 3, a failed or stale scanner, or a missing scan section means **unknown coverage, never zero vulnerabilities**. Exit 0 with `policy.complete: false` is not clean.
-- When present, branch on `policy.incomplete_kinds[].kind` (scan) and `policy.gate.causes[].kind` (diff), never on prose; older builds only have `policy.complete`/`incomplete` (§7).
-- A target built on another host often has no local `.drv`, so vulnix fails (exit 3); run pilot comparisons on the deploy build host (Lenovo), where derivations exist. The documented fallback is an explicit `--scanners grype` comparison, reported as grype-only; review any `findings after not compared` before calling an upgrade clean (§6).
+- Typed causes (`policy.incomplete_kinds[].kind`, diff `policy.gate.causes[].kind`) are newer than rc1: check they exist (`jq '.policy | has("incomplete_kinds")'`) and branch on `kind`, never on prose; otherwise use `policy.complete`/`incomplete` and `scan.scanners[].outcome` (§7). Atomic `--json-out` is also post-rc1.
+- A target built on another host often has no local `.drv`, so vulnix fails (exit 3); prefer the deploy build host (Lenovo), where derivations exist. Otherwise record the full gate's exit 3 first, then, only if grype `ran` on both sides, run the explicit `diff … --scanners grype --policy "$P"` and report it as grype-only; review any `findings after not compared` before calling an upgrade clean (§6).
 - `gate: pass` = no new violations vs the baseline, not a strict pass. `confirmed` = two scanners matched, not proven exploitable.
 - Report the binary revision, scanners and their outcomes, `policy.source.sha256`, `policy.complete` and comparability with any verdict (§7).
 
