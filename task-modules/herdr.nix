@@ -87,7 +87,8 @@ in
         requested=$lines; [ "$lines" -gt 200 ] && lines=200; [ "$lines" -gt 0 ] || lines=1
         ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:inspect",host:$h,agent_id:$a}')
         at=$(now_iso); rc=0
-        text=$(herdr_on ${t} "$target" agent read --lines "$lines" --source "$source" --format text -- "$agent" 2>/dev/null) || rc=$?
+        # herdr 0.9.5 parses <TARGET> first and rejects options before it ("unknown option"); valid_id excludes a leading '-'
+        text=$(herdr_on ${t} "$target" agent read "$agent" --lines "$lines" --source "$source" --format text 2>/dev/null) || rc=$?
         [ "$rc" -eq 0 ] || fail 2 "$(rc_kind $rc)" "herdr agent read: $(rc_kind $rc) (exit $rc; unknown agent?)" "$ctx"
         cut=$(printf '%s\n' "$text" | head -n 200 | LC_ALL=C head -c 65536); truncated=false
         [ "$cut" = "$text" ] && [ "$requested" -le 200 ] || truncated=true
