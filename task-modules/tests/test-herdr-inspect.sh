@@ -31,7 +31,7 @@ grep -q '^ssh' "$FAKE_LOG" && bad "local: no ssh for local host" || ok
 : > "$FAKE_LOG"
 FAKE_HERDR_READ="$FX/herdr/read-visible.txt" run '{"host":"lenovo","agent_id":"wA:p2","lines":10,"source":"recent"}'
 [ "$CODE" -eq 0 ] && ok || bad "remote: exit $CODE"
-grep -q '^ssh .*-- lukas@lenovo.lan echo .* | base64 -d | bash' "$FAKE_LOG" && grep -q 'herdr agent read wA:p2 --lines 10 --source recent --format text' "$FAKE_LOG" && ok || bad "remote: argv ($(cat "$FAKE_LOG"))"
+grep -q "^ssh .*-- lukas@lenovo.lan bash -c '.*' _ " "$FAKE_LOG" && grep -q 'herdr agent read wA:p2 --lines 10 --source recent --format text' "$FAKE_LOG" && ok || bad "remote: argv ($(cat "$FAKE_LOG"))"
 
 # the cap holds: 1000 requested -> 200 asked for and at most 200 returned
 : > "$FAKE_LOG"

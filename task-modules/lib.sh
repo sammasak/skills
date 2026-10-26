@@ -15,15 +15,17 @@ fail() { # <exit> <kind> <message> [extra-json-object]
 # subject failed (exit 0, so the DAG still carries the record downstream).
 observe_error() { emit "$(jq -cn --arg k "$1" --arg m "$2" --argjson x "$3" --arg at "$(now_iso)" '{schema_version:1} + $x + {observed_at:$at, error:{kind:$k, message:$m}}')"; }
 # run_on <timeout_s> <ssh-target-or-empty> <argv...>: run locally or over ssh with
-# bounded time. ssh hands ONE string to the remote LOGIN shell (fish on this
-# fleet), so the %q-quoted argv is shipped base64-encoded and decoded into bash
-# there; the remote bash then sees exactly the words given here.
+# bounded time. Over ssh the argv travels as a base64 blob of NUL-separated words
+# that a remote bash turns back into argv with mapfile and exec: no shell ever
+# re-parses the words (quotes, newlines, $(..) in a handoff text stay literal),
+# and a worker's forced-command shim can check argv[0..2] before exec.
+REMOTE_RUNNER='mapfile -d "" a < <(printf %s "$1" | base64 -d); exec "${a[@]}"'
 run_on() {
   local t="$1" target="$2"; shift 2
   if [ -z "$target" ]; then timeout -k 1 "$t" "$@"
   else
-    local b64; b64=$(printf '%q ' "$@" | base64 -w0)
-    timeout -k 1 "$t" "${COORDINATOR_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout="$t" -o StrictHostKeyChecking=accept-new -- "$target" "echo $b64 | base64 -d | bash"
+    local b64; b64=$(printf '%s\0' "$@" | base64 -w0)
+    timeout -k 1 "$t" "${COORDINATOR_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout="$t" -o StrictHostKeyChecking=accept-new -- "$target" "bash -c '$REMOTE_RUNNER' _ $b64"
   fi
 }
 # herdr_on <timeout_s> <ssh-target-or-empty> <herdr-args...>: the configured herdr
