@@ -160,7 +160,7 @@ else echo "note: yq missing, role-list behaviour cases skipped"; fi
 # integrity: a checkout with an .integrity manifest refuses every call once a guarded file changes
 ITMP=$(mktemp -d); git -C "$ROOT" archive --format=tar HEAD | tar -x -C "$ITMP"; cp -r "$ROOT/hooks/." "$ITMP/hooks/"   # the guard under test is the working tree's
 ( cd "$ITMP" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
-ihook() { jq -cn --arg c "devenv tasks run coord:brief" --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:$c}}' | COORDINATOR_CHECKOUT="$ITMP" ROLE=coordinator "$ITMP/hooks/validate-role.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // "block"'; }
+ihook() { local out; out=$(jq -cn --arg c "devenv tasks run coord:brief" --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:$c}}' | COORDINATOR_CHECKOUT="$ITMP" ROLE=coordinator "$ITMP/hooks/validate-role.sh" 2>/dev/null); [ -n "$out" ] && jq -r '.hookSpecificOutput.permissionDecision // "block"' <<<"$out" || echo block; }
 [ "$(ihook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): pristine copy must allow"; }
 echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"
 [ "$(ihook)" = block ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): modified task file must block"; }
