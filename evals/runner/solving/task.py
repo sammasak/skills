@@ -35,6 +35,14 @@ def _strip_code_fence(text: str) -> str:
     return match.group(1).strip() if match else text
 
 
+def _artifact_content(text: str, output_filename: str) -> str:
+    """A markdown artifact keeps its own fences; unwrap only a reply that is one md fence."""
+    if not output_filename.endswith(".md"):
+        return _strip_code_fence(text)
+    match = re.fullmatch(r"\s*```(?:markdown|md)?\n(.*?)```\s*", text, re.DOTALL)
+    return match.group(1).strip() if match else text
+
+
 async def run_solving(inputs: SolvingInput, model: str = SOLVE_MODEL) -> SolvingOutput:
     """Run the skill-guided LLM on a task and capture its text output.
 
@@ -49,7 +57,7 @@ async def run_solving(inputs: SolvingInput, model: str = SOLVE_MODEL) -> Solving
 
     try:
         result = await agent.run(inputs.instruction)
-        content = _strip_code_fence(result.output)
+        content = _artifact_content(result.output, inputs.output_filename)
 
         artifact = Path(tmpdir) / inputs.output_filename
         artifact.write_text(content)
