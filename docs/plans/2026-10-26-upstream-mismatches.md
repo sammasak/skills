@@ -9,7 +9,7 @@ Proposals only. Nothing here was edited or filed upstream; filing needs the owne
 | 2 | `sammasak/nixos-config` | `docs/factum-pilot.md` lists `tests-for`/`brief` next to `review` with no cost note | one sentence: "`tests-for` and `brief` compile test binaries (`cargo nextest list`); `review`/`impact` do not" |
 | 3 | `sammasak/nixos-config` | `modules/programs/cli/codex/default.nix` `portableSkillNames` omits `sdlc-pipeline`, `pi-ticket`, `verify-service`, so Codex and Pi (`~/.agents/skills`) cannot activate them; Codex `AGENTS.md` has no pointer to installed tools | owner decision: add the three if they are Codex/Pi-compatible (they use only Bash/Read/Agent semantics), or record why not |
 | 4 | `sammasak/devenv-platform` | `docs/ADOPTING-SDLC.md` troubleshooting: "invoke the `sdlc-pipeline` walker skill (claude-code-skills)"; the repo is now `sammasak/skills` | rename the reference |
-| 5 | `sammasak/nix-audit` | README says `--json-out` FILE is removed on exit 2/3; an arg-parse usage error (exit 2) leaves it (owner-reproduced on `bbd58d5`); pinned `12d640a` lacks `--json-out` while main documents it | owned and in progress by the nix-audit agent (PR #46 guide, pin-bump proposal); listed only so the skills side tracks it |
+| 5 | `sammasak/nix-audit` | README says `--json-out` FILE is removed on exit 2/3; an arg-parse usage error (exit 2) leaves it (owner-reproduced on `bbd58d5`); pinned `12d640a` lacks `--json-out` while main documents it | owned by the nix-audit agent: guide merged in PR #46 (`65e1444`), pin bump is a proposal awaiting owner approval; listed only so the skills side tracks it |
 
 Draft for #2–#4 (one per repo, same shape):
 
