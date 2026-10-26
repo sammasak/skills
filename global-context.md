@@ -18,6 +18,11 @@
 - Stop only for what no agent can do: physical access, a real-terminal `sudo`, or spending money.
 - **A human-accepted hardware blocker is a valid terminal state.** When the only remaining work depends solely on one of those no-agent-can-do things, and the human has explicitly accepted the blocker, stopping is correct and complete — not abandonment. Record the acceptance verbatim (quote it) and leave the unmet criterion documented as blocked, with everything buildable/testable already done and the exact operator steps written down. This never weakens the criterion: it stays unmet, and simulated or partial evidence is never relabeled as satisfying it. For a `/goal` or loop whose condition still needs such a blocker, treat the condition as terminal once the transcript contains that explicit human acceptance, and phrase future such conditions as "X holds, OR the human has explicitly accepted the hardware blocker" so the check can clear honestly.
 
+## Our Tools
+
+- Before reimplementing a check, use what is installed: `factum` (Rust change impact; `rust-engineering`), `nix-audit` (closure inventory/CVE evidence; `nix-audit-operator`), `sdlc-status`/`sdlc:*` in a `platform.sdlc` devenv (`sdlc-pipeline`), `pi-offload` (`pi-offload`). Confirm the real binary or dev shell (`command -v`, `--version`) first; the tool's own docs outrank the skill.
+- Tool output is evidence, not a verdict: missing, failed or incomplete output is unknown, never a pass, and the repo's own gates decide. A tool defect, or a skill command that no longer matches the tool, gets a sanitized `tooling-feedback` draft, filed only under that skill's authorization rule.
+
 ## Knowledge Vault
 
 Personal knowledge base at `~/knowledge`. Organised as rooms — directories with `INDEX.md` (what's in this room) and `CONTEXT.md` (how to operate in it). Read `~/knowledge/CLAUDE.md` for the full routing map of what lives where.
