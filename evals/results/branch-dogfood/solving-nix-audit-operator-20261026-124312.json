@@ -1,5 +1,5 @@
 {
-  "name": "solving-nix-audit-operator-20261026-122944",
+  "name": "solving-nix-audit-operator-20261026-124312",
   "cases": [
     {
       "name": "nix-audit-operator::task-1",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "Verdict: UNKNOWN\n\nGrype found 0 findings, but Vulnix failed to scan the closure because the store paths were not available locally (built on another host). The policy evaluation is incomplete: Vulnix coverage is missing, so full scanner agreement cannot be confirmed. Exit code 3 signals a non-fatal error, not a successful clean scan.\n\nThe evidence shows only that one of two scanners completed. A truthful report would be: \"Grype found no vulnerabilities; Vulnix could not run due to missing local derivations. Full policy evaluation requires both scanners.\" Do not claim the candidate is clean until Vulnix can access the derivations or the policy is explicitly downgraded to single-scanner confirmation.",
+        "content": "Verdict: UNKNOWN\n\nThe scan detected **zero findings in grype** (the working scanner), but vulnix failed with exit code 3 because the system was built on another host. The policy reports `complete: false`, meaning coverage is incomplete.\n\n**What we know:** Grype found no vulnerabilities in the packages it could scan.\n\n**What we don't know:** Vulnix could not scan this system; any vulnerabilities it would have caught are unknown. The candidate may have been built with different derivations than the scanning host.\n\n**Honest report:** \"Grype scan found 0 findings; vulnix could not complete (built elsewhere). Full vulnerability coverage is unknown. Recommend comparing against a baseline on the build host using both scanners, or running grype-only comparison if vulnix coverage is accepted as optional.\"\n\nDo not post \"no known vulnerabilities\" without scanning on the build host where derivations exist.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-cd_gtftt",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-4vu8snvq",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 2.5137813320034184,
-      "total_duration": 2.5263731479644775,
+      "task_duration": 3.4630756900296547,
+      "total_duration": 3.4747307300567627,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -58,11 +58,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "#!/usr/bin/env bash\nset -euo pipefail\n\n# snapshot.sh: Capture two generations with nix-audit for later diff.\n# Requires: nix-audit installed, $NEXT_GEN set, $AUDIT_POLICY set.\n# Produces: gen-now.json, gen-next.json (only on complete success).\n\n# Validate environment and tool.\nif ! command -v nix-audit &>/dev/null; then\n  echo \"error: nix-audit not found in PATH\" >&2\n  exit 1\nfi\n\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"error: NEXT_GEN not set\" >&2\n  exit 1\nfi\n\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"error: AUDIT_POLICY not set\" >&2\n  exit 1\nfi\n\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"error: AUDIT_POLICY file not found: $AUDIT_POLICY\" >&2\n  exit 1\nfi\n\nif [[ ! -e \"$NEXT_GEN\" ]]; then\n  echo \"error: NEXT_GEN path does not exist: $NEXT_GEN\" >&2\n  exit 1\nfi\n\n# Report tool version for provenance.\necho \"info: nix-audit $(nix-audit --version)\" >&2\n\n# Use temp files to avoid partial writes on failure.\ntemp_now=$(mktemp)\ntemp_next=$(mktemp)\ntrap \"rm -f '$temp_now' '$temp_next'\" EXIT\n\necho \"info: scanning /run/current-system...\" >&2\nif ! nix-audit scan /run/current-system \\\n  --json \\\n  --policy \"$AUDIT_POLICY\" \\\n  >\"$temp_now\"; then\n  echo \"error: scan of /run/current-system failed\" >&2\n  exit 1\nfi\n\necho \"info: scanning $NEXT_GEN...\" >&2\nif ! nix-audit scan \"$NEXT_GEN\" \\\n  --json \\\n  --policy \"$AUDIT_POLICY\" \\\n  >\"$temp_next\"; then\n  echo \"error: scan of $NEXT_GEN failed\" >&2\n  exit 1\nfi\n\n# Both scans completed; atomically move to final names.\nmv \"$temp_now\" gen-now.json\nmv \"$temp_next\" gen-next.json\n\necho \"info: snapshots complete: gen-now.json, gen-next.json\" >&2",
+        "content": "#!/bin/bash\nset -euo pipefail\n\n# Snapshot two generations for nix-audit diff\n# Requires: nix-audit (json-only build), $AUDIT_POLICY, $NEXT_GEN set\n# Produces: gen-now.json, gen-next.json (or .incomplete if scanner failed)\n\nreadonly POLICY=\"${AUDIT_POLICY:?AUDIT_POLICY not set}\"\nreadonly NEXT=\"${NEXT_GEN:?NEXT_GEN not set}\"\nreadonly LOCK=\"/tmp/$(hostname)-heavy-work.lock\"\n\n# Validate policy file\nif [[ ! -f \"$POLICY\" ]]; then\n    echo \"ERROR: policy file not found: $POLICY\" >&2\n    exit 2\nfi\n\n# Ensure lock directory exists and files are clean\nmkdir -p \"$(dirname \"$LOCK\")\"\nrm -f gen-now.json gen-now.incomplete.json gen-next.json gen-next.incomplete.json\n\n# Snapshot current system\necho \"Snapshotting /run/current-system...\" >&2\nrc=0\nflock \"$LOCK\" nix-audit scan /run/current-system --policy \"$POLICY\" --json > gen-now.json 2> gen-now.err || rc=$?\n\ncase $rc in\n    0|1)\n        # Exit 0: no vulns found, exit 1: vulns found → both valid snapshots\n        rm -f gen-now.err\n        echo \"✓ gen-now.json\" >&2\n        ;;\n    3)\n        # Scanner failed or incomplete\n        mv gen-now.json gen-now.incomplete.json\n        echo \"⚠ gen-now.incomplete.json (scanner failed; see gen-now.err)\" >&2\n        exit 3\n        ;;\n    *)\n        # Other errors (invalid policy, permission, etc.)\n        rm -f gen-now.json gen-now.err\n        echo \"ERROR: scan of /run/current-system failed with exit $rc\" >&2\n        exit \"$rc\"\n        ;;\nesac\n\n# Snapshot candidate generation\necho \"Snapshotting $NEXT...\" >&2\nrc=0\nflock \"$LOCK\" nix-audit scan \"$NEXT\" --policy \"$POLICY\" --json > gen-next.json 2> gen-next.err || rc=$?\n\ncase $rc in\n    0|1)\n        rm -f gen-next.err\n        echo \"✓ gen-next.json\" >&2\n        ;;\n    3)\n        mv gen-next.json gen-next.incomplete.json\n        echo \"⚠ gen-next.incomplete.json (scanner failed; see gen-next.err)\" >&2\n        exit 3\n        ;;\n    *)\n        rm -f gen-next.json gen-next.err\n        echo \"ERROR: scan of $NEXT failed with exit $rc\" >&2\n        exit \"$rc\"\n        ;;\nesac\n\necho \"Ready for: nix-audit diff gen-now.json gen-next.json --policy '$POLICY'\" >&2",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-_2c3fod4",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-vfpm00s5",
         "returncode": 0
       },
       "metrics": {},
@@ -72,16 +72,16 @@
       "assertions": {
         "BashGrader": {
           "name": "BashGrader",
-          "value": false,
-          "reason": "FAIL: exit 1 (policy violations) is a valid report and must be kept",
+          "value": true,
+          "reason": "PASS",
           "source": {
             "name": "BashGrader",
             "arguments": null
           }
         }
       },
-      "task_duration": 6.409405671001878,
-      "total_duration": 6.49542498588562,
+      "task_duration": 8.41655082500074,
+      "total_duration": 8.555901288986206,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

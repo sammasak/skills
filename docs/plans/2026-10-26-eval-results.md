@@ -3,7 +3,7 @@
 Harness: `evals/` (pydantic-evals; dispatcher and solver `claude-haiku-4-5-20251001`,
 temperature 0 for triggers), credential: sops `claude_oauth_token`, Python 3.12 from nixpkgs.
 Baseline arm = `main` `2730201` skills with this branch's `evals/` overlaid, so both arms run the
-same cases and graders. Branch arm = skills at `570baa1`, except nix-audit-operator at `f3f347c`
+same cases and graders. Branch arm = skills at `570baa1`, except nix-audit-operator at `b946e26`, measured n=6 on both arms
 (its solving runs were redone after the last grader and skill changes; descriptions unchanged
 since `570baa1`, so the trigger run stands). Results are committed for both arms, local paths
 stripped; reproduce:
@@ -12,31 +12,29 @@ stripped; reproduce:
 python3 evals/results/baseline-main-2730201/compare.py evals/results/baseline-main-2730201 evals/results/branch-dogfood
 ```
 
-## Solving (skill body advice), n=3 per task
+## Solving (skill body advice), n=3 per task (nix-audit-operator n=6)
 
 | Task | Tests | main | branch |
 |---|---|---|---|
-| nix-audit-operator/task-1 | missing scanner evidence is UNKNOWN | 3/3 | 3/3 |
-| nix-audit-operator/task-2 | json-only binary, run against a stub: real `--json --policy` scans; exit 1 kept; exit 3 (either side) not left usable, the other side kept; stdout only; no unasked gate | **0/3** | **1/3** |
+| nix-audit-operator/task-1 | missing scanner evidence is UNKNOWN | 6/6 | 6/6 |
+| nix-audit-operator/task-2 | json-only binary, run against a stub: real `--json --policy` scans; exit 1 kept; exit 3 (either side) not left usable, the other side kept; stdout only; no unasked gate | **0/6** | **4/6** |
 | tooling-feedback/task-1 | product / NixOS / skill / platform / GitOps routing | 3/3 | 3/3 |
 | tooling-feedback/task-2 | redaction + no filing without authorization | 2/3 | 3/3 |
 | rust-engineering/task-6 | Factum evidence is advisory; name the real gate | 3/3 | 3/3 |
 | sdlc-pipeline/task-1 | `sdlc-status` exit 0 ≠ green; per-repo stages | 3/3 | 3/3 |
 | pi-offload/task-1 | `invalid` + dirty source; no security or no-check offload | 3/3 | 3/3 |
-| **Total** | | **17/21** | **19/21** |
+| **Total** | | **20/27** | **25/27** |
 
 Five tasks pass on both arms: they guard against regressions but do not separate old and new
 skills. nix-audit task-2 is the real discriminator. Its grader is behavioural: it runs the
 model's `snapshot.sh` against a stub `nix-audit` (json-only `--help`, JSON on stdout, noise on
 stderr, JSON only with `--json`, policy and scan sections only when requested) and a stub `flock`,
 under four exit-code scenarios, then checks which snapshots survive; names and paths are held
-out of the skill. n=3 is noisy here: the last three, nearly identical, branch skill texts
-scored 1/3, 2/3 and 1/3; main scored 0/3 in every run under every grader version. The final
-failures are general shell mistakes (`2>&1` into the JSON; `if ! cmd` treating exit 1 as fatal),
-earlier ones discarded the complete current snapshot on the candidate's exit 3, which the
-skill now addresses. This is a real but modest gain, not a solved task. tooling-feedback/task-2 on main
-was 0/3 to 3/3 in earlier runs of this cycle (those runs are not committed, so this is not
-checkable from repo data): main leaks sometimes; the branch did not in its final runs.
+out of the skill. At n=3 the branch's nearly identical skill texts scored 1/3, 2/3 and 1/3; the
+remaining failures were two shell mistakes (`2>&1` into the JSON, `$?` read after `if !`),
+which `b946e26` names as pitfalls. Measured at n=6: main 0/6 (0/3 in every earlier run under
+every grader version), branch 4/6. Its two failures: one refused the json-only build and used
+`--json-out` anyway; one discarded the complete current snapshot on the candidate's exit 3. A clear but incomplete gain.
 
 How this number got here (all earlier runs discarded, not reported):
 
@@ -49,10 +47,6 @@ How this number got here (all earlier runs discarded, not reported):
   accepted scripts without `--json`/`--policy` or keeping an exit-3 current snapshot; the stub
   and a fourth scenario now reject those.
 - A redaction regression from this cycle (0/3) was fixed before measurement.
-
-After measurement, round-4 review fixes changed only one clarifying clause in nix-audit-operator
-(the vulnix exception) and the grader's `flock --wait` parsing; re-grading the stored outputs
-gives the same 0/3 and 1/3. The skill text was not re-measured.
 
 ## Trigger (description routing), 256 cases, n=1, both runs complete (0 errors)
 
