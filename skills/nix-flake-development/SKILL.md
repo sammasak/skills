@@ -1,6 +1,6 @@
 ---
 name: nix-flake-development
-description: "Use when editing ~/nixos-config, adding a NixOS or Home Manager module, updating a flake input, or rebuilding/deploying a homelab host."
+description: "Use when editing ~/nixos-config, adding a NixOS or Home Manager module, updating a flake input, running its nixos:qa verification gate, or rebuilding/deploying a homelab host."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
