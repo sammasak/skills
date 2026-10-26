@@ -22,7 +22,7 @@ Platform: Flux, Cilium (CNI + kube-proxy replacement), MetalLB (pool 192.168.10.
 ## Conventions
 
 - New app: `cp -r apps/_template apps/<app>`, then add `<app>/` to `apps/kustomization.yaml` (forgetting this deploys nothing, silently). Full walkthrough: `docs/adding-an-app.md`.
-- Validate before pushing: `./scripts/validate.sh` (or `just validate`).
+- Validate before pushing: `devenv tasks run gitops:validate` (kustomize build + kubeconform of the working tree; ~15 s). The repo's hooks re-run it on the staged tree and the pushed sha (`gitops-validate <rev>`); there is no Justfile.
 - `chat` and `llm` are separate Flux Kustomizations so slow model pulls cannot block `apps`.
 - Ingress: `ingressClassName: traefik`, `traefik.ingress.kubernetes.io/*` annotations, `router.tls: "true"`, `cert-manager.io/cluster-issuer: letsencrypt-prod`. Authentik-gated apps add `traefik.ingress.kubernetes.io/router.middlewares: "authentik-authentik-forward-auth@kubernetescrd"`. ntfy is deliberately un-gated.
 - Resources: CPU/memory requests and a memory limit; CPU limits are optional and usually wrong. Namespace PSS: `enforce: baseline`, `warn`/`audit: restricted`.
@@ -39,13 +39,17 @@ Platform: Flux, Cilium (CNI + kube-proxy replacement), MetalLB (pool 192.168.10.
 Run cluster commands on Lenovo (k3s server: `flux` and the kubeconfig live there). Elsewhere `kubectl` has no kubeconfig and fails with `localhost:8080 ... refused`: a missing client config, not a cluster outage.
 
 ```bash
-flux get kustomizations && flux get helmreleases -A
+devenv tasks run gitops:status       # Kustomizations + HelmReleases
+devenv tasks run gitops:unhealthy    # non-Running pods, not-Ready Flux objects
+devenv tasks run gitops:sync --input name=apps
 flux logs --all-namespaces --level=error
-flux reconcile kustomization apps --with-source
-just unhealthy        # in ~/homelab-gitops
 ```
 
 For deeper diagnosis dispatch the `k8s-debugger` agent.
+
+## Telemetry privacy (native OTLP)
+
+`docs/runbooks/native-otlp-ingestion.md` is the boundary: the Alloy collector keeps only allowlisted metrics and sanitized Claude `tool_result` events; raw output, arguments, identifiers, session/user IDs and unbounded label values must never reach Loki or Prometheus, and Codex logs stay dropped. A change to the collector config (`clusters/homelab/infra/observability.yaml`) needs the repo's adversarial fixtures (sanitizer + isolated Alloy/Loki, pending in PR #138). They prove the config scrubs injected fake secrets; they do **not** prove live deployment, metric aggregation or acceptance of the running receiver, which still need a check against the deployed endpoint and owner review.
 
 ## Destructive deletes (kyverno-enforced)
 
