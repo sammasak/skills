@@ -31,6 +31,7 @@ in
     sshCommand = lib.mkOption { type = t.str; default = "ssh"; description = "Overridable for tests (fake ssh)."; };
     herdrCommand = lib.mkOption { type = t.str; default = "herdr"; description = "Overridable for tests (fake herdr)."; };
     timeoutSeconds = lib.mkOption { type = t.int; default = 8; };
+    messageTimeoutSeconds = lib.mkOption { type = t.int; default = 20; description = "Bound for herdr agent prompt (submission incl. bracketed paste)."; };
     maxAgeSeconds = lib.mkOption { type = t.int; default = 120; description = "Snapshots older than this are not served for an unreachable host."; };
     hosts = lib.mkOption { type = t.listOf t.attrs; readOnly = true; default = hosts; };
     repos = lib.mkOption { type = t.listOf t.attrs; readOnly = true; default = repos; };

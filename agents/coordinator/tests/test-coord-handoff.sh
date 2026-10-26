@@ -21,12 +21,15 @@ run "$good"
 [ "$CODE" -eq 0 ] && ok || bad "draft: exit $CODE ($(tail -3 "$TMP/run.log"))"
 id=$(jqr .handoff_id); [ "${#id}" = 12 ] && ok || bad "draft: 12-char handoff_id ($id)"
 [ "$(jqr .approval_required)" = true ] && ok || bad "draft: approval_required"
-[ "$(jqr .sent)" = false ] && ok || bad "draft: not sent"
+[ "$(jqr .session_id)" = null ] && ok || bad "draft: no session unless given"
 jqr .text | grep -q 'Owner input still needed: decide whether' && ok || bad "draft: owner input in text"
 jqr .text | grep -q 'Do not merge, deploy or delete' && ok || bad "draft: safety footer"
 [ -f "$TMP/state/handoffs/$id.json" ] && ok || bad "draft: persisted"
 [ -s "$FAKE_LOG" ] && bad "draft: no ssh/herdr call may happen" || ok
 
+run "$(jq -c '.session_id = "sess-1"' <<<"$good")"; [ "$(jqr .session_id)" = sess-1 ] && ok || bad "draft: session_id recorded"
+run "$(jq -c '.session_id = "x; id"' <<<"$good")"; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "draft: session_id validated"
+run "$good"
 # identical input => identical id, file not rewritten
 first=$(stat -c %Y "$TMP/state/handoffs/$id.json"); sleep 1; run "$good"
 [ "$(jqr .handoff_id)" = "$id" ] && ok || bad "stable id"

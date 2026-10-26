@@ -93,26 +93,29 @@ in
 
     "coord:handoff" = {
       description = "Draft (never send) a bounded assignment brief for one agent; saves it under the state dir with a handoff_id.";
-      input = { host = null; agent_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; owner_input = ""; };
+      input = { host = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; owner_input = ""; };
       exec = ''
         ${cfg.prelude}
-        host=$(input .host); agent=$(input .agent_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input)
-        ctx() { jq -cn --arg h "$host" --arg a "$agent" '{task:"coord:handoff",host:$h,agent_id:$a}'; }
+        host=$(input .host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input)
+        ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"coord:handoff",host:$h,agent_id:$a}')
+        [ -z "$ses" ] || [[ "$ses" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail 3 invalid_input "session_id has unsafe characters" "$ctx"
         [ -n "$host" ] && [ -n "$agent" ] && [ -n "$ref" ] && [ -n "$scope" ] && [ -n "$ev" ] && [ -n "$acc" ] \
-          || fail 3 invalid_input "host, agent_id, task_ref, scope, expected_evidence and acceptance are required" "$(ctx)"
-        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$(ctx)"
-        [[ "$ref" =~ ^#[0-9]+$ ]] || fail 3 invalid_input "task_ref must look like #N" "$(ctx)"
+          || fail 3 invalid_input "host, agent_id, task_ref, scope, expected_evidence and acceptance are required" "$ctx"
+        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$ctx"
+        [[ "$ref" =~ ^#[0-9]+$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
         ${cfg.hostCase}
-        for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 2000 ] || fail 3 invalid_input "a field exceeds 2000 characters" "$(ctx)"; done
+        for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 2000 ] || fail 3 invalid_input "a field exceeds 2000 characters" "$ctx"; done
         at=$(now_iso)
         text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n%s\nReply in this pane when done, naming the commit or PR. Do not merge, deploy or delete anything.\n' \
           "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
-        id=$(printf '%s|%s|%s|%s' "$host" "$agent" "$ref" "$text" | sha256sum | cut -c1-12)
+        id=$(printf '%s|%s|%s|%s|%s' "$host" "$agent" "$ses" "$ref" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
-        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg a "$agent" --arg r "$ref" --arg t "$text" --arg need "$need" \
-          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, agent_id:$a, task_ref:$r, text:$t,
-            owner_input: (if $need == "" then null else $need end), approval_required:true, sent:false, error:null}')
-        [ -f "$dir/$id.json" ] || printf '%s\n' "$rec" > "$dir/$id.json"
+        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" \
+          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, text:$t,
+            owner_input: (if $need == "" then null else $need end), approval_required:true, error:null}')
+        if [ ! -f "$dir/$id.json" ]; then
+          [ -n "$rec" ] && printf '%s\n' "$rec" > "$dir/$id.json.tmp" && mv "$dir/$id.json.tmp" "$dir/$id.json" || fail 2 state_write_failed "could not write the draft under $dir" "$ctx"
+        fi
         emit "$(jq -c '.' "$dir/$id.json")"
       '';
     };
