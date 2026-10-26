@@ -1,0 +1,140 @@
+{
+  "name": "solving-nix-audit-operator-20261026-132242",
+  "cases": [
+    {
+      "name": "nix-audit-operator::task-1",
+      "inputs": {
+        "instruction": "# Task: Can we say the candidate is clean?\n\nA teammate scanned a candidate NixOS generation and pasted this:\n\n```\n$ nix-audit scan /nix/store/…-nixos-system-builder-26.11 --policy p.toml --json-out candidate.json\ngrype: 0 findings\nnix-audit: scan incomplete — vulnix failed: no local derivation for /nix/store/…-nixos-system-builder-26.11 (built on another host?); full stderr in /tmp/w/vulnix.stderr\n$ echo $?\n3\n$ jq '.policy | {complete, incomplete}' candidate.json\n{\"complete\": false, \"incomplete\": [\"vulnix failed\"]}\n```\n\nThey want to post \"the candidate has no known vulnerabilities\" in the team channel.\n\nWrite `verdict.md`. Its first line must be exactly one of `Verdict: CLEAN`, `Verdict: UNKNOWN`\nor `Verdict: VIOLATIONS`. Then at most six short lines: what the evidence does and does not\nshow, and what (if anything) could honestly be reported instead.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "nix-audit-operator",
+        "task_id": "task-1",
+        "output_filename": "verdict.md"
+      },
+      "metadata": {
+        "test_script": "evals/nix-audit-operator/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "Verdict: UNKNOWN\n\nThe grype scanner found 0 findings on the candidate, but the scan is incomplete: vulnix failed with exit 3 because no local derivation exists (built on another host). With `policy.complete: false` and one scanner missing, coverage is unknown—this is not zero vulnerabilities.\n\nHonest claim: \"grype found no findings on the candidate; vulnix could not run (built elsewhere).\" Do not claim the candidate is clean or safe. Either rescan on the build host where derivations exist, or run an explicit grype-only diff against the baseline if its grype outcome is also complete and comparable.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-hw64fda3",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 2.5742156119667925,
+      "total_duration": 2.5858521461486816,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "nix-audit-operator::task-2",
+      "inputs": {
+        "instruction": "# Task: Snapshot two generations with the installed nix-audit\n\nThe current README says to snapshot with `--json-out FILE`. On this host:\n\n```\n$ nix-audit --version\nnix-audit 0.1.0 (a1b2c3d4e5f6)\n$ nix-audit scan --help\nUsage: nix-audit scan [OPTIONS] <TARGET>\nOptions:\n      --json             print the JSON report instead of the terminal summary\n      --policy <FILE>    evaluate a nix-audit-policy/v0 file\n      --scanners <LIST>  which scanners run [default: grype,vulnix]\n      --no-scan          inventory only\n      --offline          do not update scanner databases\n  -h, --help             Print help\n```\n\nThe candidate is already built at `$NEXT_GEN`. Write `snapshot.sh`: a bash script that\nproduces `gen-now.json` (from `/run/current-system`) and `gen-next.json` (from `$NEXT_GEN`)\nwith the policy file whose path is in `$AUDIT_POLICY`, ready for a later `nix-audit diff`. Keep every report the\ntool printed as evidence (rename if needed, never delete). A snapshot from a scan that could\nnot complete must not be left looking like a complete one. Do not run a gate.\n",
+        "skill": "nix-audit-operator",
+        "task_id": "task-2",
+        "output_filename": "snapshot.sh"
+      },
+      "metadata": {
+        "test_script": "evals/nix-audit-operator/tasks/task-2/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "#!/usr/bin/env bash\nset -euo pipefail\n\n# snapshot.sh: inventory two generations with nix-audit\n# Produces gen-now.json and gen-next.json ready for diff\n# Requires: $AUDIT_POLICY (path), $NEXT_GEN (path)\n# This host has --json only (no --json-out), so we capture it explicitly\n\n# Validate inputs\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"error: AUDIT_POLICY not set\" >&2\n  exit 2\nfi\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"error: AUDIT_POLICY not readable: $AUDIT_POLICY\" >&2\n  exit 2\nfi\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"error: NEXT_GEN not set\" >&2\n  exit 2\nfi\nif [[ ! -e \"$NEXT_GEN\" ]]; then\n  echo \"error: NEXT_GEN not found: $NEXT_GEN\" >&2\n  exit 2\nfi\n\n# Verify nix-audit is available and has the right interface\nif ! command -v nix-audit &>/dev/null; then\n  echo \"error: nix-audit not in PATH\" >&2\n  exit 2\nfi\n\n# Check that we have --json (not --json-out on this build)\nif ! nix-audit scan --help | grep -q -- '--json'; then\n  echo \"error: nix-audit scan does not support --json\" >&2\n  exit 2\nfi\n\nPOLICY_CANONICAL=\"$(readlink -f \"$AUDIT_POLICY\")\"\necho \"Using policy: $POLICY_CANONICAL\"\necho \"Current system: /run/current-system\"\necho \"Candidate: $NEXT_GEN\"\n\n# Snapshot current system\necho \"Scanning /run/current-system...\" >&2\nrc=0\nnix-audit scan /run/current-system \\\n  --policy \"$POLICY_CANONICAL\" \\\n  --json > gen-now.json 2> gen-now.err || rc=$?\n\ncase $rc in\n  0|1)\n    # 0 = clean, 1 = violations found; both produce a complete report\n    echo \"✓ Current system scan complete (exit $rc)\" >&2\n    rm -f gen-now.err\n    ;;\n  *)\n    # 3 = scanner failure, 2 = usage error, other = tool failure\n    echo \"✗ Current system scan failed (exit $rc); keeping as evidence\" >&2\n    # Rename to signal this is not a complete baseline\n    mv gen-now.json gen-now.incomplete.json\n    exit $rc\n    ;;\nesac\n\n# Snapshot candidate generation\necho \"Scanning $NEXT_GEN...\" >&2\nrc=0\nnix-audit scan \"$NEXT_GEN\" \\\n  --policy \"$POLICY_CANONICAL\" \\\n  --json > gen-next.json 2> gen-next.err || rc=$?\n\ncase $rc in\n  0|1)\n    echo \"✓ Candidate scan complete (exit $rc)\" >&2\n    rm -f gen-next.err\n    ;;\n  *)\n    echo \"✗ Candidate scan failed (exit $rc); keeping as evidence\" >&2\n    mv gen-next.json gen-next.incomplete.json\n    exit $rc\n    ;;\nesac\n\n# Verify both reports are valid JSON and have scanner data\nfor f in gen-now.json gen-next.json; do\n  if ! jq -e '.scan.scanners | type == \"array\"' \"$f\" >/dev/null 2>&1; then\n    echo \"error: $f does not contain valid scan data\" >&2\n    mv \"$f\" \"${f%.json}.corrupted.json\"\n    exit 2\n  fi\ndone\n\necho \"✓ Snapshots ready: gen-now.json gen-next.json\" >&2\necho \"Next: nix-audit diff gen-now.json gen-next.json --policy '$POLICY_CANONICAL'\" >&2",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-p2rzm1bk",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 10.728275210014544,
+      "total_duration": 10.951337337493896,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "nix-audit-operator::task-3",
+      "inputs": {
+        "instruction": "# Task: Can we rescan just one side?\n\nA pre-upgrade comparison needs two nix-audit snapshots. The candidate scan failed (exit 3,\nvulnix crashed on a network error) and was set aside; the running-system snapshot\n`kept.json` completed. Before rescanning, a teammate pasted the kept report's metadata and the\nmetadata the new candidate scan would have, for three different occasions:\n\n```\nA) kept:  producer.revision 7f3a9c1e2b4d…  policy.source.sha256 91be…04  scanners grype=ran vulnix=ran\n   new:   producer.revision 7f3a9c1e2b4d…  policy.source.sha256 91be…04  scanners grype, vulnix\nB) kept:  producer.revision 7f3a9c1e2b4d…  policy.source.sha256 91be…04  scanners grype=ran vulnix=ran\n   new:   producer.revision 7f3a9c1e2b4d…  policy.source.sha256 c4d2…7a  scanners grype, vulnix\nC) kept:  producer.revision 7f3a9c1e2b4d…  policy.source.sha256 91be…04  scanners grype=ran (vulnix not selected)\n   new:   producer.revision 7f3a9c1e2b4d…  policy.source.sha256 91be…04  scanners grype, vulnix\n```\n\nWrite `rescan.md` with exactly these lines first, then one short reason per case:\n`A: candidate-only` or `A: both`, the same for `B:` and `C:`, and finally\n`C full coverage: yes` or `C full coverage: no` (whether case C's kept snapshot, as it stands,\ncan be reported as grype and vulnix coverage of the running system).\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "nix-audit-operator",
+        "task_id": "task-3",
+        "output_filename": "rescan.md"
+      },
+      "metadata": {
+        "test_script": "evals/nix-audit-operator/tasks/task-3/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "A: candidate-only\nBinary revision, policy hash, and scanner outcomes (grype ran, vulnix ran) all match; rescanning just the candidate is valid.\n\nB: both\nPolicy hash differs (91be…04 vs c4d2…7a); the kept baseline and new candidate are under different policies and cannot be compared directly without rescanning both under the same policy.\n\nC: both\nThe kept snapshot has no vulnix outcome to compare; rescanning both ensures vulnix runs on the candidate so the comparison covers both scanners equally on both sides.\n\nC full coverage: no\nThe kept snapshot was captured with vulnix not selected, so it provides no vulnix coverage of the running system and cannot be reported as complete vulnix assessment.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-3-lf4xyw8o",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 2.4742314409813844,
+      "total_duration": 2.490628242492676,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}
