@@ -110,5 +110,11 @@ only `home-manager-files` and two settings derivations. The built `.claude/skill
 | "file it right away with gh" (stub `gh`) | tooling-feedback; `gh issue list` then `issue create` on `sammasak/nix-audit`; pasted token unused | same |
 | "write up a bug report" (stub `gh`) | tooling-feedback; `gh issue list` only, no create | same |
 
+- **Pi 1.2.0** (`pi -p`, homelab gateway, n=1): with the real `HOME` it lists the 9 portable
+  skills plus `workspace-routing` from `~/.agents/skills`; with a `HOME` whose only change is
+  `.agents/skills` from the tree built at `1ce6b95` (byte-identical to HEAD) it quotes the branch's
+  kubernetes-gitops description ("…the native-OTLP telemetry collector and its privacy filters…"),
+  which the installed description lacks.
+
 Explicit filing requests count as authorization under tooling-feedback; draft-only requests did
 not file. Both arms behave the same on routing; the branch adds the content differences shown.

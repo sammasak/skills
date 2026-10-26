@@ -3,7 +3,9 @@
 Every step that changes shared state needs the owner's explicit approval; nothing here has been
 done. Installed skills today: `2730201` (nixos-config `flake.lock` input `skills`).
 
-1. **Review and merge** PR #15 (owner). Note the merge commit `M`.
+1. **Review and squash-merge** PR #15 (owner). Squash, because the branch history holds an earlier
+   result file and a pre-rewrite push that named a private product; neither is in HEAD. Note the
+   merge commit `M`.
 2. **Preview the pin bump** in `~/nixos-config` on a fresh branch:
    `just bump skills`, then `nix build --dry-run` of the host. Expected: only `home-manager-files`
    and the Claude settings derivations rebuild (measured: 3 derivations with the branch as an
