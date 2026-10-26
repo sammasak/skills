@@ -51,7 +51,7 @@ FAKE_HERDR_LIST="$TMP/changed.json" run "$TMP/local.json"
 fleet "$TMP/remote.json" '[{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'
 FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/remote.json"
 [ "$CODE" -eq 0 ] && ok || bad "remote: exit $CODE"
-grep -q '^ssh .*lukas@lenovo.lan herdr agent list' "$FAKE_LOG" && ok || bad "remote: expected ssh <target> herdr agent list"
+grep -q '^ssh .*-- lukas@lenovo.lan herdr agent list' "$FAKE_LOG" && ok || bad "remote: expected ssh <target> herdr agent list"
 [ "$(jqr '.hosts[0].agents[0].approval_required')" = true ] && ok || bad "remote: blocked => approval_required"
 [ "$(jqr '.hosts[0].agents[0].host')" = lenovo ] && ok || bad "remote: host field"
 
@@ -69,7 +69,7 @@ fleet "$TMP/down.json" '[{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'
 FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/down.json"
 fleet "$TMP/down.json" '[{"name":"lenovo","ssh":"lukas@down.lan"}]'
 run "$TMP/down.json"
-[ "$CODE" -ne 0 ] && ok || bad "down: all hosts failed must fail the task"
+[ "$CODE" -eq 0 ] && [ "$(jqr .answered_hosts)" = 0 ] && ok || bad "down: inventory still emits its record (exit $CODE, answered $(jqr .answered_hosts))"
 [ "$(jqr '.hosts[0].error.kind')" = unreachable ] && ok || bad "down: error.kind"
 [ "$(jqr '.hosts[0].agents[0].stale')" = true ] && ok || bad "down: snapshot agents are stale"
 [ "$(jqr '.hosts[0].agents[0].observed_state')" = blocked ] && ok || bad "down: snapshot state kept"
@@ -81,7 +81,7 @@ jqr '.hosts[0].error.message' | grep -q discarded && ok || bad "down: discard no
 # 6. malformed herdr output is an error, not a crash
 fleet "$TMP/bad.json" '[{"name":"acer-swift","ssh":null}]'
 FAKE_HERDR_LIST="$FX/herdr/malformed.json" run "$TMP/bad.json"
-[ "$CODE" -ne 0 ] && ok || bad "malformed: must fail"
+[ "$CODE" -eq 0 ] && [ "$(jqr .partial)" = true ] && ok || bad "malformed: partial record, exit 0"
 [ "$(jqr '.hosts[0].error.kind')" = malformed ] && ok || bad "malformed: error.kind"
 
 # 7. invalid fleet entries are refused at evaluation, before any call
@@ -96,6 +96,18 @@ run "$TMP/inj2.json"; [ "$CODE" -ne 0 ] && ok || bad "inject2: must fail evaluat
 printf '{"schema_version":2,"hosts":[]}' > "$TMP/v2.json"; run "$TMP/v2.json"
 [ "$CODE" -ne 0 ] && ok || bad "wrong schema_version: must fail"
 grep -q 'schema_version must be 1' "$TMP/run.log" && ok || bad "wrong schema_version: message"
+
+# 7b. renumbered pane / new session does not inherit the old age; null fields do not crash
+fleet "$TMP/ren.json" '[{"name":"acer-swift","ssh":null}]'
+FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" run "$TMP/ren.json"; sleep 1
+jq '.result.agents[0].pane_id = "wF:p9"' "$FX/herdr/local-two-agents.json" > "$TMP/ren2.json"
+FAKE_HERDR_LIST="$TMP/ren2.json" run "$TMP/ren.json"
+[ "$(jqr '.hosts[0].agents[0].state_age_s')" = 0 ] && ok || bad "renumbered pane starts at age 0"
+FAKE_HERDR_LIST="$FX/herdr/odd-agents.json" run "$TMP/ren.json"
+[ "$CODE" -eq 0 ] && [ "$(jqr '.hosts[0].agents|length')" = 3 ] && ok || bad "odd records: 3 usable agents ($(jqr '.hosts[0]'))"
+[ "$(jqr '.hosts[0].agents[] | select(.agent_id=="wX:p1") | .observed_state')" = idle ] && ok || bad "odd: idle agent"
+[ "$(jqr '.hosts[0].agents[] | select(.agent_id=="wX:p3") | .observed_state')" = unknown ] && ok || bad "odd: missing status => unknown"
+[ "$(jqr '.hosts[0].agents[] | select(.agent_id=="wX:p3") | .session_id')" = null ] && ok || bad "odd: string agent_session => null session"
 
 # 8. the graph contains exactly the fleet's hosts
 fleet "$TMP/two.json" '[{"name":"acer-swift","ssh":null},{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'

@@ -24,14 +24,14 @@ FAKE_HERDR_READ="$FX/herdr/read-visible.txt" run '{"host":"acer-swift","agent_id
 [ "$(jqr .lines_returned)" = 4 ] && ok || bad "local: lines_returned ($OUT)"
 jqr .excerpt | grep -q 'property test' && ok || bad "local: excerpt content"
 [ "$(jqr .agent_id)" = "wF:p1" ] && ok || bad "local: agent_id echoed"
-grep -q 'herdr agent read wF:p1 --lines 40 --source visible --format text' "$FAKE_LOG" && ok || bad "local: expected bounded read argv ($(cat "$FAKE_LOG"))"
+grep -q 'herdr agent read -- wF:p1 --lines 40 --source visible --format text' "$FAKE_LOG" && ok || bad "local: expected bounded read argv ($(cat "$FAKE_LOG"))"
 grep -q '^ssh' "$FAKE_LOG" && bad "local: no ssh for local host" || ok
 
 # remote read goes through ssh with the same bounded argv
 : > "$FAKE_LOG"
 FAKE_HERDR_READ="$FX/herdr/read-visible.txt" run '{"host":"lenovo","agent_id":"wA:p2","lines":10,"source":"recent"}'
 [ "$CODE" -eq 0 ] && ok || bad "remote: exit $CODE"
-grep -q '^ssh .*lukas@lenovo.lan herdr agent read wA:p2 --lines 10 --source recent --format text' "$FAKE_LOG" && ok || bad "remote: argv ($(cat "$FAKE_LOG"))"
+grep -q '^ssh .*-- lukas@lenovo.lan herdr agent read -- wA:p2 --lines 10 --source recent --format text' "$FAKE_LOG" && ok || bad "remote: argv ($(cat "$FAKE_LOG"))"
 
 # the cap holds: 1000 requested -> 200 asked for and at most 200 returned
 : > "$FAKE_LOG"

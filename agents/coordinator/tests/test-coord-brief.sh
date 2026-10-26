@@ -19,10 +19,11 @@ run() { # <task> <fleet> [args]
 }
 jqr() { jq -r "$1" <<<"$OUT"; }
 
-git init -q "$TMP/herman" && (cd "$TMP/herman" && git config user.email t@t && git config user.name t && echo a > a && git add a && git commit -qm init && echo dirty > b)
-# fixture agents: wF:p1 working on #16 (open PR 17 => unverified); wT:p1 "done" on #42 (merged PR 15 => verified); remote blocked agent (no ref)
-jq --arg cwd "$TMP/herman" '.result.agents[1].cwd = $cwd' "$FX/herdr/local-two-agents.json" > "$TMP/local.json"
-printf '{"schema_version":1,"hosts":[{"name":"acer-swift","ssh":null},{"name":"lenovo","ssh":"lukas@lenovo.lan"}],"repos":[{"name":"skills","gh":"sammasak/skills","checkout":"%s"}]}' "$TMP/herman" > "$TMP/fleet.json"
+git init -q "$TMP/skills" && (cd "$TMP/skills" && git config user.email t@t && git config user.name t && echo a > a && git add a && git commit -qm init && echo dirty > b)
+# fixture agents: wF:p1 working on #16 in the skills checkout (open PR 17 => unverified); wT:p1 "done" on skills #42 (merged PR 15 => verified);
+# remote blocked agent (no ref). The second agent's title says "skills #42" so the repo resolves by cwd AND by name.
+jq --arg cwd "$TMP/skills" '.result.agents[0].cwd = $cwd | .result.agents[1].cwd = $cwd | .result.agents[1].terminal_title_stripped = "skills #42 settlement tests"' "$FX/herdr/local-two-agents.json" > "$TMP/local.json"
+printf '{"schema_version":1,"hosts":[{"name":"acer-swift","ssh":null},{"name":"lenovo","ssh":"lukas@lenovo.lan"}],"repos":[{"name":"skills","gh":"sammasak/skills","checkout":"%s"}]}' "$TMP/skills" > "$TMP/fleet.json"
 
 FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run coord:brief "$TMP/fleet.json"
 [ "$CODE" -eq 0 ] && ok || bad "brief: exit $CODE ($(grep -E 'FAIL|✖|error' "$TMP/run.log" | head -3))"
@@ -38,10 +39,23 @@ jqr '.items[] | select(.agent_id=="wT:p1") | .reasons | join(";")' | grep -q 'un
 grep -q '## Needs you' "$TMP/run.log" && grep -q 'lenovo/wA:p2' "$TMP/run.log" && ok || bad "markdown brief lists the blocked agent under Needs you"
 [ "$(jqr '[.items[].sources[].task] | unique | join(",")')" = "gh:work,git:recent,herdr:inventory" ] && ok || bad "sources listed"
 
-# a "done" agent whose reference has no merged PR is never verified
-jq '.result.agents[1].terminal_title_stripped = "herman #16 settlement"' "$TMP/local.json" > "$TMP/local16.json"
+# a "done" agent whose reference has no merged PR is never verified (#16: merged M0 PR would exist later, open PR 17 wins)
+jq '.result.agents[1].terminal_title_stripped = "skills #16 settlement"' "$TMP/local.json" > "$TMP/local16.json"
 FAKE_HERDR_LIST="$TMP/local16.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
 [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unverified ] && ok || bad "done without merged PR must stay unverified"
+# cross-repo guard: a herman agent (cwd not a fleet checkout, no repo name in title) with #42 must NOT be verified by skills PR 15
+jq '.result.agents[1].cwd = "/home/lukas/herman" | .result.agents[1].terminal_title_stripped = "herman #42 settlement"' "$TMP/local.json" > "$TMP/herman.json"
+FAKE_HERDR_LIST="$TMP/herman.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
+[ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unknown ] && ok || bad "cross-repo #42 must be unknown, got $(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')"
+jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q 'which fleet repo' && ok || bad "cross-repo reason"
+# a remote agent with the same cwd path does not inherit the local checkout's dirty state
+jq '.result.agents[0].cwd = "'"$TMP/skills"'"' "$FX/herdr/remote-ok.json" > "$TMP/remote-samecwd.json"
+FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$TMP/remote-samecwd.json" run work:status "$TMP/fleet.json"
+jqr '.items[] | select(.agent_id=="wA:p2") | .reasons | join(";")' | grep -q uncommitted && bad "remote agent must not get local checkout reasons" || ok
+# digits inside other numbers never match: #4 is not verified by PR 15 closing #42
+jq '.result.agents[1].terminal_title_stripped = "skills #4 thing"' "$TMP/local.json" > "$TMP/local4.json"
+FAKE_HERDR_LIST="$TMP/local4.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
+[ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unknown ] && ok || bad "#4 must not match #42"
 
 # gh down: brief still renders from herdr, marked partial with the failed source
 FAKE_GH_EXIT=1 FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run coord:brief "$TMP/fleet.json"
@@ -56,6 +70,6 @@ grep -q 'Full JSON: ' "$TMP/run.log" && ok || bad "brief points at the saved JSO
 printf '{"schema_version":1,"hosts":[{"name":"gone","ssh":"lukas@down.lan"}],"repos":[]}' > "$TMP/down.json"
 run coord:brief "$TMP/down.json"
 [ "$CODE" -ne 0 ] && ok || bad "herdr down: brief must fail"
-grep -qE 'herdr:inventory.*unreachable|missing' "$TMP/run.log" && ok || bad "herdr down: reason surfaced"
+grep -q 'herdr:inventory:gone: unreachable' "$TMP/run.log" && ok || bad "herdr down: the real reason (unreachable) is surfaced, not 'missing'"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]

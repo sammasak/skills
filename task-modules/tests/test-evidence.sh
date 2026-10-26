@@ -33,7 +33,7 @@ run gh:work "$TMP/fleet.json"
 grep -q 'issue list -R sammasak/skills --state open --limit 20' "$FAKE_LOG" && ok || bad "gh: bounded argv ($(head -1 "$FAKE_LOG"))"
 
 FAKE_GH_EXIT=1 run gh:work "$TMP/fleet.json"
-[ "$CODE" -ne 0 ] && ok || bad "gh down: all repos failed must fail"
+[ "$CODE" -eq 0 ] && [ "$(jqr '.repos|length')" = 0 ] && ok || bad "gh down: record still emitted, no repos (exit $CODE)"
 [ "$(jqr '.failed_sources[0].error.kind')" = gh_error ] && ok || bad "gh down: error kind ($OUT)"
 [ "$(jqr .partial)" = true ] && ok || bad "gh down: partial"
 
@@ -52,6 +52,11 @@ run git:recent "$TMP/fleet.json"
 # the graph contains exactly the fleet's repos
 listed=$(devenv tasks list --option coordinator.fleetFile:path "$TMP/fleet.json" 2>/dev/null | grep -oE '(gh:work|git:recent):[a-z]+' | sort -u | paste -sd,)
 [ "$listed" = "gh:work:ghonly,gh:work:skills,git:recent:gone,git:recent:skills" ] && ok || bad "graph: '$listed'"
+# unsafe gh value or checkout path is refused at evaluation
+printf '{"schema_version":1,"hosts":[],"repos":[{"name":"x","gh":"sammasak/skills'"'"'; id","checkout":null}]}' > "$TMP/badgh.json"
+run gh:work "$TMP/badgh.json"; [ "$CODE" -ne 0 ] && grep -q 'unsafe characters' "$TMP/run.log" && ok || bad "unsafe gh must fail evaluation"
+printf '{"schema_version":1,"hosts":[],"repos":[{"name":"x","gh":null,"checkout":"relative/path"}]}' > "$TMP/badco.json"
+run git:recent "$TMP/badco.json"; [ "$CODE" -ne 0 ] && grep -q 'unsafe characters' "$TMP/run.log" && ok || bad "relative checkout must fail evaluation"
 # unsafe checkout path is refused at evaluation
 printf '{"schema_version":1,"hosts":[],"repos":[{"name":"x","gh":null,"checkout":"/tmp/a; id"}]}' > "$TMP/bad.json"
 run git:recent "$TMP/bad.json"; [ "$CODE" -ne 0 ] && grep -q 'unsafe characters' "$TMP/run.log" && ok || bad "unsafe checkout must fail evaluation"

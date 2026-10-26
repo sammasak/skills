@@ -50,9 +50,11 @@ refused with exit 3 (`error.kind: invalid_input`).
 ## Freshness
 
 Herdr publishes no timestamps. `observed_at` is when the task ran;
-`state_age_s` is how long `state_change_seq` has been unchanged in the local
-snapshot history. `stale: true` means the snapshot is older than the task's
-`max_age_s`. Quote both when asked how current a fact is.
+`state_age_s` is a lower bound: how long `state_change_seq` has been unchanged
+across this coordinator's own snapshots (0 on first sight). `stale: true`
+means the record was served from the last snapshot because the host did not
+answer; `snapshot_age_s` says how old it is, and snapshots older than the
+configured `maxAgeSeconds` are dropped instead of shown.
 
 If a task fails or is unavailable, report its `error` verbatim. Do not fall
 back to raw `herdr` or `ssh` commands; those are outside the Coordinator's
