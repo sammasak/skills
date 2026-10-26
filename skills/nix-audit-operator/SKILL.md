@@ -17,7 +17,7 @@ command -v nix-audit && nix-audit --version        # nix-audit 0.1.0 (<12-char r
 nix-audit scan --help | grep -q -- --json-out && echo json-out || echo json-only
 ```
 
-Installed only where nixos-config enables it (Lenovo); the pinned build may predate `--json-out`, so branch on `--help`, not on the README. Current release candidate: CHANGELOG. Refuse a binary whose version ends `-dirty)` or `(unknown revision)` for any release claim; do not build one just for an example (USER-GUIDE §1 if the pilot needs one).
+Installed only where nixos-config enables it (Lenovo); the pinned build may predate `--json-out`, so branch on `--help`, not on the README. Current release candidate: CHANGELOG. Refuse a binary whose version ends `-dirty)` or `(unknown revision)` for any release claim. A Nix-packaged build prints `(<rev>, declared by the build)`: accept it only when the full `producer.revision` is the reviewed release commit, equals the config's locked `nix-audit` input, and `command -v nix-audit` resolves into that configuration (USER-GUIDE §1); do not build one just for an example (USER-GUIDE §1 if the pilot needs one).
 
 ## Run it safely
 
@@ -25,7 +25,7 @@ Inventory only (no scanners, no root, no vulnerability claim): `nix-audit scan /
 
 ```sh
 L="flock /tmp/$(hostname)-heavy-work.lock"; P=/abs/path/policy.toml
-rm -f current.json candidate.json                  # a usage error (exit 2) leaves an old file
+rm -f current.json candidate.json                  # a usage error (exit 2) leaves an old file; the dir must be writable
 $L nix-audit scan /run/current-system --policy "$P" --json-out current.json
 $L nix-audit scan "$candidate"        --policy "$P" --json-out candidate.json
 nix-audit diff current.json candidate.json --policy "$P"   # --gate only when asked
@@ -41,7 +41,8 @@ case $rc in 0|1) ;; 3) mv current.json current.incomplete.json ;; *) rm -f curre
 ## Interpret
 
 - Exit 3, a failed or stale scanner, or a missing scan section means **unknown coverage, never zero vulnerabilities**. Exit 0 with `policy.complete: false` is not clean.
-- A target built on another host often has no local `.drv`, so vulnix fails (exit 3). The documented fallback is an explicit `--scanners grype` comparison, reported as grype-only; review any `findings after not compared` before calling an upgrade clean (§6).
+- When present, branch on `policy.incomplete_kinds[].kind` (scan) and `policy.gate.causes[].kind` (diff), never on prose; older builds only have `policy.complete`/`incomplete` (§7).
+- A target built on another host often has no local `.drv`, so vulnix fails (exit 3); run pilot comparisons on the deploy build host (Lenovo), where derivations exist. The documented fallback is an explicit `--scanners grype` comparison, reported as grype-only; review any `findings after not compared` before calling an upgrade clean (§6).
 - `gate: pass` = no new violations vs the baseline, not a strict pass. `confirmed` = two scanners matched, not proven exploitable.
 - Report the binary revision, scanners and their outcomes, `policy.source.sha256`, `policy.complete` and comparability with any verdict (§7).
 
