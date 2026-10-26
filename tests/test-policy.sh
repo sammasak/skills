@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Policy gate: the shared context must never let an AI agent stand in for the
-# owner on privileged decisions (epic #16 M0). Run: bash tests/test-policy.sh
+# Policy gate: nothing an agent reads may let it stand in for the owner on
+# privileged decisions (epic #16 M0). Run: bash tests/test-policy.sh
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-FILES=("$ROOT/global-context.md" "$ROOT/docs/agentic-lifecycle.md")
 FAIL=0
 
-for f in "${FILES[@]}"; do
-  if grep -nEi 'to stand in|stand in for|merge and keep going|record who stood in' "$f"; then
+while IFS= read -r f; do
+  if grep -nEi '\bstand[- ]in\b|\bstood in\b|\bstand[- ]ins\b' "$f"; then
     echo "FAIL: $f contains owner stand-in language" >&2; FAIL=1
   fi
-done
+done < <(cd "$ROOT" && find global-context.md README.md skills agents docs -name '*.md' -not -path 'docs/plans/*' -not -path '*/.archived/*')
 
 if ! grep -qEi 'may not approve|cannot approve|AI review is evidence' "$ROOT/global-context.md"; then
   echo "FAIL: global-context.md does not state that agents cannot approve privileged actions" >&2; FAIL=1

@@ -18,9 +18,9 @@ tasks:
     - work:status
     - coord:brief
     - coord:handoff
+    - herdr:await
   act:
     - herdr:message
-    - herdr:await
 forbidden:
   - editing, writing or generating code or documentation in any repository
   - building, testing or running worker projects

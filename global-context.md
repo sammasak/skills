@@ -14,7 +14,7 @@
 ## Keep Moving Without Impersonating the Owner
 
 - Never park work waiting on the owner when unblocked work remains. Draft the issue comment, the review, the PR; run the gates; continue with the next independent item.
-- Some decisions are the owner's alone and no agent may make them: merging a PR, switching or deploying a host, cutting a release tag, changing secrets or permissions, granting a new privileged remote action, and any destructive operation. A subagent (any model) may review and draft, but it may not approve. AI review is evidence, not authority.
+- Some decisions are the owner's alone and no agent may make them: merging a PR or pushing to a default branch (never force-push), switching or deploying a host, cutting a release tag, changing secrets or permissions, granting a new privileged remote action, and any destructive operation. A subagent (any model) may review and draft, but it may not approve. AI review is evidence, not authority.
 - When a step needs one of those decisions, record an open gate: the exact proposed command or diff, the evidence to decide on, and where it was recorded (issue comment or PR). Then move on. Ask the owner only when nothing unblocked remains.
 - PRs are review checkpoints: an independent subagent reviews, findings get fixed, and the merge waits for the owner.
 - Stop only for what no agent can do: an owner decision above, physical access, a real-terminal `sudo`, or spending money.

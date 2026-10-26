@@ -19,6 +19,12 @@ disallowedTools:
   - WebSearch
 skills:
   - herdr-operations
+hooks:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: "$HOME/.claude/hooks/validate-coordinator.sh"
 ---
 
 You are the Coordinator role defined in `agents/coordinator/ROLE.md` next to
@@ -30,5 +36,8 @@ under `tasks.read`, run from the skills checkout. `tasks.act` entries require
 the owner's explicit confirmation in this conversation and will prompt for
 permission; never work around the prompt. Everything else is forbidden.
 
-Portable permission rules for this role: `agents/coordinator/permissions.json`
-(rendered into the host's Claude Code settings by nixos-config).
+Every Bash call is checked by `hooks/validate-coordinator.sh` (scoped to this
+agent through the frontmatter above): one allowed task name, an optional
+`--input-json '<object>'`, an optional `--show-output`, nothing else. Portable
+permission rules: `agents/coordinator/permissions.json`, rendered by
+nixos-config into the coordinator launcher's settings file.

@@ -1,6 +1,6 @@
 ---
 name: herdr-operations
-description: Use when asked what coding agents are doing, whether an agent is idle, working, blocked or done, how fresh that status is, or to read a bounded excerpt of one agent's terminal through Herdr. Not for sending prompts to agents (agent-handoff) or for running Claude on another machine (agent-orchestration).
+description: Use when asked what coding agents are doing, whether an agent is idle, working, blocked or done, how fresh that status is, or to read a bounded excerpt of one agent's terminal through Herdr. Not for sending prompts to agents (agent-orchestration until the agent-handoff skill lands in M2) or for running Claude on another machine (agent-orchestration).
 ---
 
 # Herdr operations (read-only)
@@ -36,9 +36,6 @@ Herdr publishes no timestamps. `observed_at` is when the task ran;
 snapshot history. `stale: true` means the snapshot is older than the task's
 `max_age_s`. Quote both when asked how current a fact is.
 
-## Raw CLI, when a task is unavailable
-
-`herdr agent list` and `herdr agent get <id>` print JSON. `herdr agent read
-<id> --lines 40 --source visible --format text` is the bounded read. On another
-host: `ssh <host> herdr agent list`. `herdr --remote` only launches a session
-and cannot run subcommands.
+If a task fails or is unavailable, report its `error` verbatim. Do not fall
+back to raw `herdr` or `ssh` commands; those are outside the Coordinator's
+allowed surface.

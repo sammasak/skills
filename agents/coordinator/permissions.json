@@ -1,31 +1,40 @@
 {
   "schema_version": 1,
   "role": "coordinator",
+  "guard": "hooks/validate-coordinator.sh",
   "allow": [
-    "Bash(devenv tasks run coord:brief*)",
-    "Bash(devenv tasks run coord:handoff*)",
-    "Bash(devenv tasks run herdr:inventory*)",
-    "Bash(devenv tasks run herdr:inspect*)",
-    "Bash(devenv tasks run harness:session-summary*)",
-    "Bash(devenv tasks run gh:work*)",
-    "Bash(devenv tasks run git:recent*)",
-    "Bash(devenv tasks run work:status*)",
+    "Bash(devenv tasks run coord:brief)",
+    "Bash(devenv tasks run coord:brief --show-output)",
+    "Bash(devenv tasks run coord:handoff --input-json *)",
+    "Bash(devenv tasks run herdr:inventory)",
+    "Bash(devenv tasks run herdr:inventory --show-output)",
+    "Bash(devenv tasks run herdr:inventory --input-json *)",
+    "Bash(devenv tasks run herdr:inspect --input-json *)",
+    "Bash(devenv tasks run herdr:await --input-json *)",
+    "Bash(devenv tasks run harness:session-summary --input-json *)",
+    "Bash(devenv tasks run gh:work --input-json *)",
+    "Bash(devenv tasks run git:recent --input-json *)",
+    "Bash(devenv tasks run work:status)",
+    "Bash(devenv tasks run work:status --show-output)",
     "Read"
+  ],
+  "ask": [
+    "Bash(devenv tasks run herdr:message --input-json *)"
   ],
   "deny": [
     "Edit",
     "Write",
     "NotebookEdit",
+    "Read(~/.ssh/**)",
+    "Read(/run/secrets/**)",
+    "Read(~/.config/sops/**)",
     "Bash(ssh*)",
+    "Bash(scp*)",
     "Bash(git push*)",
     "Bash(gh pr merge*)",
     "Bash(nixos-rebuild*)",
     "Bash(kubectl*)",
     "Bash(rm *)",
     "Bash(sudo*)"
-  ],
-  "ask": [
-    "Bash(devenv tasks run herdr:message*)",
-    "Bash(devenv tasks run herdr:await*)"
   ]
 }

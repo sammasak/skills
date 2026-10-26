@@ -6,7 +6,7 @@ positives:
   - "How old is the status you have for the acer worker?"
   - "List every herdr agent across my hosts and tell me which are blocked."
 hard_negatives:
-  - "Send the lenovo agent a message asking it to rebase its branch."  # → agent-handoff
+  - "Send the lenovo agent a message asking it to rebase its branch."  # → agent-orchestration
   - "Start a Claude session on acer-swift for the herman repo."  # → agent-orchestration
   - "Delegate these clippy fixes to the Pi worker."  # → pi-offload
 true_negatives:

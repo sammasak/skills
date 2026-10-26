@@ -23,7 +23,7 @@ _strip_wrappers() { # drop documented leading wrappers from one subcommand
   c="${c#"${c%%[![:space:]]*}"}"; c="${c%"${c##*[![:space:]]}"}"
   while :; do
     case "$c" in
-      "timeout "*) c="${c#timeout }"; c="${c#*[0-9] }" ;;
+      "timeout "*) c="${c#timeout }"; c="${c#* }" ;;
       "time "*|"nice "*|"nohup "*|"command "*|"builtin "*|"stdbuf "*) c="${c#* }" ;;
       *) break ;;
     esac
@@ -31,10 +31,19 @@ _strip_wrappers() { # drop documented leading wrappers from one subcommand
   printf '%s' "$c"
 }
 
-_split_parts() { # compound separators -> one part per line, plus $(...) bodies
-  local cmd="$1"
+_split_parts() { # compound separators -> one part per line, plus every $(...) and `...` body
+  local cmd="$1" rest
   printf '%s\n' "$cmd" | sed -E 's/\|\||&&|;|\|&|\||&/\n/g'
-  grep -oE '\$\(([^()]*)\)' <<<"$cmd" | sed -E 's/^\$\((.*)\)$/\1/' || true
+  rest="$cmd"
+  while grep -qE '\$\([^()]*\)' <<<"$rest"; do
+    grep -oE '\$\([^()]*\)' <<<"$rest" | sed -E 's/^\$\((.*)\)$/\1/'
+    rest=$(sed -E 's/\$\([^()]*\)/_/g' <<<"$rest")
+  done
+  grep -oE '`[^`]*`' <<<"$cmd" | tr -d '`' || true
+}
+
+_unallowable() { # substitutions, process substitution and redirections never auto-allow
+  [[ "$1" == *'`'* || "$1" == *'$('* || "$1" == *'<('* || "$1" == *'>('* || "$1" == *'>'* || "$1" == *'<'* ]]
 }
 
 permission_decision() { # <permissions.json> <tool> [command]
@@ -53,7 +62,8 @@ permission_decision() { # <permissions.json> <tool> [command]
     while IFS= read -r rule; do _rule_matches "$rule" "$tool" "" && { echo allow; return 0; }; done < <(jq -r '.allow[]?' "$file")
     echo none; return 0
   fi
-  [[ "$cmd" =~ (\&\&|\|\||;|\|)[[:space:]]*$ ]] && { echo none; return 0; }
+  [[ "$cmd" =~ (\&\&|\|\||;|\|\&|\||\&)[[:space:]]*$ ]] && { echo none; return 0; }
+  _unallowable "$cmd" && { echo none; return 0; }
   while IFS= read -r part; do
     part="$(_strip_wrappers "$part")"; [ -n "$part" ] || continue
     decided=0
