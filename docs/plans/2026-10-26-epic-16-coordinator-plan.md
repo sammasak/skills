@@ -190,7 +190,7 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 ## Slice 6 — Close-out
 
-- [ ] Tick #16 checkboxes only for verified items; link all PRs/SHAs/task exit codes; label activation state honestly; update this file's effort log; final comment with "what the owner must do next" list.
+- [x] Tick #16 checkboxes only for verified items; link all PRs/SHAs/task exit codes; label activation state honestly; update this file's effort log; final comment with "what the owner must do next" list. *(2026-10-26 19:58 UTC: #16 body ticked for verified items only (M3 canary, M4 two-harness, cross-host and activation stay open with the owner step named), label "deployment-ready pending owner activation" applied, close-out comment with the PR table, grades, late changes and the six owner steps)*
 
 ---
 
@@ -198,6 +198,7 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 | When (UTC) | Slice / task | Commit / PR | Tasks run (exit) | Outcome / limitation |
 |---|---|---|---|---|
+| 2026-10-26 19:58 | Slice 6 close-out | m4 781893e (code), #16 comment + label | skills:test (0) final | buildable scope complete; terminal state = deployment-ready pending owner activation; owner steps listed on #16 |
 | 2026-10-26 19:53 | #20 review 9 + confirmation, #103 confirmations ×2 | m4 dd1b62e, aa4c884; nixos 5bee015 | skills:test (0); nixos:lint-comments (0); nix eval lenovo (0; `%` rejected) | #103 9.5/10 confirmed; #20 9/10 then 9/10 on the fix commit: probe keeps the role denies, manifest held in memory, `listed()` without a pipe (SIGPIPE under pipefail found by review), control-char refusals pinned by reason; both PRs "nothing blocks owner merge" |
 | 2026-10-26 19:41 | #103 reviews 9 + 2 confirmations, #20 review 8 → fixes | nixos a4185a4, f5dc766; m1 4a04445; m2 43ee494; m4 96cff12+36d78e4 | skills:test (0) on m1, m2, m4; nixos:lint-comments (0); nix eval lenovo (0; type rejects `~/`, `$HOME`, spaces) | #103 at 9/10 (nothing blocking): strict 64-hex pin in the activation, rebuild reason echoed, launcher checks the key is readable; my `[ -r '~/…' ]` regression caught by a confirmation review → identityFile is absolute-only. #20: probe made attributable (window counting, probe-only Claude settings, reversed-flags form), newline-only workdir and empty-pin fail-open closed, manifest snapshot against swap; exit codes 0/1/3 |
 | 2026-10-26 19:25 | #18 delta review, #103 review 8, #20 review 7 → fixes; M1→M2→M4 merge-forward | m1 857ae18; m2 701829e; m4 4168f04+705bd67; nixos f33573f | skills:test (0) on m1, m2, m4; nixos:lint-comments (0); nix eval lenovo (0); predicate smoke (intact 0 / planted 1 / edited 1) | `-i`+IdentitiesOnly only ordered keys (a user `Host *` IdentityFile stayed a fallback) → `-F none` makes the dedicated key exclusive; one shared `hooks/lib/integrity-check.sh` for guard and activation; guard checks every workdir field (8 new negatives); parity script gained an enforcement probe (ENFORCED needs rc=2 in the guard log + no consumer call) and states the Codex sandbox cannot write fleet checkouts; reviews: #103 8.5 → 8.5 (not blocking), #20 8 → 8.5 (not blocking), #18 delta 9 |
