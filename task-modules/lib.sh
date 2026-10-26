@@ -20,12 +20,16 @@ observe_error() { emit "$(jq -cn --arg k "$1" --arg m "$2" --argjson x "$3" --ar
 # re-parses the words (quotes, newlines, $(..) in a handoff text stay literal),
 # and a worker's forced-command shim can check argv[0..2] before exec.
 REMOTE_RUNNER='mapfile -d "" a < <(printf %s "$1" | base64 -d); exec "${a[@]}"'
+# COORDINATOR_SSH_IDENTITY (set by the nixos launcher) pins the dedicated key on the command line, which no
+# ssh_config layer (a user `Host *` with its own IdentityFile or IdentitiesOnly no) can override.
 run_on() {
   local t="$1" target="$2"; shift 2
   if [ -z "$target" ]; then timeout -k 1 "$t" "$@"
   else
     local b64; b64=$(printf '%s\0' "$@" | base64 -w0)
-    timeout -k 1 "$t" "${COORDINATOR_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout="$t" -o StrictHostKeyChecking=accept-new -- "$target" "bash -c '$REMOTE_RUNNER' _ $b64"
+    local -a idopt=()
+    [ -n "${COORDINATOR_SSH_IDENTITY:-}" ] && idopt=(-i "$COORDINATOR_SSH_IDENTITY" -o IdentitiesOnly=yes)
+    timeout -k 1 "$t" "${COORDINATOR_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout="$t" -o StrictHostKeyChecking=accept-new "${idopt[@]}" -- "$target" "bash -c '$REMOTE_RUNNER' _ $b64"
   fi
 }
 # herdr_on <timeout_s> <ssh-target-or-empty> <herdr-args...>: the configured herdr

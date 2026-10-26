@@ -54,6 +54,10 @@ FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/remote.json"
 grep -q "^ssh .*-- lukas@lenovo.lan bash -c '.*' _ " "$FAKE_LOG" && grep -q '^herdr agent list' "$FAKE_LOG" && ok || bad "remote: expected ssh <target> herdr agent list"
 [ "$(jqr '.hosts[0].agents[0].approval_required')" = true ] && ok || bad "remote: blocked => approval_required"
 [ "$(jqr '.hosts[0].agents[0].host')" = lenovo ] && ok || bad "remote: host field"
+grep -q '^ssh .* -i ' "$FAKE_LOG" && bad "remote: no -i without COORDINATOR_SSH_IDENTITY" || ok
+# the dedicated key goes on the command line (beats any ~/.ssh/config layer); -- still separates it from the target
+: > "$FAKE_LOG"; COORDINATOR_SSH_IDENTITY=/keys/coordinator FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/remote.json"
+grep -q "^ssh .* -i /keys/coordinator -o IdentitiesOnly=yes -- lukas@lenovo.lan " "$FAKE_LOG" && [ "$CODE" -eq 0 ] && ok || bad "remote: expected -i <key> -o IdentitiesOnly=yes before --"
 
 # 4. one host times out: its error is reported, the other host still returned, exit 0, partial true
 fleet "$TMP/mixed.json" '[{"name":"acer-swift","ssh":null},{"name":"slow","ssh":"lukas@timeout.lan"}]'
