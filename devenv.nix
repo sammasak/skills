@@ -18,7 +18,7 @@ in
     ./agents/coordinator/tasks.nix
   ];
 
-  packages = [ pkgs.jq pkgs.yq-go pkgs.shellcheck pkgs.git pkgs.openssh ];
+  packages = [ pkgs.yq-go pkgs.shellcheck pkgs.git pkgs.openssh ];
 
   tasks = lib.listToAttrs (map (s: lib.nameValuePair "skills:test:${s.name}" { exec = s.script; }) suites)
     // {

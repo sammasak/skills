@@ -6,7 +6,9 @@ echo "ssh $*" >> "${FAKE_LOG:-/dev/null}"
 while [ $# -gt 0 ]; do case "$1" in -o|-p|-i|-l) shift 2 ;; -*) shift ;; *) break ;; esac; done
 target="$1"; shift
 case "$target" in
-  *timeout*) sleep 60; exit 0 ;;
+  *timeout*) exec sleep 60 ;;
   *down*) echo "ssh: connect to host $target port 22: Connection refused" >&2; exit 255 ;;
 esac
+# the remote command's first word is `herdr`; run our sibling fake, never the real one
+[ "$1" = herdr ] && { shift; set -- "$(dirname "$0")/herdr" "$@"; }
 FAKE_HERDR_LIST="${FAKE_REMOTE_LIST:-$FAKE_HERDR_LIST}" exec "$@"

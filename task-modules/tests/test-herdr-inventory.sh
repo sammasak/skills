@@ -1,108 +1,108 @@
 #!/usr/bin/env bash
-# Fixture tests for task-modules/bin/herdr-inventory (no real herdr/ssh).
-# Run: bash task-modules/tests/test-herdr-inventory.sh
+# Drives the real herdr:list:<host> / herdr:inventory tasks with fixture fleets and
+# fake ssh/herdr injected through devenv options. Run from the repo root inside
+# the devenv: bash task-modules/tests/test-herdr-inventory.sh
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 FX="$ROOT/task-modules/fixtures"
-BIN="$ROOT/task-modules/bin/herdr-inventory"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-export PATH="$FX/bin:$PATH"
 export FAKE_LOG="$TMP/calls.log"
-export COORDINATOR_STATE_DIR="$TMP/state"
 PASS=0; FAIL=0
 ok() { PASS=$((PASS+1)); }
 bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
-fleet() { # <file> <hosts-json>
-  printf '{"schema_version":1,"hosts":%s,"repos":[]}' "$2" > "$1"
+fleet() { printf '{"schema_version":1,"hosts":%s,"repos":[]}' "$2" > "$1"; }
+# run <fleet-file> [extra devenv args...]: OUT = herdr:inventory output, CODE = devenv exit
+run() {
+  local f="$1"; shift
+  local log="$TMP/run.log"
+  devenv tasks run herdr:inventory --option coordinator.fleetFile:path "$f" \
+    --option coordinator.sshCommand:string "$FX/bin/ssh" --option coordinator.herdrCommand:string "$FX/bin/herdr" \
+    --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 1 --show-output "$@" > "$log" 2>&1; CODE=$?
+  OUT=$(grep -oE '\{"schema_version":1,"task":"herdr:inventory".*' "$log" | tail -1)
+  [ -n "$OUT" ] || OUT='{}'
 }
-run() { # sets OUT and CODE
-  OUT="$("$BIN" "$@" 2>"$TMP/err")"; CODE=$?
-}
+jqr() { jq -r "$1" <<<"$OUT"; }
 
 # 1. local host only: both fixture agents become records
 fleet "$TMP/local.json" '[{"name":"acer-swift","ssh":null}]'
-FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" run --fleet "$TMP/local.json"
-[ "$CODE" -eq 0 ] && ok || bad "local: exit $CODE ($(cat "$TMP/err"))"
-[ "$(jq -r '.schema_version' <<<"$OUT")" = "1" ] && ok || bad "local: schema_version"
-[ "$(jq -r '.task' <<<"$OUT")" = "herdr:inventory" ] && ok || bad "local: task name"
-[ "$(jq '.hosts[0].agents|length' <<<"$OUT")" = "2" ] && ok || bad "local: expected 2 agents"
-[ "$(jq -r '.hosts[0].agents[0].agent_id' <<<"$OUT")" = "wF:p1" ] && ok || bad "local: agent_id"
-[ "$(jq -r '.hosts[0].agents[0].observed_state' <<<"$OUT")" = "working" ] && ok || bad "local: observed_state"
-[ "$(jq -r '.hosts[0].agents[0].harness' <<<"$OUT")" = "claude" ] && ok || bad "local: harness"
-[ "$(jq -r '.hosts[0].agents[0].session_id' <<<"$OUT")" = "11111111-1111-4111-8111-111111111111" ] && ok || bad "local: session_id"
-[ "$(jq -r '.hosts[0].agents[0].task_ref' <<<"$OUT")" = "#16" ] && ok || bad "local: task_ref from title"
-[ "$(jq -r '.hosts[0].agents[1].observed_state' <<<"$OUT")" = "done" ] && ok || bad "local: second state"
-[ "$(jq -r '.hosts[0].agents[1].approval_required' <<<"$OUT")" = "false" ] && ok || bad "local: done is not approval_required"
-[ "$(jq -r '.hosts[0].agents[0].stale' <<<"$OUT")" = "false" ] && ok || bad "local: fresh read is not stale"
-[ "$(jq -r '.partial' <<<"$OUT")" = "false" ] && ok || bad "local: partial"
+FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" run "$TMP/local.json"
+[ "$CODE" -eq 0 ] && ok || bad "local: exit $CODE"
+[ "$(jqr .schema_version)" = 1 ] && ok || bad "local: schema_version"
+[ "$(jqr '.hosts[0].agents|length')" = 2 ] && ok || bad "local: 2 agents ($OUT)"
+[ "$(jqr '.hosts[0].agents[0].agent_id')" = "wF:p1" ] && ok || bad "local: agent_id"
+[ "$(jqr '.hosts[0].agents[0].observed_state')" = working ] && ok || bad "local: observed_state"
+[ "$(jqr '.hosts[0].agents[0].harness')" = claude ] && ok || bad "local: harness"
+[ "$(jqr '.hosts[0].agents[0].session_id')" = "11111111-1111-4111-8111-111111111111" ] && ok || bad "local: session_id"
+[ "$(jqr '.hosts[0].agents[0].task_ref')" = "#16" ] && ok || bad "local: task_ref"
+[ "$(jqr '.hosts[0].agents[1].observed_state')" = done ] && ok || bad "local: second state"
+[ "$(jqr '.hosts[0].agents[1].approval_required')" = false ] && ok || bad "local: done is not approval_required"
+[ "$(jqr '.hosts[0].agents[0].stale')" = false ] && ok || bad "local: fresh read not stale"
+[ "$(jqr .partial)" = false ] && ok || bad "local: partial"
 grep -q '^ssh' "$FAKE_LOG" && bad "local: ssh must not be called for a local host" || ok
 
 # 2. state_age_s grows while state_change_seq is unchanged; resets when it changes
 sleep 1
-FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" run --fleet "$TMP/local.json"
-age=$(jq -r '.hosts[0].agents[0].state_age_s' <<<"$OUT")
-[ "$age" -ge 1 ] 2>/dev/null && ok || bad "age: expected >=1, got $age"
+FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" run "$TMP/local.json"
+age=$(jqr '.hosts[0].agents[0].state_age_s'); [ "$age" -ge 1 ] 2>/dev/null && ok || bad "age: expected >=1, got $age"
 jq '.result.agents[0].state_change_seq = 999' "$FX/herdr/local-two-agents.json" > "$TMP/changed.json"
-FAKE_HERDR_LIST="$TMP/changed.json" run --fleet "$TMP/local.json"
-[ "$(jq -r '.hosts[0].agents[0].state_age_s' <<<"$OUT")" = "0" ] && ok || bad "age: expected reset to 0"
+FAKE_HERDR_LIST="$TMP/changed.json" run "$TMP/local.json"
+[ "$(jqr '.hosts[0].agents[0].state_age_s')" = 0 ] && ok || bad "age: expected reset to 0"
 
 # 3. remote host over fake ssh; blocked agent is approval_required
 fleet "$TMP/remote.json" '[{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'
-FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run --fleet "$TMP/remote.json"
-[ "$CODE" -eq 0 ] && ok || bad "remote: exit $CODE ($(cat "$TMP/err"))"
+FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/remote.json"
+[ "$CODE" -eq 0 ] && ok || bad "remote: exit $CODE"
 grep -q '^ssh .*lukas@lenovo.lan herdr agent list' "$FAKE_LOG" && ok || bad "remote: expected ssh <target> herdr agent list"
-[ "$(jq -r '.hosts[0].agents[0].approval_required' <<<"$OUT")" = "true" ] && ok || bad "remote: blocked => approval_required"
-[ "$(jq -r '.hosts[0].agents[0].host' <<<"$OUT")" = "lenovo" ] && ok || bad "remote: host field"
+[ "$(jqr '.hosts[0].agents[0].approval_required')" = true ] && ok || bad "remote: blocked => approval_required"
+[ "$(jqr '.hosts[0].agents[0].host')" = lenovo ] && ok || bad "remote: host field"
 
-# 4. one host times out: its error is reported, the other host is still returned, exit 0, partial true
+# 4. one host times out: its error is reported, the other host still returned, exit 0, partial true
 fleet "$TMP/mixed.json" '[{"name":"acer-swift","ssh":null},{"name":"slow","ssh":"lukas@timeout.lan"}]'
-FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" run --fleet "$TMP/mixed.json" --timeout-s 1
+FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" run "$TMP/mixed.json"
 [ "$CODE" -eq 0 ] && ok || bad "timeout: exit $CODE"
-[ "$(jq -r '.hosts[1].error.kind' <<<"$OUT")" = "timeout" ] && ok || bad "timeout: error.kind ($(jq -c '.hosts[1]' <<<"$OUT"))"
-[ "$(jq -r '.hosts[1].reachable' <<<"$OUT")" = "false" ] && ok || bad "timeout: reachable false"
-[ "$(jq '.hosts[0].agents|length' <<<"$OUT")" = "2" ] && ok || bad "timeout: healthy host still present"
-[ "$(jq -r '.partial' <<<"$OUT")" = "true" ] && ok || bad "timeout: partial true"
+[ "$(jqr '.hosts[1].error.kind')" = timeout ] && ok || bad "timeout: error.kind ($(jqr '.hosts[1]'))"
+[ "$(jqr '.hosts[1].reachable')" = false ] && ok || bad "timeout: reachable false"
+[ "$(jqr '.hosts[0].agents|length')" = 2 ] && ok || bad "timeout: healthy host still present"
+[ "$(jqr .partial)" = true ] && ok || bad "timeout: partial true"
 
-# 5. unreachable host falls back to its last snapshot, marked stale
+# 5. unreachable host falls back to its last snapshot, marked stale; too old => dropped
 fleet "$TMP/down.json" '[{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'
-FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run --fleet "$TMP/down.json"
+FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/down.json"
 fleet "$TMP/down.json" '[{"name":"lenovo","ssh":"lukas@down.lan"}]'
-run --fleet "$TMP/down.json"
-[ "$CODE" -eq 2 ] && ok || bad "down: all hosts failed should exit 2, got $CODE"
-[ "$(jq -r '.hosts[0].error.kind' <<<"$OUT")" = "unreachable" ] && ok || bad "down: error.kind"
-[ "$(jq -r '.hosts[0].agents[0].stale' <<<"$OUT")" = "true" ] && ok || bad "down: snapshot agents are stale"
-[ "$(jq -r '.hosts[0].agents[0].observed_state' <<<"$OUT")" = "blocked" ] && ok || bad "down: snapshot state kept"
-[ "$(jq -r '.hosts[0].agents[0].snapshot_age_s' <<<"$OUT")" -ge 0 ] 2>/dev/null && ok || bad "down: snapshot_age_s present"
-sleep 1; run --fleet "$TMP/down.json" --max-age-s 0
-[ "$(jq '.hosts[0].agents|length' <<<"$OUT")" = "0" ] && ok || bad "down: snapshot older than max-age is dropped"
-grep -q 'discarded' <<<"$(jq -r '.hosts[0].error.message' <<<"$OUT")" && ok || bad "down: discard noted in error"
+run "$TMP/down.json"
+[ "$CODE" -ne 0 ] && ok || bad "down: all hosts failed must fail the task"
+[ "$(jqr '.hosts[0].error.kind')" = unreachable ] && ok || bad "down: error.kind"
+[ "$(jqr '.hosts[0].agents[0].stale')" = true ] && ok || bad "down: snapshot agents are stale"
+[ "$(jqr '.hosts[0].agents[0].observed_state')" = blocked ] && ok || bad "down: snapshot state kept"
+[ "$(jqr '.hosts[0].agents[0].snapshot_age_s')" -ge 0 ] 2>/dev/null && ok || bad "down: snapshot_age_s present"
+sleep 1; run "$TMP/down.json" --option coordinator.maxAgeSeconds:int 0
+[ "$(jqr '.hosts[0].agents|length')" = 0 ] && ok || bad "down: snapshot older than max age is dropped"
+jqr '.hosts[0].error.message' | grep -q discarded && ok || bad "down: discard noted in error"
 
 # 6. malformed herdr output is an error, not a crash
 fleet "$TMP/bad.json" '[{"name":"acer-swift","ssh":null}]'
-FAKE_HERDR_LIST="$FX/herdr/malformed.json" run --fleet "$TMP/bad.json"
-[ "$CODE" -eq 2 ] && ok || bad "malformed: exit $CODE"
-[ "$(jq -r '.hosts[0].error.kind' <<<"$OUT")" = "malformed" ] && ok || bad "malformed: error.kind"
+FAKE_HERDR_LIST="$FX/herdr/malformed.json" run "$TMP/bad.json"
+[ "$CODE" -ne 0 ] && ok || bad "malformed: must fail"
+[ "$(jqr '.hosts[0].error.kind')" = malformed ] && ok || bad "malformed: error.kind"
 
-# 7. invalid fleet entries are refused before any call
+# 7. invalid fleet entries are refused at evaluation, before any call
 : > "$FAKE_LOG"
 fleet "$TMP/inj.json" '[{"name":"evil; rm -rf /","ssh":"lukas@x"}]'
-run --fleet "$TMP/inj.json"
-[ "$CODE" -eq 3 ] && ok || bad "inject: exit $CODE"
+run "$TMP/inj.json"
+[ "$CODE" -ne 0 ] && ok || bad "inject: must fail evaluation"
+grep -q 'does not match' "$TMP/run.log" && ok || bad "inject: assertion message expected"
 [ -s "$FAKE_LOG" ] && bad "inject: no ssh/herdr call may happen" || ok
 fleet "$TMP/inj2.json" '[{"name":"lenovo","ssh":"lukas@h $(id)"}]'
-run --fleet "$TMP/inj2.json"
-[ "$CODE" -eq 3 ] && ok || bad "inject2: exit $CODE"
-run --fleet "$TMP/does-not-exist.json"
-[ "$CODE" -eq 3 ] && ok || bad "missing fleet: exit $CODE"
-printf '{"schema_version":2,"hosts":[]}' > "$TMP/v2.json"; run --fleet "$TMP/v2.json"
-[ "$CODE" -eq 3 ] && ok || bad "wrong schema_version: exit $CODE"
+run "$TMP/inj2.json"; [ "$CODE" -ne 0 ] && ok || bad "inject2: must fail evaluation"
+printf '{"schema_version":2,"hosts":[]}' > "$TMP/v2.json"; run "$TMP/v2.json"
+[ "$CODE" -ne 0 ] && ok || bad "wrong schema_version: must fail"
+grep -q 'schema_version must be 1' "$TMP/run.log" && ok || bad "wrong schema_version: message"
 
-# 8. a host limited to a subset still gets only that host
+# 8. the graph contains exactly the fleet's hosts
 fleet "$TMP/two.json" '[{"name":"acer-swift","ssh":null},{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'
-FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run --fleet "$TMP/two.json" --host lenovo
-[ "$(jq '.hosts|length' <<<"$OUT")" = "1" ] && ok || bad "subset: one host"
-[ "$(jq -r '.hosts[0].host' <<<"$OUT")" = "lenovo" ] && ok || bad "subset: lenovo"
-run --fleet "$TMP/two.json" --host nothere
-[ "$CODE" -eq 3 ] && ok || bad "subset: unknown host exit 3, got $CODE"
+listed=$(devenv tasks list --option coordinator.fleetFile:path "$TMP/two.json" 2>/dev/null | grep -oE 'herdr:list:[a-z-]+' | sort -u | paste -sd,)
+[ "$listed" = "herdr:list:acer-swift,herdr:list:lenovo" ] && ok || bad "graph: expected two list tasks, got '$listed'"
+listed=$(devenv tasks list --option coordinator.fleetFile:path "$FX/fleet-empty.json" 2>/dev/null | grep -cE 'herdr:list:')
+[ "$listed" = 0 ] && ok || bad "graph: empty fleet has no list tasks"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]
