@@ -71,7 +71,7 @@ FAKE_HERDR_PROMPT=blocked run herdr:message "{\"handoff_id\":\"$id3\",\"confirm\
 
 # await
 FAKE_HERDR_STATE=done run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
-[ "$CODE" -eq 0 ] && [ "$(jqr .herdr_state)" = done ] && [ "$(jqr .worker_done)" = true ] && [ "$(jqr .accepted)" = false ] && ok || bad "await done: $OUT"
+[ "$CODE" -eq 0 ] && [ "$(jqr .herdr_state)" = "done" ] && [ "$(jqr .worker_done)" = true ] && [ "$(jqr .accepted)" = false ] && ok || bad "await done: $OUT"
 grep -q 'herdr agent wait wA:p2 --until idle --until done --until blocked --timeout 5000' "$FAKE_LOG" && ok || bad "await: argv"
 FAKE_HERDR_STATE=blocked run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
 [ "$(jqr .needs_owner)" = true ] && [ "$(jqr .worker_done)" = false ] && ok || bad "await blocked"
