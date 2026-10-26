@@ -98,7 +98,7 @@ in
       '';
     };
     "herdr:message" = {
-      description = "ACT: send a confirmed coord:handoff draft to its agent; audit log, duplicate detection, never to a blocked agent.";
+      description = "ACT: send a confirmed coord:handoff draft to its agent; audit log, duplicate detection, never to a blocked or changed agent.";
       input = { handoff_id = null; confirm = null; resend = null; };
       exec = ''
         ${cfg.prelude}
@@ -107,83 +107,117 @@ in
         [[ "$id" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "handoff_id must be a 12-hex coord:handoff id" "$ctx"
         draft="${cfg.stateDir}/handoffs/$id.json"
         [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"
-        host=$(jq -r .host "$draft"); agent=$(jq -r .agent_id "$draft"); text=$(jq -r .text "$draft")
+        host=$(jq -r '.host // empty' "$draft"); agent=$(jq -r '.agent_id // empty' "$draft"); text=$(jq -r '.text // empty' "$draft"); ref=$(jq -r '.task_ref // empty' "$draft"); want_session=$(jq -r '.session_id // empty' "$draft")
+        [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] || fail 3 invalid_input "draft $id is incomplete" "$ctx"
+        # the id is content-addressed: re-derive it so the text sent is the text the owner confirmed
+        [ "$(printf '%s|%s|%s|%s|%s' "$host" "$agent" "$want_session" "$ref" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
         [ "$confirm" = "$host/$agent" ] || fail 3 not_confirmed "confirm must equal the draft target '$host/$agent' (got '$confirm')" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$ctx"
         ${cfg.hostCase}
         audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
-        prior=$(jq -c --arg i "$id" 'select(.handoff_id == $i and .phase == "attempt")' "$audit" | tail -1)
-        if [ -n "$prior" ]; then
-          pid=$(jq -r .audit_id <<<"$prior")
-          [ "$resend" = "$pid" ] || fail 3 duplicate "handoff $id was already sent (audit $pid, outcome $(jq -r --arg a "$pid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)); pass resend=\"$pid\" to send again" "$ctx"
-        fi
+        exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another herdr:message holds the audit lock" "$ctx"
+        prior=$(jq -c --arg i "$id" 'select(.handoff_id == $i and .phase == "attempt")' "$audit" 2>/dev/null | tail -1) \
+          || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"
+        jq -e . "$audit" >/dev/null 2>&1 || [ ! -s "$audit" ] || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"
         rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>/dev/null) || rc=$?
         [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get: $(rc_kind $rc) for $host/$agent (exit $rc)" "$ctx"
-        state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$st"); seq=$(jq -r '.result.agent.state_change_seq // 0' <<<"$st")
-        [ "$state" != blocked ] || fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx"
-        aid=$(printf '%s|%s' "$id" "$(now_iso)" | sha256sum | cut -c1-12); at=$(now_iso)
-        jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" \
-          '{audit_id:$a, handoff_id:$i, phase:"attempt", host:$h, agent_id:$ag, at:$at, confirm:$c, state_before:$s, seq_before:$q}' >> "$audit"
-        rc=0; herdr_on ${toString cfg.messageTimeoutSeconds} "$target" agent prompt "$agent" "$text" >/dev/null 2>"${cfg.stateDir}/last-prompt.err" || rc=$?
-        case "$rc" in
-          0) outcome=delivered ;;
-          124) outcome=unknown_delivery ;;
-          *) outcome=$(jq -r '.error.code // "command_failed"' "${cfg.stateDir}/last-prompt.err" 2>/dev/null || echo command_failed) ;;
-        esac
-        jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" --argjson rc "$rc" '{audit_id:$a, handoff_id:$i, phase:"outcome", at:$at, outcome:$o, exit:$rc}' >> "$audit"
-        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" \
-          '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, agent_id:$ag, sent_at:$at, state_before:$s, seq_before:$q, outcome:$o,
+        state=$(jq -r '.result.agent.agent_status // empty' <<<"$st" 2>/dev/null || true); seq=$(jq -r '.result.agent.state_change_seq // empty' <<<"$st" 2>/dev/null || true); session=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
+        case "$state" in idle|done|working) ;; blocked) fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx" ;;
+          *) fail 2 agent_state_unknown "herdr agent get returned no usable state for $host/$agent; not sending" "$ctx" ;; esac
+        [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
+        if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then
+          fail 2 agent_changed "pane $host/$agent now runs session ''${session:-?} (draft was for $want_session); the agent restarted or the pane was reused" "$ctx"
+        fi
+        if [ -n "$prior" ]; then
+          pid=$(jq -r .audit_id <<<"$prior"); pseq=$(jq -r '.seq_before // 0' <<<"$prior")
+          poutcome=$(jq -r --arg a "$pid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)
+          [ "$resend" = "$pid" ] || fail 3 duplicate "handoff $id was already sent (audit $pid, outcome ''${poutcome:-interrupted}); only the owner can decide to send it again (resend=\"$pid\")" "$ctx"
+          if [ "$poutcome" != delivered ] && [ "$seq" -gt "$pseq" ]; then
+            fail 2 probably_received "agent state advanced ($pseq -> $seq) after the earlier attempt $pid with outcome ''${poutcome:-interrupted}; it probably received the message. Inspect with herdr:inspect instead of resending" "$ctx"
+          fi
+        fi
+        aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
+        jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" \
+          '{audit_id:$a, handoff_id:$i, phase:"attempt", host:$h, agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, state_before:$s, seq_before:$q}' >> "$audit" \
+          || fail 2 audit_failed "could not write the attempt record; not sending" "$ctx"
+        outcome=interrupted
+        trap 'jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" "{audit_id:\$a, handoff_id:\$i, phase:\"outcome\", at:\$at, outcome:\$o}" >> "$audit"' EXIT
+        errf=$(mktemp); rc=0
+        herdr_on ${toString cfg.messageTimeoutSeconds} "$target" agent prompt "$agent" "$text" >/dev/null 2>"$errf" || rc=$?
+        if [ "$rc" -eq 0 ]; then outcome=delivered
+        else code=$(jq -rs 'if length == 1 then (.[0].error.code // empty) else empty end' "$errf" 2>/dev/null)
+          case "$code" in agent_blocked|agent_prompt_stalled|agent_not_found) outcome=$code ;; *) outcome=unknown_delivery ;; esac
+        fi
+        rm -f "$errf"
+        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" \
+          '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, agent_id:$ag, session_id:(if $ses == "" then null else $ses end), sent_at:$at, state_before:$s, seq_before:$q, outcome:$o,
             receipt:($o == "delivered"), worker_done:false, accepted:false,
-            error:(if $o == "delivered" then null elif $o == "unknown_delivery" then {kind:"timeout", message:"prompt timed out; delivery unknown, do not resend blindly (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt failed"} end)}')
-        [ "$outcome" = delivered ] && jq -c '.sent = true' "$draft" > "$draft.tmp" && mv "$draft.tmp" "$draft"
+            error:(if $o == "delivered" then null elif $o == "unknown_delivery" then {kind:"unknown_delivery", message:"prompt did not return success; delivery unknown. Inspect the pane; only the owner decides on a resend (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt refused: " + $o} end)}')
         emit "$rec"
         [ "$outcome" = delivered ] || exit 2
       '';
     };
 
     "herdr:await" = {
-      description = "Bounded wait for an agent's turn to END: first observes the turn start (working/blocked or a state_change_seq advance), then idle/done/blocked. Reports herdr_state only, never acceptance.";
-      input = { host = null; agent_id = null; timeout_s = 120; since_seq = null; start_timeout_s = 20; };
+      description = "Bounded wait for an agent's turn to END after a message: observes the turn start (working/blocked or a state_change_seq advance past since_seq), then idle/done/blocked. Reports herdr_state only, never acceptance.";
+      input = { audit_id = null; host = null; agent_id = null; since_seq = null; timeout_s = 120; start_timeout_s = 20; };
       exec = ''
         ${cfg.prelude}
-        host=$(input .host); agent=$(input .agent_id); tmo=$(input .timeout_s); since=$(input .since_seq); start_t=$(input .start_timeout_s)
-        ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:await",host:$h,agent_id:$a}')
-        [ -n "$host" ] && [ -n "$agent" ] || fail 3 invalid_input "host and agent_id are required" "$ctx"
+        aid=$(input .audit_id); host=$(input .host); agent=$(input .agent_id); tmo=$(input .timeout_s); since=$(input .since_seq); start_t=$(input .start_timeout_s); want_session=""
+        audit="${cfg.stateDir}/audit.jsonl"
+        if [ -n "$aid" ]; then
+          [[ "$aid" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "audit_id must be 12 hex" '{"task":"herdr:await"}'
+          att=$(jq -c --arg a "$aid" 'select(.audit_id == $a and .phase == "attempt")' "$audit" 2>/dev/null | tail -1)
+          [ -n "$att" ] || fail 3 invalid_input "no herdr:message attempt with audit_id $aid" '{"task":"herdr:await"}'
+          host=$(jq -r .host <<<"$att"); agent=$(jq -r .agent_id <<<"$att"); since=$(jq -r '.seq_before // empty' <<<"$att"); want_session=$(jq -r '.session_id // empty' <<<"$att")
+        fi
+        ctx=$(jq -cn --arg h "$host" --arg a "$agent" --arg aid "$aid" '{task:"herdr:await",host:$h,agent_id:$a,audit_id:(if $aid == "" then null else $aid end)}')
+        [ -n "$host" ] && [ -n "$agent" ] || fail 3 invalid_input "audit_id, or host and agent_id, are required" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$ctx"
         [[ "$tmo" =~ ^[0-9]+$ ]] && [ "$tmo" -ge 1 ] && [ "$tmo" -le 1800 ] || fail 3 invalid_input "timeout_s must be 1..1800" "$ctx"
-        [[ "$start_t" =~ ^[0-9]+$ ]] || start_t=20; [ "$start_t" -lt "$tmo" ] || start_t=$tmo
+        [[ "$start_t" =~ ^[0-9]+$ ]] && [ "$start_t" -ge 1 ] || start_t=20; [ "$start_t" -lt "$tmo" ] || start_t=$tmo
         [ -z "$since" ] || [[ "$since" =~ ^[0-9]+$ ]] || fail 3 invalid_input "since_seq must be an integer" "$ctx"
         ${cfg.hostCase}
         at=$(now_iso); deadline=$(( $(now_epoch) + tmo ))
-        # phase 1: the turn must have started. An agent that is still idle at the same state_change_seq has not seen the prompt yet.
+        parse_agent() { state=$(jq -r '.result.agent.agent_status // empty' <<<"$1" 2>/dev/null || true); seq=$(jq -r '.result.agent.state_change_seq // empty' <<<"$1" 2>/dev/null || true); session=$(jq -r '.result.agent.agent_session.value // empty' <<<"$1" 2>/dev/null || true); }
+        herdr_err() { jq -rs 'if length == 1 then (.[0].error.code // empty) else empty end' "$1" 2>/dev/null; }
         rc=0; st=$(herdr_on ${t} "$target" agent get "$agent" 2>/dev/null) || rc=$?
-        [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get: $(rc_kind $rc) (exit $rc)" "$ctx"
-        state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$st"); seq=$(jq -r '.result.agent.state_change_seq // 0' <<<"$st")
+        [ "$rc" -eq 0 ] || fail 2 agent_missing "herdr agent get: $(rc_kind $rc) for $host/$agent (exit $rc); the agent may have exited" "$ctx"
+        parse_agent "$st"
+        case "$state" in idle|done|working|blocked|unknown) ;; *) fail 2 agent_state_unknown "herdr agent get returned no usable state" "$ctx" ;; esac
+        [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq" "$ctx"
+        [ -z "$want_session" ] || [ "$session" = "$want_session" ] || fail 2 agent_changed "pane $host/$agent now runs session ''${session:-?} (message went to $want_session)" "$ctx"
+        if [ -n "$since" ] && [ "$seq" -lt "$since" ]; then
+          fail 2 agent_restarted "state_change_seq went backwards ($since -> $seq): the agent or Herdr server restarted after the message" \
+            "$(jq -cn --argjson c "$ctx" --arg s "$state" --argjson q "$seq" '$c + {herdr_state:$s, state_change_seq:$q, turn_observed:false, reached:false, accepted:false}')"
+        fi
         turn_seen=false
         if [ "$state" = working ] || [ "$state" = blocked ] || { [ -n "$since" ] && [ "$seq" -gt "$since" ]; }; then turn_seen=true
         else
-          rc=0; res=$(herdr_on $((start_t + 5)) "$target" agent wait "$agent" --until working --until blocked --timeout $((start_t * 1000)) 2>/dev/null) || rc=$?
-          if [ "$rc" -eq 0 ]; then turn_seen=true; state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$res")
-          elif [ "$rc" -eq 1 ] || [ "$rc" -eq 124 ]; then
-            fail 2 no_turn_observed "agent $host/$agent stayed $state for ''${start_t}s after the prompt; the message may not have been received" \
-              "$(jq -cn --arg h "$host" --arg a "$agent" --arg s "$state" --argjson q "$seq" '{task:"herdr:await",host:$h,agent_id:$a,herdr_state:$s,state_change_seq:$q,turn_observed:false,reached:false,accepted:false}')"
+          errf=$(mktemp); rc=0; res=$(herdr_on $((start_t + 5)) "$target" agent wait "$agent" --until working --until blocked --timeout $((start_t * 1000)) 2>"$errf") || rc=$?
+          code=$(herdr_err "$errf"); rm -f "$errf"
+          if [ "$rc" -eq 0 ]; then turn_seen=true; parse_agent "$res"
+          elif [ "$code" = timeout ] || [ "$rc" -eq 124 ]; then
+            fail 2 no_turn_observed "agent $host/$agent stayed $state for ''${start_t}s after the prompt. Do not resend: inspect the pane with herdr:inspect first" \
+              "$(jq -cn --argjson c "$ctx" --arg s "$state" --argjson q "$seq" '$c + {herdr_state:$s, state_change_seq:$q, turn_observed:false, reached:false, accepted:false}')"
+          elif [ -n "$code" ]; then fail 2 "$code" "herdr agent wait refused: $code (agent gone?)" "$ctx"
           else fail 2 "$(rc_kind $rc)" "herdr agent wait: $(rc_kind $rc) (exit $rc)" "$ctx"; fi
         fi
-        # phase 2: wait for the turn to end
         if [ "$state" != blocked ]; then
           remaining=$(( deadline - $(now_epoch) )); [ "$remaining" -ge 1 ] || remaining=1
-          rc=0; res=$(herdr_on $((remaining + 5)) "$target" agent wait "$agent" --until idle --until done --until blocked --timeout $((remaining * 1000)) 2>/dev/null) || rc=$?
-          case "$rc" in
-            0) state=$(jq -r '.result.agent.agent_status // "unknown"' <<<"$res") ;;
-            1|124) fail 2 timeout "agent $host/$agent did not finish its turn within ''${tmo}s" \
-                     "$(jq -cn --arg h "$host" --arg a "$agent" --argjson t "$tmo" '{task:"herdr:await",host:$h,agent_id:$a,timeout_s:$t,turn_observed:true,reached:false,accepted:false}')" ;;
-            *) fail 2 "$(rc_kind $rc)" "herdr agent wait: $(rc_kind $rc) (exit $rc)" "$ctx" ;;
-          esac
+          errf=$(mktemp); rc=0; res=$(herdr_on $((remaining + 5)) "$target" agent wait "$agent" --until idle --until done --until blocked --timeout $((remaining * 1000)) 2>"$errf") || rc=$?
+          code=$(herdr_err "$errf"); rm -f "$errf"
+          if [ "$rc" -eq 0 ]; then parse_agent "$res"
+          elif [ "$code" = timeout ] || [ "$rc" -eq 124 ]; then
+            fail 2 timeout "agent $host/$agent did not finish its turn within ''${tmo}s" \
+              "$(jq -cn --argjson c "$ctx" --argjson tm "$tmo" '$c + {timeout_s:$tm, turn_observed:true, reached:false, accepted:false}')"
+          elif [ -n "$code" ]; then fail 2 "$code" "herdr agent wait refused: $code (agent gone?)" "$ctx"
+          else fail 2 "$(rc_kind $rc)" "herdr agent wait: $(rc_kind $rc) (exit $rc)" "$ctx"; fi
         fi
-        emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg s "$state" --argjson t "$tmo" --argjson seen "$turn_seen" \
-          '{schema_version:1, task:"herdr:await", host:$h, agent_id:$a, started_at:$at, timeout_s:$t, herdr_state:$s, turn_observed:$seen, reached:true,
+        emit "$(jq -cn --argjson c "$ctx" --arg at "$at" --arg s "$state" --argjson tm "$tmo" --argjson seen "$turn_seen" \
+          '$c + {schema_version:1, started_at:$at, timeout_s:$tm, herdr_state:$s, turn_observed:$seen, reached:true,
             worker_done:($s == "idle" or $s == "done"), needs_owner:($s == "blocked"), accepted:false,
-            note:"accepted is decided by work:status evidence, never by this task", error:null}')"
+            note:"accepted is decided by work:status evidence, never by this task", error:null}' | jq -c '{schema_version:1} + .')"
       '';
     };
   };

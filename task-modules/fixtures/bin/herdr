@@ -12,14 +12,17 @@ state() {
   else printf '%s' "${FAKE_HERDR_STATE:-idle}"; fi
 }
 want_state() { local s="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = --until ] && [ "$2" = "$s" ] && return 0; shift; done; return 1; }
-agent_info() { printf '{"id":"cli:agent:%s","result":{"agent":{"pane_id":"%s","agent":"claude","agent_status":"%s","state_change_seq":%s,"revision":3},"type":"agent_info"}}\n' "$1" "$2" "$3" "$4"; }
+agent_info() { printf '{"id":"cli:agent:%s","result":{"agent":{"pane_id":"%s","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"%s"},"agent_status":"%s","state_change_seq":%s,"revision":3},"type":"agent_info"}}\n' "$1" "$2" "${FAKE_HERDR_SESSION:-sess-1}" "$3" "$4"; }
 case "$1 $2" in
   "agent list") cat "${FAKE_HERDR_LIST:?}" ;;
   "agent read") # like herdr 0.9.5: <TARGET> comes first; an option or `--` in its place is "unknown option"
     case "$3" in -*|"") echo "unknown option: ${3:-<none>}" >&2; exit 2 ;; esac
     cat "${FAKE_HERDR_READ:?}" ;;
-  "agent get") agent_info get "$3" "$(state)" "${FAKE_HERDR_SEQ:-7}" ;;
-  "agent prompt") case "${FAKE_HERDR_PROMPT:-ok}" in
+  "agent get") [ "${FAKE_HERDR_MISSING:-}" = "$3" ] && { echo '{"error":{"code":"agent_not_found","message":"no such agent"}}' >&2; exit 1; }
+    [ -n "${FAKE_HERDR_GET_RAW:-}" ] && { printf '%s\n' "$FAKE_HERDR_GET_RAW"; exit 0; }
+    agent_info get "$3" "$(state)" "${FAKE_HERDR_SEQ:-7}" ;;
+  "agent prompt") [ -n "${FAKE_PROMPT_OUT:-}" ] && printf '%s' "$4" > "$FAKE_PROMPT_OUT"
+    case "${FAKE_HERDR_PROMPT:-ok}" in
       ok) printf '{"id":"cli:agent:prompt","result":{"type":"agent_prompt","delivered":true}}\n' ;;
       blocked) echo '{"error":{"code":"agent_blocked","message":"agent is blocked"}}' >&2; exit 1 ;;
       stalled) echo '{"error":{"code":"agent_prompt_stalled","message":"no activity within 5000ms"}}' >&2; exit 1 ;;
@@ -27,6 +30,7 @@ case "$1 $2" in
     esac ;;
   "agent wait") [ -n "${FAKE_HERDR_WAIT_SLEEP:-}" ] && sleep "$FAKE_HERDR_WAIT_SLEEP"
     s=$(state)
+    [ "${FAKE_HERDR_MISSING:-}" = "$3" ] && { echo '{"error":{"code":"agent_not_found","message":"no such agent"}}' >&2; exit 1; }
     if [ "${FAKE_HERDR_WAIT:-reached}" = timeout ] || ! want_state "$s" "$@"; then echo '{"error":{"code":"timeout","message":"state not reached"}}' >&2; exit 1; fi
     agent_info wait "$3" "$s" 9 ;;
   *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;

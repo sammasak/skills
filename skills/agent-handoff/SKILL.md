@@ -18,13 +18,21 @@ fixed; skipping a step is a boundary violation.
 3. **Confirm**: the owner must say, in this conversation, that this
    `handoff_id` may go to this `host/agent_id`. Silence, "looks good", or a
    general "go ahead" from earlier does not count.
-4. **Send** with `herdr:message` (M2; prompts for permission every time):
+4. **Send** with `herdr:message` (prompts for permission every time):
    `devenv tasks run herdr:message --input-json '{"handoff_id":"<id>","confirm":"<host>/<agent_id>"}'`
-   The task refuses a blocked target, refuses a second send of the same
-   `handoff_id` unless the owner asks for `resend`, and records an audit entry
-   before and after. A `timeout` outcome means delivery is unknown; show the
-   audit record and do not resend on your own.
-5. **Await** with `herdr:await` (bounded): the record distinguishes
-   `herdr_state`, `receipt` and `worker_done`. None of them is acceptance.
+   The task refuses a blocked or unknown-state target, a pane whose session
+   changed since the draft, an edited draft, and a second send of the same
+   `handoff_id`. Its record carries `audit_id`, `outcome`
+   (`delivered|unknown_delivery|agent_blocked|…`) and `seq_before`. On
+   `unknown_delivery` show the audit record and stop; only the owner can ask
+   for a resend, and the task refuses one when the agent's state advanced in
+   between (`probably_received`).
+5. **Await** with `herdr:await` (bounded), passing the message's audit id so
+   host, agent, session and `since_seq` come from the record:
+   `devenv tasks run herdr:await --input-json '{"audit_id":"<audit_id>","timeout_s":300}'`
+   The record separates `herdr_state`, `turn_observed`, `reached`,
+   `worker_done` and `needs_owner`; `accepted` is always false here. On
+   `no_turn_observed` or `agent_restarted`, inspect the pane with
+   `herdr:inspect` and report; do not resend.
 6. **Verify** with `work:status`: only `work_verdict: verified` with its
    `evidence_ref` closes the loop. Report that, or report what is missing.
