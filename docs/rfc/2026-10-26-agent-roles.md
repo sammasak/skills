@@ -66,7 +66,11 @@ devenv's evaluation cache ignores environment variables, so there is no env over
 so the task graph itself contains exactly the configured hosts and repos;
 names and targets are validated during evaluation against
 `^[A-Za-z0-9_:.@/-]+$`, and runtime identifiers (agent ids, session ids) are
-validated again before use and passed as separate argv words. Tests point
+validated again before use and passed as separate argv words. Over ssh the
+argv travels as a base64 blob of NUL-separated words that a remote `bash -c`
+turns back into argv with `mapfile` and `exec`: no shell re-parses the words,
+so handoff text with quotes, newlines or `$(...)` stays literal, and a
+worker's forced-command shim can whitelist argv before exec. Tests point
 `coordinator.fleetFile` at fixtures with `--option coordinator.fleetFile:path`.
 
 ## Adapters
