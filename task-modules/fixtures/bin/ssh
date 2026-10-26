@@ -15,5 +15,5 @@ here=$(dirname "$0"); export PATH="$here:$PATH" FAKE_HERDR_LIST="${FAKE_REMOTE_L
 # Log the decoded argv so tests can assert on the real remote command.
 b64=$(sed -nE 's/^echo ([A-Za-z0-9+\/=]+) \| base64 -d \| bash$/\1/p' <<<"$*")
 [ -n "$b64" ] && printf '%s\n' "$b64" | base64 -d >> "${FAKE_LOG:-/dev/null}" && echo >> "${FAKE_LOG:-/dev/null}"
-command -v fish >/dev/null && exec fish -c "$*"
-exec bash -c "$*"
+command -v fish >/dev/null || { echo "fake ssh: fish required to emulate the fleet's login shell" >&2; exit 2; }
+exec fish --no-config -c "$*"

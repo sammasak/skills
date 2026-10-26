@@ -109,6 +109,9 @@ FAKE_HERDR_LIST="$FX/herdr/odd-agents.json" run "$TMP/ren.json"
 [ "$(jqr '.hosts[0].agents[] | select(.agent_id=="wX:p3") | .observed_state')" = unknown ] && ok || bad "odd: missing status => unknown"
 [ "$(jqr '.hosts[0].agents[] | select(.agent_id=="wX:p3") | .session_id')" = null ] && ok || bad "odd: string agent_session => null session"
 
+# 7c. a missing fleet file is an empty graph (fresh clones evaluate); the override is --option, never env (devenv caches eval per inputs, not env)
+listed=$(devenv tasks list --option coordinator.fleetFile:path "$TMP/does-not-exist.json" 2>/dev/null | grep -cE 'herdr:list:'); [ "$listed" = 0 ] && ok || bad "missing fleet => empty graph (got $listed)"
+
 # 8. the graph contains exactly the fleet's hosts
 fleet "$TMP/two.json" '[{"name":"acer-swift","ssh":null},{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'
 listed=$(devenv tasks list --option coordinator.fleetFile:path "$TMP/two.json" 2>/dev/null | grep -oE 'herdr:list:[a-z-]+' | sort -u | paste -sd,)

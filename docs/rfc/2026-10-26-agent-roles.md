@@ -51,8 +51,9 @@ malformed JSON), `64` not implemented.
 
 ## Fleet configuration
 
-`$XDG_CONFIG_HOME/coordinator/fleet.json` (override: `COORDINATOR_FLEET`),
-installed by nixos-config, never committed here:
+`$XDG_CONFIG_HOME/coordinator/fleet.json`, installed by nixos-config, never
+committed here (tests and other locations use `--option coordinator.fleetFile:path`;
+devenv's evaluation cache ignores environment variables, so there is no env override):
 
 ```json
 {"schema_version":1,

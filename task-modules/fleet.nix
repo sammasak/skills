@@ -20,9 +20,9 @@ in
   options.coordinator = {
     fleetFile = lib.mkOption {
       type = t.path;
-      default = if builtins.getEnv "COORDINATOR_FLEET" != "" then builtins.getEnv "COORDINATOR_FLEET"
-                else "${if builtins.getEnv "XDG_CONFIG_HOME" != "" then builtins.getEnv "XDG_CONFIG_HOME" else "${home}/.config"}/coordinator/fleet.json";
-      description = "Schema-1 fleet file: hosts (name, ssh|null) and repos (name, gh, checkout). Env COORDINATOR_FLEET overrides; absent file = empty fleet.";
+      default = "${if builtins.getEnv "XDG_CONFIG_HOME" != "" then builtins.getEnv "XDG_CONFIG_HOME" else "${home}/.config"}/coordinator/fleet.json";
+      # devenv's eval cache does not track environment changes, so there is no env override: use --option coordinator.fleetFile:path.
+      description = "Schema-1 fleet file: hosts (name, ssh|null) and repos (name, gh, checkout). An absent file is an empty fleet.";
     };
     stateDir = lib.mkOption {
       type = t.str;
@@ -42,7 +42,7 @@ in
       target=""
       case "$host" in
         ${lib.concatMapStringsSep "\n        " (h: ''${h.name}) target="${if h.ssh == null then "" else h.ssh}" ;;'') hosts}
-        *) fail 3 invalid_input "host not in fleet: $host" ;;
+        *) fail 3 invalid_input "host not in fleet: $host" "''${ctx:-{\}}" ;;
       esac
     ''; };
     prelude = lib.mkOption { type = t.str; readOnly = true; default = ''
