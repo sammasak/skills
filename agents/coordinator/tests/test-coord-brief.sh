@@ -61,10 +61,13 @@ jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q 'still open'
 jq '.result.agents[1].terminal_title_stripped = "skills #44 done"' "$TMP/local.json" > "$TMP/local44.json"
 FAKE_HERDR_LIST="$TMP/local44.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
 [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = verified ] && ok || bad "title-only with closed issue => verified ($(jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]'))"
-# ... but not when the open-issue list may be truncated (ghLimit 2 and the fixture has 2 open issues)
+# ... but not when the open-issue list may be truncated (ghLimit 2: 2 open issues hit the limit, 1 open PR does not)
 FAKE_HERDR_LIST="$TMP/local44.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json" --option coordinator.ghLimit:int 2
 [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unverified ] && ok || bad "truncated issue list must not verify"
 jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q truncated && ok || bad "truncation reason"
+# many MERGED PRs alone never truncate: ghLimit 3 (3 open issues? no: 2 open issues < 3, 1 open PR < 3, 5 merged PRs irrelevant) => verified
+FAKE_HERDR_LIST="$TMP/local44.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json" --option coordinator.ghLimit:int 3
+[ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = verified ] && ok || bad "merged-list size must not count as truncation ($(jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]'))"
 # a merged PR that "closes" #16 while issue #16 is still open and PR 17 is open => unverified (open wins; closing link does not)
 FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
 [ "$(jqr '.items[] | select(.agent_id=="wF:p1") | .work_verdict')" = unverified ] && ok || bad "merged-closes-but-open PR => unverified"

@@ -31,6 +31,8 @@ run gh:work "$TMP/fleet.json"
 [ "$(jqr '.repos[] | select(.repo=="ghonly") | .issues | length')" = 0 ] && ok || bad "gh: repo without fixture gives empty lists"
 [ "$(jqr .partial)" = false ] && ok || bad "gh: not partial"
 grep -q 'issue list -R sammasak/skills --state open --limit 20' "$FAKE_LOG" && ok || bad "gh: bounded argv ($(head -1 "$FAKE_LOG"))"
+grep -q 'pr list -R sammasak/skills --state open --limit 20' "$FAKE_LOG" && grep -q 'pr list -R sammasak/skills --state merged --limit 20' "$FAKE_LOG" && ok || bad "gh: open and merged PR lists fetched separately"
+[ "$(jqr '.repos[] | select(.repo=="skills") | .open_pr_count')" = 1 ] && ok || bad "gh: open_pr_count ($(jqr '.repos[] | select(.repo=="skills") | .open_pr_count'))"
 
 FAKE_GH_EXIT=1 run gh:work "$TMP/fleet.json"
 [ "$CODE" -eq 0 ] && [ "$(jqr '.repos|length')" = 0 ] && ok || bad "gh down: record still emitted, no repos (exit $CODE)"
