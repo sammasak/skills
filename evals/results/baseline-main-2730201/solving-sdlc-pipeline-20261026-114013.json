@@ -1,5 +1,5 @@
 {
-  "name": "solving-sdlc-pipeline-20261026-110942",
+  "name": "solving-sdlc-pipeline-20261026-114013",
   "cases": [
     {
       "name": "sdlc-pipeline::task-1",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "# SDLC Status Report\n\nGreen: no\n\nThe pipeline is not green because the current stage (migrate) is unverified — no guard has yet run against the current tree fingerprint. `sdlc-status --context` reporting \"unverified\" and exiting 0 indicates the tool itself ran successfully, but that is distinct from the pipeline passing all stages.\n\n**Stages that must pass:** migrate, contract, e2e\n\n**Single command whose exit code decides:** `devenv shell -q -- devenv tasks run sdlc:done`\n\nThis command runs the full task graph, executing all guard stages in order and writing verdict files for any review stages. Only when `sdlc:done` exits 0 is the pipeline green.",
+        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe pipeline is not green because the current stage (migrate) shows state \"unverified\", meaning its guard has not yet been run or verified against the current working tree. `sdlc-status --context` reports state and context; it does not drive the pipeline forward or determine pass/fail.\n\n## Stages that must pass\n\n1. migrate\n2. contract\n3. e2e\n\n## Command that decides\n\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nExit code 0 means all configured stages have passed their guards and any verdict reviews have been approved. Exit code non-zero means at least one stage is red or awaiting review.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-s_dhjiu3",
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-0k8wqo_h",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 2.457637879997492,
-      "total_duration": 2.4749042987823486,
+      "task_duration": 2.409820361994207,
+      "total_duration": 2.4376840591430664,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

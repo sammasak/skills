@@ -1,0 +1,54 @@
+{
+  "name": "solving-pi-offload-20261026-114018",
+  "cases": [
+    {
+      "name": "pi-offload::task-1",
+      "inputs": {
+        "instruction": "# Task: Two Pi decisions\n\n(a) You delegated \"add tests for parse_amount\" and pi-offload printed:\n\n```json\n{\"status\":\"invalid\",\"rounds\":1,\"patch\":\"/home/u/.cache/pi-offload/ab12/change.patch\",\"diffstat\":\"\",\"added_files\":\"\",\"dirty_source\":true,\"check_timed_out\":false,\"new_refs\":[],\"moved_refs\":[],\"summary\":\"Tests already pass.\"}\n```\n\n(b) Next, a teammate wants to offload \"rotate the JWT signing-key handling in auth/keys.rs and\nupdate the token validation\" to Pi, with `cargo test -p auth` as the check.\n\n(c) Then someone asks to offload \"tidy up the README wording so it reads better\"; the repo has no\ncheck that could judge it.\n\nWrite `decision.md` with exactly these three lines first, then a short reason for each:\n`Apply patch: yes|no`, `Offload JWT task: yes|no` and `Offload README task: yes|no`.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "pi-offload",
+        "task_id": "task-1",
+        "output_filename": "decision.md"
+      },
+      "metadata": {
+        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/pi-offload/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Pi Offload Decisions\n\nApply patch: no\nOffload JWT task: no\nOffload README task: no\n\n## Reasons\n\n**Apply patch (a):** The result status is `invalid`, which means the output is not trustworthy. The `dirty_source` flag is also true, indicating uncommitted changes were not copied into Pi's worktree—Pi did not see the full state. The summary \"Tests already pass\" contradicts the premise that tests need to be added. Never trust `invalid` output; do the work yourself.\n\n**Offload JWT task (b):** JWT key rotation and token validation are security-sensitive code. Pi's prompts and context leave the machine through the homelab gateway to free-tier inference services. Do not offload security-critical functionality to shared, external models; the risk of subtle flaws or exposure outweighs the context savings. This work requires local review and careful verification.\n\n**Offload README task (c):** There is no crisp check command to decide success. \"Reads better\" is subjective and judgement-heavy. Pi needs an objective acceptance gate (a linter, test, or build step); without one, there is no way for the loop to know when to stop, and the result cannot be verified automatically. Do this work locally with human review.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-pi-offload-task-1-kxrnnrbn",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 4.607497748045716,
+      "total_duration": 4.723803520202637,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

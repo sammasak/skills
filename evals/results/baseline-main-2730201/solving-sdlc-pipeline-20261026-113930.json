@@ -1,5 +1,5 @@
 {
-  "name": "solving-sdlc-pipeline-20261026-110910",
+  "name": "solving-sdlc-pipeline-20261026-113930",
   "cases": [
     {
       "name": "sdlc-pipeline::task-1",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "# SDLC Status\n\nGreen: no\n\nThe pipeline is not green because the current stage (migrate) shows \"unverified\" status, meaning its guard has not yet passed. A zero exit code from `sdlc-status` only reports the machine's state; it does not indicate that all stages have passed.\n\n## Stages required to pass\n\nThe configured stages are: migrate, contract, e2e\n\n## Decision command\n\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nExit code 0 means the pipeline is green; any non-zero exit means it is not.",
+        "content": "# SDLC Status\n\nGreen: no\n\nThe pipeline is not green because the current stage \"migrate\" reports \"(unverified)\" — no stage has yet passed its guard. Exit code 0 from `sdlc-status` means the tool ran successfully and reported state; it does not mean the pipeline passed. The exit code that decides is `devenv shell -q -- devenv tasks run sdlc:done`.\n\nStages that must pass for this repo (in order): migrate, contract, e2e.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-61kd8dmj",
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-3bxxh9we",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 1.9971508419839665,
-      "total_duration": 2.014267921447754,
+      "task_duration": 2.0961945970193483,
+      "total_duration": 2.1671905517578125,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

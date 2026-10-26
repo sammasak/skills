@@ -1,5 +1,5 @@
 {
-  "name": "solving-rust-engineering-20261026-110918",
+  "name": "solving-rust-engineering-20261026-114114",
   "cases": [
     {
       "name": "rust-engineering::task-6",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "# Assessment: Factum Review and Merge Readiness\n\n## Skip tests: no\n\n## Analysis\n\nThe Factum output contains critical omissions that **prevent** using this brief alone to skip tests:\n\n1. **`unavailable: [\"compiler_semantics\", \"feature_target_cfg\", \"test_inventory\"]`**\n   - `test_inventory` is unavailable, meaning Factum could not enumerate the test suite.\n   - This is a concrete gap: no evidence exists about which tests exercise the changed code.\n   - The absence of a test finding is not a test clearance.\n\n2. **`verification: {\"status\": \"not_run\"}`**\n   - Factum's verification lane (which would validate that the change compiles and passes basic checks) has not run.\n   - This is an unverified change state.\n\n3. **`dependent_only` packages exist (ledger-sync, ledger-cli, ledger-web)**\n   - These are listed as dependent-only, not in `referencing` or `unresolved`.\n   - This means they import the changed module but do not directly call changed items.\n   - However, no test coverage for those imports has been confirmed; Factum's visibility is limited.\n\n4. **Per ADR-026 (homelab conventions)**\n   - Factum is advisory; empty findings are not correctness claims.\n   - The required gates (`rust:ci`, tests, security checks) are deterministic and owned by the project, not delegated to Factum.\n   - Missing evidence (`test_inventory`, `verification`) explicitly signals incompleteness.\n\n## Merge Decision\n\nRun the full deterministic workflow:\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nIf both pass, the change is ready to merge. Factum's incompleteness does not override the project's required gates.",
+        "content": "# Assessment: Test Skip Eligibility\n\n## Recommendation\n**Skip tests: no**\n\n## Analysis\n\nThe Factum report shows:\n- `referencing: []` — no packages reference the changed items\n- `unavailable: [\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"]` — **test inventory is unavailable**\n- `verification: {\"status\":\"not_run\"}` — verification did not run\n\nThe empty `referencing` list is **not sufficient to skip tests**. The `unavailable` array contains `test_inventory`, which means Factum could not determine which tests exercise the changed code. This is the critical gap: Factum cannot confirm that no tests cover the change, only that no *direct package dependencies* reference it. A change to internal implementation (a private function, macro, or module) may have zero referencing packages but still need its own package's test suite to validate behavior.\n\nAdditionally, `unavailable` indicates Factum lacked the compiler semantics and feature/target configuration data needed for a complete analysis. Under incomplete evidence, the safe path is the deterministic one.\n\n## Decision Gate\n\nRun the homelab standard gates before merge:\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nThese are the repo's required pre-merge checks per ADR-026. Factum's advisory evidence is useful for *targeting* expensive tasks (e.g., mutation testing), but does not replace the deterministic gate suite. An empty or ambiguous Factum report means: continue with the full workflow, not: skip to merge.\n\nIf the change is confirmed low-risk by the full gate output (no clippy, test, or doctests failures; coverage above floor), merge proceeds. The gates decide, not the Factum brief.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-rust-engineering-task-6-mrnep445",
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-doipiapg",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 5.472351732023526,
-      "total_duration": 5.483598232269287,
+      "task_duration": 5.745333198981825,
+      "total_duration": 5.798537492752075,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

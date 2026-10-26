@@ -1,5 +1,5 @@
 {
-  "name": "trigger-20261026-105925",
+  "name": "trigger-20261026-114124",
   "cases": [
     {
       "name": "agent-orchestration::positive::dispatch-three-subagents-in-parallel-to-research-these-libra",
@@ -30,8 +30,8 @@
           }
         }
       },
-      "task_duration": 1.0714167089900002,
-      "total_duration": 1.0722875595092773,
+      "task_duration": 3.4374936490203254,
+      "total_duration": 3.4408836364746094,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -66,8 +66,8 @@
           }
         }
       },
-      "task_duration": 0.8572237210464664,
-      "total_duration": 0.8585479259490967,
+      "task_duration": 1.171613825019449,
+      "total_duration": 1.2077221870422363,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -102,8 +102,8 @@
           }
         }
       },
-      "task_duration": 0.8276123519754037,
-      "total_duration": 0.8381750583648682,
+      "task_duration": 1.1012509320280515,
+      "total_duration": 1.1373646259307861,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -138,8 +138,8 @@
           }
         }
       },
-      "task_duration": 0.8153165840194561,
-      "total_duration": 0.8167674541473389,
+      "task_duration": 1.033816259005107,
+      "total_duration": 1.0393633842468262,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -174,8 +174,8 @@
           }
         }
       },
-      "task_duration": 0.7283835639827885,
-      "total_duration": 0.7298290729522705,
+      "task_duration": 0.9548098249942996,
+      "total_duration": 0.9566729068756104,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -210,8 +210,8 @@
           }
         }
       },
-      "task_duration": 0.7714441100251861,
-      "total_duration": 0.7720856666564941,
+      "task_duration": 0.8622793029644527,
+      "total_duration": 0.8642275333404541,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -246,8 +246,8 @@
           }
         }
       },
-      "task_duration": 0.6413379929726943,
-      "total_duration": 0.6424975395202637,
+      "task_duration": 0.7435835390351713,
+      "total_duration": 0.7472126483917236,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -282,8 +282,8 @@
           }
         }
       },
-      "task_duration": 0.7928481390117668,
-      "total_duration": 0.7937486171722412,
+      "task_duration": 1.4280572679708712,
+      "total_duration": 1.4454309940338135,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -318,8 +318,8 @@
           }
         }
       },
-      "task_duration": 0.6413323680171743,
-      "total_duration": 0.6427350044250488,
+      "task_duration": 0.7302591130137444,
+      "total_duration": 0.7350554466247559,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -354,8 +354,8 @@
           }
         }
       },
-      "task_duration": 0.7284731889958493,
-      "total_duration": 0.7290072441101074,
+      "task_duration": 0.8763586129643954,
+      "total_duration": 0.8782131671905518,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -390,8 +390,8 @@
           }
         }
       },
-      "task_duration": 0.82594217202859,
-      "total_duration": 0.8271145820617676,
+      "task_duration": 0.9581616810173728,
+      "total_duration": 0.9637033939361572,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -426,8 +426,8 @@
           }
         }
       },
-      "task_duration": 1.6768194530159235,
-      "total_duration": 1.6774067878723145,
+      "task_duration": 0.8026909290347248,
+      "total_duration": 0.8072717189788818,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -462,8 +462,8 @@
           }
         }
       },
-      "task_duration": 1.2085805499809794,
-      "total_duration": 1.2093241214752197,
+      "task_duration": 0.8671095189638436,
+      "total_duration": 0.8744499683380127,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -498,8 +498,8 @@
           }
         }
       },
-      "task_duration": 0.7383409769972786,
-      "total_duration": 0.739511251449585,
+      "task_duration": 0.8596752729499713,
+      "total_duration": 0.8644065856933594,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -534,8 +534,8 @@
           }
         }
       },
-      "task_duration": 0.7395161609747447,
-      "total_duration": 0.7403032779693604,
+      "task_duration": 0.8974096430465579,
+      "total_duration": 0.9097087383270264,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -570,8 +570,8 @@
           }
         }
       },
-      "task_duration": 1.2453148729982786,
-      "total_duration": 1.246206283569336,
+      "task_duration": 0.7276847250177525,
+      "total_duration": 0.7334442138671875,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -606,8 +606,8 @@
           }
         }
       },
-      "task_duration": 0.6728576860041358,
-      "total_duration": 0.6742017269134521,
+      "task_duration": 0.9686004549730569,
+      "total_duration": 0.974144697189331,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -642,8 +642,8 @@
           }
         }
       },
-      "task_duration": 2.0007163989939727,
-      "total_duration": 2.0012810230255127,
+      "task_duration": 1.0433656030218117,
+      "total_duration": 1.0645506381988525,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -678,8 +678,8 @@
           }
         }
       },
-      "task_duration": 0.6712180009926669,
-      "total_duration": 0.67191481590271,
+      "task_duration": 0.7889004219905473,
+      "total_duration": 0.7945716381072998,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -714,8 +714,8 @@
           }
         }
       },
-      "task_duration": 0.7705583099741489,
-      "total_duration": 0.7715625762939453,
+      "task_duration": 1.9285473210038617,
+      "total_duration": 1.9317357540130615,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -750,8 +750,8 @@
           }
         }
       },
-      "task_duration": 0.6821328559890389,
-      "total_duration": 0.6838686466217041,
+      "task_duration": 0.9686025460250676,
+      "total_duration": 0.9758989810943604,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -786,8 +786,8 @@
           }
         }
       },
-      "task_duration": 0.6954535839613527,
-      "total_duration": 0.6959762573242188,
+      "task_duration": 0.9701846090028994,
+      "total_duration": 0.9726982116699219,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -822,8 +822,8 @@
           }
         }
       },
-      "task_duration": 0.8095082900254056,
-      "total_duration": 0.8101081848144531,
+      "task_duration": 0.9170029649976641,
+      "total_duration": 0.9250307083129883,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -858,8 +858,8 @@
           }
         }
       },
-      "task_duration": 0.688378326012753,
-      "total_duration": 0.6891343593597412,
+      "task_duration": 0.8995070360251702,
+      "total_duration": 0.904205322265625,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -894,8 +894,8 @@
           }
         }
       },
-      "task_duration": 0.7450805339612998,
-      "total_duration": 0.7456579208374023,
+      "task_duration": 0.7649054600042291,
+      "total_duration": 0.7697651386260986,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -930,8 +930,8 @@
           }
         }
       },
-      "task_duration": 1.2303931359783746,
-      "total_duration": 1.231658935546875,
+      "task_duration": 1.2780168920289725,
+      "total_duration": 1.2829136848449707,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -966,8 +966,8 @@
           }
         }
       },
-      "task_duration": 0.7128336179885082,
-      "total_duration": 0.7133691310882568,
+      "task_duration": 0.7450401610112749,
+      "total_duration": 0.7500705718994141,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1002,8 +1002,8 @@
           }
         }
       },
-      "task_duration": 0.7617992509622127,
-      "total_duration": 0.7623300552368164,
+      "task_duration": 0.9589631099952385,
+      "total_duration": 0.9674420356750488,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1038,8 +1038,8 @@
           }
         }
       },
-      "task_duration": 0.8286038300138898,
-      "total_duration": 0.8299045562744141,
+      "task_duration": 0.8228085739538074,
+      "total_duration": 0.8275845050811768,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1074,8 +1074,8 @@
           }
         }
       },
-      "task_duration": 0.6602278120117262,
-      "total_duration": 0.6616795063018799,
+      "task_duration": 1.2729611840331927,
+      "total_duration": 1.276601791381836,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1110,8 +1110,8 @@
           }
         }
       },
-      "task_duration": 0.6602774049970321,
-      "total_duration": 0.6614985466003418,
+      "task_duration": 0.725829882954713,
+      "total_duration": 0.7315859794616699,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1146,8 +1146,8 @@
           }
         }
       },
-      "task_duration": 0.6010571459773928,
-      "total_duration": 0.6018290519714355,
+      "task_duration": 0.8013933540205471,
+      "total_duration": 0.8030376434326172,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1182,8 +1182,8 @@
           }
         }
       },
-      "task_duration": 0.9161404269980267,
-      "total_duration": 0.9169247150421143,
+      "task_duration": 0.892419102950953,
+      "total_duration": 0.8975286483764648,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1218,8 +1218,8 @@
           }
         }
       },
-      "task_duration": 0.7253543550032191,
-      "total_duration": 0.7269203662872314,
+      "task_duration": 0.7986629779916257,
+      "total_duration": 0.8002691268920898,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1254,8 +1254,8 @@
           }
         }
       },
-      "task_duration": 0.6644236120046116,
-      "total_duration": 0.6651945114135742,
+      "task_duration": 0.8952430509962142,
+      "total_duration": 0.8972995281219482,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1290,8 +1290,8 @@
           }
         }
       },
-      "task_duration": 0.6675275160232559,
-      "total_duration": 0.6687664985656738,
+      "task_duration": 1.2541807899833657,
+      "total_duration": 1.2579598426818848,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1326,8 +1326,8 @@
           }
         }
       },
-      "task_duration": 0.6840617829584517,
-      "total_duration": 0.6847965717315674,
+      "task_duration": 0.7867596469586715,
+      "total_duration": 0.7885572910308838,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1362,8 +1362,8 @@
           }
         }
       },
-      "task_duration": 0.6731840890133753,
-      "total_duration": 0.683840274810791,
+      "task_duration": 1.2144963100436144,
+      "total_duration": 1.2161717414855957,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1398,8 +1398,8 @@
           }
         }
       },
-      "task_duration": 0.6984700179891661,
-      "total_duration": 0.6992189884185791,
+      "task_duration": 0.9063133799936622,
+      "total_duration": 0.9188930988311768,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1434,8 +1434,8 @@
           }
         }
       },
-      "task_duration": 0.7591512899962254,
-      "total_duration": 0.7599050998687744,
+      "task_duration": 0.8465948050143197,
+      "total_duration": 0.8518927097320557,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1451,10 +1451,10 @@
         "source_skill": "knowledge-vault"
       },
       "expected_output": "none",
-      "output": "lean-code",
+      "output": "none",
       "metrics": {
         "input_tokens": 1454,
-        "output_tokens": 6
+        "output_tokens": 4
       },
       "attributes": {},
       "scores": {},
@@ -1462,7 +1462,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -1470,8 +1470,8 @@
           }
         }
       },
-      "task_duration": 0.7478978419676423,
-      "total_duration": 0.7483983039855957,
+      "task_duration": 1.2546410459908657,
+      "total_duration": 1.2563652992248535,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1506,8 +1506,8 @@
           }
         }
       },
-      "task_duration": 0.8887747389962897,
-      "total_duration": 0.8893065452575684,
+      "task_duration": 0.6588194950018078,
+      "total_duration": 0.6634705066680908,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1542,8 +1542,8 @@
           }
         }
       },
-      "task_duration": 0.6428004939807579,
-      "total_duration": 0.6437761783599854,
+      "task_duration": 0.89801810804056,
+      "total_duration": 0.9001510143280029,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1578,8 +1578,8 @@
           }
         }
       },
-      "task_duration": 0.6852701540337875,
-      "total_duration": 0.6864488124847412,
+      "task_duration": 0.7546561050112359,
+      "total_duration": 0.7597038745880127,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1614,8 +1614,8 @@
           }
         }
       },
-      "task_duration": 0.9081829140195623,
-      "total_duration": 0.9095215797424316,
+      "task_duration": 0.7435625540092587,
+      "total_duration": 0.7453298568725586,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1650,8 +1650,8 @@
           }
         }
       },
-      "task_duration": 0.6598547410103492,
-      "total_duration": 0.6603834629058838,
+      "task_duration": 0.8143672759761102,
+      "total_duration": 0.8163635730743408,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1686,8 +1686,8 @@
           }
         }
       },
-      "task_duration": 0.6294819739996456,
-      "total_duration": 0.6307916641235352,
+      "task_duration": 0.8595682150335051,
+      "total_duration": 0.8707418441772461,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1722,8 +1722,8 @@
           }
         }
       },
-      "task_duration": 0.802982694003731,
-      "total_duration": 0.804506778717041,
+      "task_duration": 0.8731801109970547,
+      "total_duration": 0.8779423236846924,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1758,8 +1758,8 @@
           }
         }
       },
-      "task_duration": 0.87651036598254,
-      "total_duration": 0.877007007598877,
+      "task_duration": 0.7064926279708743,
+      "total_duration": 0.7083103656768799,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1794,8 +1794,8 @@
           }
         }
       },
-      "task_duration": 1.8288353380048648,
-      "total_duration": 1.8302333354949951,
+      "task_duration": 0.9986347009544261,
+      "total_duration": 1.006497859954834,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1830,8 +1830,8 @@
           }
         }
       },
-      "task_duration": 0.6971558489603922,
-      "total_duration": 0.6979448795318604,
+      "task_duration": 1.4811349789961241,
+      "total_duration": 1.4858226776123047,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1866,8 +1866,80 @@
           }
         }
       },
-      "task_duration": 0.7241281199967489,
-      "total_duration": 0.7250733375549316,
+      "task_duration": 0.7257160429726355,
+      "total_duration": 0.7274644374847412,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "kubernetes-gitops::positive::validate-every-flux-overlay-in-homelab-gitops-before-i-push",
+      "inputs": {
+        "query": "Validate every Flux overlay in homelab-gitops before I push"
+      },
+      "metadata": {
+        "category": "positive",
+        "source_skill": "kubernetes-gitops"
+      },
+      "expected_output": "kubernetes-gitops",
+      "output": "kubernetes-gitops",
+      "metrics": {
+        "input_tokens": 1460,
+        "output_tokens": 7
+      },
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "EqualsExpected": {
+          "name": "EqualsExpected",
+          "value": true,
+          "reason": null,
+          "source": {
+            "name": "EqualsExpected",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 0.8532679899944924,
+      "total_duration": 0.8581795692443848,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "kubernetes-gitops::positive::i-changed-the-alloy-collector-filter-for-native-otlp-logs-wh",
+      "inputs": {
+        "query": "I changed the Alloy collector filter for native OTLP logs; what proves it does not leak private fields?"
+      },
+      "metadata": {
+        "category": "positive",
+        "source_skill": "kubernetes-gitops"
+      },
+      "expected_output": "kubernetes-gitops",
+      "output": "observability-patterns",
+      "metrics": {
+        "input_tokens": 1470,
+        "output_tokens": 7
+      },
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "EqualsExpected": {
+          "name": "EqualsExpected",
+          "value": false,
+          "reason": null,
+          "source": {
+            "name": "EqualsExpected",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 1.5230996849713847,
+      "total_duration": 1.5268874168395996,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1902,8 +1974,8 @@
           }
         }
       },
-      "task_duration": 0.6704609569860622,
-      "total_duration": 0.6719639301300049,
+      "task_duration": 0.7663340999861248,
+      "total_duration": 0.7692253589630127,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1938,8 +2010,8 @@
           }
         }
       },
-      "task_duration": 0.7690693499753252,
-      "total_duration": 0.7702126502990723,
+      "task_duration": 1.854903266998008,
+      "total_duration": 1.8566968441009521,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1974,8 +2046,8 @@
           }
         }
       },
-      "task_duration": 0.7217892179614864,
-      "total_duration": 0.7230789661407471,
+      "task_duration": 0.9239902870031074,
+      "total_duration": 0.9356064796447754,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2010,8 +2082,8 @@
           }
         }
       },
-      "task_duration": 0.7242350789601915,
-      "total_duration": 0.7257847785949707,
+      "task_duration": 0.8375208620564081,
+      "total_duration": 0.8501310348510742,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2046,8 +2118,8 @@
           }
         }
       },
-      "task_duration": 0.7519825730123557,
-      "total_duration": 0.7527365684509277,
+      "task_duration": 1.030934972979594,
+      "total_duration": 1.0365774631500244,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2082,8 +2154,44 @@
           }
         }
       },
-      "task_duration": 0.6863637839560397,
-      "total_duration": 0.6878399848937988,
+      "task_duration": 0.9355791650013998,
+      "total_duration": 0.9411656856536865,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "kubernetes-gitops::hard_neg::encrypt-the-new-native-otlp-bearer-token-for-the-cluster",
+      "inputs": {
+        "query": "Encrypt the new native OTLP bearer token for the cluster"
+      },
+      "metadata": {
+        "category": "hard_negative",
+        "source_skill": "kubernetes-gitops"
+      },
+      "expected_output": "secrets-management",
+      "output": "secrets-management",
+      "metrics": {
+        "input_tokens": 1459,
+        "output_tokens": 6
+      },
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "EqualsExpected": {
+          "name": "EqualsExpected",
+          "value": true,
+          "reason": null,
+          "source": {
+            "name": "EqualsExpected",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 0.748871700023301,
+      "total_duration": 0.7505249977111816,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2118,8 +2226,8 @@
           }
         }
       },
-      "task_duration": 0.6591987879946828,
-      "total_duration": 0.6599612236022949,
+      "task_duration": 0.770146539027337,
+      "total_duration": 0.7719392776489258,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2154,8 +2262,8 @@
           }
         }
       },
-      "task_duration": 0.6611941809533164,
-      "total_duration": 0.6621558666229248,
+      "task_duration": 0.9276356739574112,
+      "total_duration": 0.9352054595947266,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2190,8 +2298,8 @@
           }
         }
       },
-      "task_duration": 0.6304651770042256,
-      "total_duration": 0.6313204765319824,
+      "task_duration": 0.9452090029953979,
+      "total_duration": 0.9512670040130615,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2226,8 +2334,8 @@
           }
         }
       },
-      "task_duration": 0.6611684100353159,
-      "total_duration": 0.6627061367034912,
+      "task_duration": 0.9032397990231402,
+      "total_duration": 0.9093301296234131,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2262,8 +2370,8 @@
           }
         }
       },
-      "task_duration": 0.7111018000287004,
-      "total_duration": 0.7116048336029053,
+      "task_duration": 0.7863107559969649,
+      "total_duration": 0.7960984706878662,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2298,8 +2406,8 @@
           }
         }
       },
-      "task_duration": 0.863823503954336,
-      "total_duration": 0.8644251823425293,
+      "task_duration": 1.7259737430140376,
+      "total_duration": 1.7289574146270752,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2334,8 +2442,8 @@
           }
         }
       },
-      "task_duration": 0.7133573830360547,
-      "total_duration": 0.7139911651611328,
+      "task_duration": 0.9153778820182197,
+      "total_duration": 0.9172980785369873,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2370,8 +2478,8 @@
           }
         }
       },
-      "task_duration": 0.8255582730052993,
-      "total_duration": 0.8274924755096436,
+      "task_duration": 0.9588897119974717,
+      "total_duration": 0.9695858955383301,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2406,8 +2514,8 @@
           }
         }
       },
-      "task_duration": 0.7653629350243136,
-      "total_duration": 0.7661428451538086,
+      "task_duration": 0.7887209210311994,
+      "total_duration": 0.8086192607879639,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2442,8 +2550,8 @@
           }
         }
       },
-      "task_duration": 0.7033781089703552,
-      "total_duration": 0.7039072513580322,
+      "task_duration": 0.9170260420069098,
+      "total_duration": 0.9209034442901611,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2478,8 +2586,8 @@
           }
         }
       },
-      "task_duration": 0.6509246050263755,
-      "total_duration": 0.6516368389129639,
+      "task_duration": 0.9757900640252046,
+      "total_duration": 0.9828274250030518,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2514,8 +2622,8 @@
           }
         }
       },
-      "task_duration": 1.305712990986649,
-      "total_duration": 1.3064618110656738,
+      "task_duration": 0.7632966950186528,
+      "total_duration": 0.8351171016693115,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2550,8 +2658,8 @@
           }
         }
       },
-      "task_duration": 0.897204936016351,
-      "total_duration": 0.8977465629577637,
+      "task_duration": 0.8795022019767202,
+      "total_duration": 0.8832662105560303,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2586,8 +2694,8 @@
           }
         }
       },
-      "task_duration": 0.6315990629955195,
-      "total_duration": 0.6322710514068604,
+      "task_duration": 1.0166068180114962,
+      "total_duration": 1.0225956439971924,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2622,8 +2730,8 @@
           }
         }
       },
-      "task_duration": 0.6507185610244051,
-      "total_duration": 0.6513175964355469,
+      "task_duration": 0.7925862020347267,
+      "total_duration": 0.7944080829620361,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2658,8 +2766,8 @@
           }
         }
       },
-      "task_duration": 0.7089307259884663,
-      "total_duration": 0.7094681262969971,
+      "task_duration": 0.7901337170042098,
+      "total_duration": 0.8047506809234619,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2694,8 +2802,8 @@
           }
         }
       },
-      "task_duration": 0.6826827820041217,
-      "total_duration": 0.683422327041626,
+      "task_duration": 0.7477053860202432,
+      "total_duration": 0.7524158954620361,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2730,8 +2838,8 @@
           }
         }
       },
-      "task_duration": 0.6970864870236255,
-      "total_duration": 0.6978306770324707,
+      "task_duration": 6.421291395032313,
+      "total_duration": 6.445065498352051,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2766,8 +2874,8 @@
           }
         }
       },
-      "task_duration": 0.7413209470105357,
-      "total_duration": 0.7426111698150635,
+      "task_duration": 7.042858120985329,
+      "total_duration": 7.044738292694092,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2802,8 +2910,8 @@
           }
         }
       },
-      "task_duration": 0.6858301419997588,
-      "total_duration": 0.6868433952331543,
+      "task_duration": 6.163887301983777,
+      "total_duration": 6.167768716812134,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2838,8 +2946,8 @@
           }
         }
       },
-      "task_duration": 0.6723159870016389,
-      "total_duration": 0.6729674339294434,
+      "task_duration": 1.444615732994862,
+      "total_duration": 1.4495809078216553,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2874,8 +2982,8 @@
           }
         }
       },
-      "task_duration": 1.2331682610092685,
-      "total_duration": 1.2337946891784668,
+      "task_duration": 0.7614303620066494,
+      "total_duration": 0.763056755065918,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2910,8 +3018,8 @@
           }
         }
       },
-      "task_duration": 0.6872217229683883,
-      "total_duration": 0.6887152194976807,
+      "task_duration": 0.780493172002025,
+      "total_duration": 0.7843701839447021,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2946,8 +3054,8 @@
           }
         }
       },
-      "task_duration": 0.739602051966358,
-      "total_duration": 0.7403652667999268,
+      "task_duration": 0.8202462380286306,
+      "total_duration": 0.8260314464569092,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2982,8 +3090,8 @@
           }
         }
       },
-      "task_duration": 0.7306625730125234,
-      "total_duration": 0.7311999797821045,
+      "task_duration": 0.7572349209804088,
+      "total_duration": 0.7584354877471924,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3018,8 +3126,8 @@
           }
         }
       },
-      "task_duration": 0.6621255360078067,
-      "total_duration": 0.6629030704498291,
+      "task_duration": 0.6931845110375434,
+      "total_duration": 0.6960914134979248,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3054,8 +3162,8 @@
           }
         }
       },
-      "task_duration": 0.6332966440240853,
-      "total_duration": 0.6345641613006592,
+      "task_duration": 0.7944471820374019,
+      "total_duration": 0.7987959384918213,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3090,8 +3198,8 @@
           }
         }
       },
-      "task_duration": 0.71245265804464,
-      "total_duration": 0.7130312919616699,
+      "task_duration": 0.9179026470519602,
+      "total_duration": 0.9225742816925049,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3126,8 +3234,8 @@
           }
         }
       },
-      "task_duration": 0.6869330549961887,
-      "total_duration": 0.6874821186065674,
+      "task_duration": 0.8580065140267834,
+      "total_duration": 0.8598411083221436,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3162,8 +3270,8 @@
           }
         }
       },
-      "task_duration": 0.7285573509871028,
-      "total_duration": 0.729827880859375,
+      "task_duration": 1.521512693958357,
+      "total_duration": 1.5262000560760498,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3198,8 +3306,8 @@
           }
         }
       },
-      "task_duration": 0.7346935579553246,
-      "total_duration": 0.735443115234375,
+      "task_duration": 0.8134202149813063,
+      "total_duration": 0.8190324306488037,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3234,8 +3342,8 @@
           }
         }
       },
-      "task_duration": 0.7147652400308289,
-      "total_duration": 0.716616153717041,
+      "task_duration": 0.826476031972561,
+      "total_duration": 0.8289065361022949,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3270,8 +3378,8 @@
           }
         }
       },
-      "task_duration": 0.6933873770176433,
-      "total_duration": 0.7076253890991211,
+      "task_duration": 0.9638493699603714,
+      "total_duration": 0.9745187759399414,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3306,8 +3414,8 @@
           }
         }
       },
-      "task_duration": 0.6963542040321045,
-      "total_duration": 0.6978461742401123,
+      "task_duration": 0.8059038580395281,
+      "total_duration": 0.813758134841919,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3342,8 +3450,8 @@
           }
         }
       },
-      "task_duration": 0.7403095689951442,
-      "total_duration": 0.7408313751220703,
+      "task_duration": 1.6490835180156864,
+      "total_duration": 1.653632402420044,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3378,8 +3486,80 @@
           }
         }
       },
-      "task_duration": 0.8445763799827546,
-      "total_duration": 0.8453817367553711,
+      "task_duration": 0.946922397997696,
+      "total_duration": 0.9487667083740234,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "nix-flake-development::positive::after-switching-codex-version-in-fish-prints-the-version-twi",
+      "inputs": {
+        "query": "After switching, codex --version in fish prints the version twice; where in nixos-config does that come from?"
+      },
+      "metadata": {
+        "category": "positive",
+        "source_skill": "nix-flake-development"
+      },
+      "expected_output": "nix-flake-development",
+      "output": "nix-flake-development",
+      "metrics": {
+        "input_tokens": 1470,
+        "output_tokens": 10
+      },
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "EqualsExpected": {
+          "name": "EqualsExpected",
+          "value": true,
+          "reason": null,
+          "source": {
+            "name": "EqualsExpected",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 1.3027021960006095,
+      "total_duration": 1.3394966125488281,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "nix-flake-development::positive::run-the-nixos-config-verification-gate-before-i-push-this-mo",
+      "inputs": {
+        "query": "Run the nixos-config verification gate before I push this module change"
+      },
+      "metadata": {
+        "category": "positive",
+        "source_skill": "nix-flake-development"
+      },
+      "expected_output": "nix-flake-development",
+      "output": "nix-flake-development",
+      "metrics": {
+        "input_tokens": 1459,
+        "output_tokens": 10
+      },
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "EqualsExpected": {
+          "name": "EqualsExpected",
+          "value": true,
+          "reason": null,
+          "source": {
+            "name": "EqualsExpected",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 0.8136747759999707,
+      "total_duration": 0.8166241645812988,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3414,8 +3594,8 @@
           }
         }
       },
-      "task_duration": 1.9996107350452803,
-      "total_duration": 2.000652551651001,
+      "task_duration": 0.861732313001994,
+      "total_duration": 0.8629159927368164,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3450,8 +3630,8 @@
           }
         }
       },
-      "task_duration": 0.7333928579464555,
-      "total_duration": 0.7350788116455078,
+      "task_duration": 0.9448913050000556,
+      "total_duration": 0.9469835758209229,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3486,8 +3666,8 @@
           }
         }
       },
-      "task_duration": 0.7155597279779613,
-      "total_duration": 0.7162022590637207,
+      "task_duration": 0.729043037048541,
+      "total_duration": 0.7307801246643066,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3522,8 +3702,44 @@
           }
         }
       },
-      "task_duration": 0.6813264159718528,
-      "total_duration": 0.6823503971099854,
+      "task_duration": 0.7063403030042537,
+      "total_duration": 0.716832160949707,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "nix-flake-development::hard_neg::confirm-the-new-karta-deploy-is-actually-live-behind-authent",
+      "inputs": {
+        "query": "Confirm the new karta deploy is actually live behind Authentik"
+      },
+      "metadata": {
+        "category": "hard_negative",
+        "source_skill": "nix-flake-development"
+      },
+      "expected_output": "verify-service",
+      "output": "verify-service",
+      "metrics": {
+        "input_tokens": 1459,
+        "output_tokens": 6
+      },
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "EqualsExpected": {
+          "name": "EqualsExpected",
+          "value": true,
+          "reason": null,
+          "source": {
+            "name": "EqualsExpected",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 0.7109609809704125,
+      "total_duration": 0.7159557342529297,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3558,8 +3774,8 @@
           }
         }
       },
-      "task_duration": 0.5188378580496646,
-      "total_duration": 0.5196588039398193,
+      "task_duration": 1.0021208500256762,
+      "total_duration": 1.0098364353179932,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3594,8 +3810,8 @@
           }
         }
       },
-      "task_duration": 0.7621714609558694,
-      "total_duration": 0.76275634765625,
+      "task_duration": 0.9908088920055889,
+      "total_duration": 1.0062506198883057,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3630,8 +3846,8 @@
           }
         }
       },
-      "task_duration": 0.6497498290264048,
-      "total_duration": 0.6504380702972412,
+      "task_duration": 1.2081775960396044,
+      "total_duration": 1.2100882530212402,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3666,8 +3882,8 @@
           }
         }
       },
-      "task_duration": 0.7113334320019931,
-      "total_duration": 0.7125091552734375,
+      "task_duration": 0.8342550690285861,
+      "total_duration": 0.8376801013946533,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3702,8 +3918,8 @@
           }
         }
       },
-      "task_duration": 1.2932486660429277,
-      "total_duration": 1.2946159839630127,
+      "task_duration": 1.0818093940033577,
+      "total_duration": 1.0868749618530273,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3738,8 +3954,8 @@
           }
         }
       },
-      "task_duration": 0.7250556239741854,
-      "total_duration": 0.7258217334747314,
+      "task_duration": 1.0603127519716509,
+      "total_duration": 1.0732390880584717,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3774,8 +3990,8 @@
           }
         }
       },
-      "task_duration": 0.7296670459909365,
-      "total_duration": 0.7302422523498535,
+      "task_duration": 1.2201563480193727,
+      "total_duration": 1.2282464504241943,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3810,8 +4026,8 @@
           }
         }
       },
-      "task_duration": 0.641742842970416,
-      "total_duration": 0.6430215835571289,
+      "task_duration": 1.2684928830130957,
+      "total_duration": 1.273334264755249,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3846,8 +4062,8 @@
           }
         }
       },
-      "task_duration": 0.6572576330509037,
-      "total_duration": 0.6577749252319336,
+      "task_duration": 0.9302667540032417,
+      "total_duration": 0.9351959228515625,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3882,8 +4098,8 @@
           }
         }
       },
-      "task_duration": 0.6804114099941216,
-      "total_duration": 0.6816964149475098,
+      "task_duration": 0.7565787299536169,
+      "total_duration": 0.7584831714630127,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3918,8 +4134,8 @@
           }
         }
       },
-      "task_duration": 0.7215348460013047,
-      "total_duration": 0.7222404479980469,
+      "task_duration": 0.7950980960158631,
+      "total_duration": 0.7985918521881104,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3954,8 +4170,8 @@
           }
         }
       },
-      "task_duration": 0.722941926040221,
-      "total_duration": 0.724431037902832,
+      "task_duration": 0.754373308038339,
+      "total_duration": 0.7593715190887451,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3990,8 +4206,8 @@
           }
         }
       },
-      "task_duration": 0.7524988889927045,
-      "total_duration": 0.753819465637207,
+      "task_duration": 1.3611361380317248,
+      "total_duration": 1.3664193153381348,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4026,8 +4242,8 @@
           }
         }
       },
-      "task_duration": 0.6833636459778063,
-      "total_duration": 0.6844301223754883,
+      "task_duration": 0.7313017880078405,
+      "total_duration": 0.7330951690673828,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4062,8 +4278,8 @@
           }
         }
       },
-      "task_duration": 0.7780957340146415,
-      "total_duration": 0.779240608215332,
+      "task_duration": 1.0943737620254979,
+      "total_duration": 1.1632080078125,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4098,8 +4314,8 @@
           }
         }
       },
-      "task_duration": 0.7618836690089665,
-      "total_duration": 0.7626540660858154,
+      "task_duration": 0.7529709030059166,
+      "total_duration": 0.7567243576049805,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4134,8 +4350,8 @@
           }
         }
       },
-      "task_duration": 0.6110546070267446,
-      "total_duration": 0.6118316650390625,
+      "task_duration": 1.2337780160014518,
+      "total_duration": 1.244278907775879,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4170,8 +4386,8 @@
           }
         }
       },
-      "task_duration": 1.1732302109594457,
-      "total_duration": 1.1738247871398926,
+      "task_duration": 0.699841624009423,
+      "total_duration": 0.7069127559661865,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4206,8 +4422,8 @@
           }
         }
       },
-      "task_duration": 0.6657713379827328,
-      "total_duration": 0.6665420532226562,
+      "task_duration": 0.8604438820038922,
+      "total_duration": 0.8653140068054199,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4242,8 +4458,8 @@
           }
         }
       },
-      "task_duration": 0.9355447830166668,
-      "total_duration": 0.9361505508422852,
+      "task_duration": 0.9630644149729051,
+      "total_duration": 0.9642856121063232,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4278,8 +4494,8 @@
           }
         }
       },
-      "task_duration": 0.8438666079891846,
-      "total_duration": 0.845130443572998,
+      "task_duration": 0.7340946639887989,
+      "total_duration": 0.7355546951293945,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4314,8 +4530,8 @@
           }
         }
       },
-      "task_duration": 0.9050429410417564,
-      "total_duration": 0.9062557220458984,
+      "task_duration": 0.8265963300364092,
+      "total_duration": 0.8275983333587646,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4350,8 +4566,8 @@
           }
         }
       },
-      "task_duration": 1.298381091968622,
-      "total_duration": 1.2989277839660645,
+      "task_duration": 1.9318658579722978,
+      "total_duration": 1.9334945678710938,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4386,8 +4602,8 @@
           }
         }
       },
-      "task_duration": 0.8681520519894548,
-      "total_duration": 0.8689403533935547,
+      "task_duration": 0.7267428270424716,
+      "total_duration": 0.7279610633850098,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4422,8 +4638,8 @@
           }
         }
       },
-      "task_duration": 0.6571440079715103,
-      "total_duration": 0.6583888530731201,
+      "task_duration": 0.6812511250027455,
+      "total_duration": 0.6822609901428223,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4458,8 +4674,8 @@
           }
         }
       },
-      "task_duration": 0.6930910039809532,
-      "total_duration": 0.6946156024932861,
+      "task_duration": 0.6472027590498328,
+      "total_duration": 0.6487529277801514,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4494,8 +4710,8 @@
           }
         }
       },
-      "task_duration": 0.7051219069981016,
-      "total_duration": 0.7060210704803467,
+      "task_duration": 0.6661087879911065,
+      "total_duration": 0.6696007251739502,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4530,8 +4746,8 @@
           }
         }
       },
-      "task_duration": 0.725450597004965,
-      "total_duration": 0.726041316986084,
+      "task_duration": 0.8472550099832006,
+      "total_duration": 0.8488152027130127,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4566,8 +4782,8 @@
           }
         }
       },
-      "task_duration": 0.7300182129838504,
-      "total_duration": 0.7308731079101562,
+      "task_duration": 0.7675850720261224,
+      "total_duration": 0.7687397003173828,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4602,8 +4818,8 @@
           }
         }
       },
-      "task_duration": 0.6804167620139197,
-      "total_duration": 0.6809864044189453,
+      "task_duration": 0.7617445209762082,
+      "total_duration": 0.76277756690979,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4638,8 +4854,8 @@
           }
         }
       },
-      "task_duration": 0.7241146659944206,
-      "total_duration": 0.7247805595397949,
+      "task_duration": 0.8613051840220578,
+      "total_duration": 0.8702569007873535,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4674,8 +4890,8 @@
           }
         }
       },
-      "task_duration": 0.6358803230104968,
-      "total_duration": 0.6364483833312988,
+      "task_duration": 0.7284251340315677,
+      "total_duration": 0.7407450675964355,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4710,8 +4926,8 @@
           }
         }
       },
-      "task_duration": 0.6677627529716119,
-      "total_duration": 0.6683070659637451,
+      "task_duration": 1.469962770002894,
+      "total_duration": 1.4714164733886719,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4746,8 +4962,8 @@
           }
         }
       },
-      "task_duration": 0.6250157790491357,
-      "total_duration": 0.6255600452423096,
+      "task_duration": 0.6495873350067995,
+      "total_duration": 0.6510603427886963,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4782,8 +4998,8 @@
           }
         }
       },
-      "task_duration": 0.653665262972936,
-      "total_duration": 0.654975175857544,
+      "task_duration": 1.0309635400190018,
+      "total_duration": 1.032747507095337,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4818,8 +5034,8 @@
           }
         }
       },
-      "task_duration": 1.1483366749598645,
-      "total_duration": 1.1495640277862549,
+      "task_duration": 0.8262994029792026,
+      "total_duration": 0.8317975997924805,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4854,8 +5070,8 @@
           }
         }
       },
-      "task_duration": 0.674773016013205,
-      "total_duration": 0.6753039360046387,
+      "task_duration": 0.8691337750060484,
+      "total_duration": 0.8730475902557373,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4890,8 +5106,8 @@
           }
         }
       },
-      "task_duration": 0.6815683519816957,
-      "total_duration": 0.682114839553833,
+      "task_duration": 0.8094521160237491,
+      "total_duration": 0.810551643371582,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4926,27 +5142,27 @@
           }
         }
       },
-      "task_duration": 0.6873418639879674,
-      "total_duration": 0.6887633800506592,
+      "task_duration": 0.8251326550380327,
+      "total_duration": 0.8273570537567139,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
       "evaluator_failures": []
     },
     {
-      "name": "pi-offload::hard_neg::design-the-conflict-resolution-architecture-for-our-crdt-syn",
+      "name": "pi-offload::hard_neg::should-we-pick-postgres-or-sqlite-for-the-new-ledger-service",
       "inputs": {
-        "query": "Design the conflict-resolution architecture for our CRDT sync layer"
+        "query": "Should we pick Postgres or SQLite for the new ledger service?"
       },
       "metadata": {
         "category": "hard_negative",
         "source_skill": "pi-offload"
       },
       "expected_output": "none",
-      "output": "deep-modules",
+      "output": "none",
       "metrics": {
-        "input_tokens": 1458,
-        "output_tokens": 6
+        "input_tokens": 1460,
+        "output_tokens": 4
       },
       "attributes": {},
       "scores": {},
@@ -4954,7 +5170,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -4962,8 +5178,8 @@
           }
         }
       },
-      "task_duration": 0.8292511620093137,
-      "total_duration": 0.8304481506347656,
+      "task_duration": 0.6931692470097914,
+      "total_duration": 0.6942780017852783,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4998,8 +5214,8 @@
           }
         }
       },
-      "task_duration": 0.6490953370230272,
-      "total_duration": 0.6496868133544922,
+      "task_duration": 1.1073000259930268,
+      "total_duration": 1.1081912517547607,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5034,8 +5250,8 @@
           }
         }
       },
-      "task_duration": 0.6765341470018029,
-      "total_duration": 0.6781764030456543,
+      "task_duration": 0.65613962901989,
+      "total_duration": 0.6569416522979736,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5070,8 +5286,8 @@
           }
         }
       },
-      "task_duration": 1.0597202980425209,
-      "total_duration": 1.0604794025421143,
+      "task_duration": 0.7566383229568601,
+      "total_duration": 0.7574331760406494,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5106,8 +5322,8 @@
           }
         }
       },
-      "task_duration": 1.1881310060271062,
-      "total_duration": 1.1894092559814453,
+      "task_duration": 0.6559999529854394,
+      "total_duration": 0.6567990779876709,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5142,8 +5358,8 @@
           }
         }
       },
-      "task_duration": 0.6795619989861734,
-      "total_duration": 0.6802902221679688,
+      "task_duration": 0.6632767909904942,
+      "total_duration": 0.6640777587890625,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5178,8 +5394,8 @@
           }
         }
       },
-      "task_duration": 0.686086243018508,
-      "total_duration": 0.6876327991485596,
+      "task_duration": 0.6716292250202969,
+      "total_duration": 0.6724305152893066,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5214,8 +5430,8 @@
           }
         }
       },
-      "task_duration": 0.6077713259728625,
-      "total_duration": 0.6083371639251709,
+      "task_duration": 0.6233409760170616,
+      "total_duration": 0.6241018772125244,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5250,8 +5466,8 @@
           }
         }
       },
-      "task_duration": 0.7892249370343052,
-      "total_duration": 0.7904684543609619,
+      "task_duration": 0.7067004849668592,
+      "total_duration": 0.7076115608215332,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5286,8 +5502,8 @@
           }
         }
       },
-      "task_duration": 0.6945499160210602,
-      "total_duration": 0.6953411102294922,
+      "task_duration": 0.6772922939853743,
+      "total_duration": 0.6818220615386963,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5322,8 +5538,8 @@
           }
         }
       },
-      "task_duration": 0.8646157759940252,
-      "total_duration": 0.8661940097808838,
+      "task_duration": 1.2367122170398943,
+      "total_duration": 1.237675666809082,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5358,8 +5574,8 @@
           }
         }
       },
-      "task_duration": 1.8208989719860256,
-      "total_duration": 1.8221065998077393,
+      "task_duration": 0.7901270570000634,
+      "total_duration": 0.7909705638885498,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5394,8 +5610,8 @@
           }
         }
       },
-      "task_duration": 0.7456183620379306,
-      "total_duration": 0.7470574378967285,
+      "task_duration": 0.7405646440456621,
+      "total_duration": 0.7417850494384766,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5430,8 +5646,8 @@
           }
         }
       },
-      "task_duration": 0.9340961360139772,
-      "total_duration": 0.9353797435760498,
+      "task_duration": 0.8549887170083821,
+      "total_duration": 0.8560519218444824,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5466,8 +5682,8 @@
           }
         }
       },
-      "task_duration": 0.6982886319747195,
-      "total_duration": 0.6991100311279297,
+      "task_duration": 0.7003833440248854,
+      "total_duration": 0.7012979984283447,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5502,8 +5718,8 @@
           }
         }
       },
-      "task_duration": 0.6784538209903985,
-      "total_duration": 0.6798031330108643,
+      "task_duration": 0.718871428980492,
+      "total_duration": 0.7198383808135986,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5538,8 +5754,8 @@
           }
         }
       },
-      "task_duration": 0.7355354329920374,
-      "total_duration": 0.7369554042816162,
+      "task_duration": 0.7489268929930404,
+      "total_duration": 0.7497727870941162,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5574,8 +5790,8 @@
           }
         }
       },
-      "task_duration": 0.6365972220082767,
-      "total_duration": 0.6379382610321045,
+      "task_duration": 0.6701060720370151,
+      "total_duration": 0.6708629131317139,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5610,8 +5826,8 @@
           }
         }
       },
-      "task_duration": 0.721640663978178,
-      "total_duration": 0.7223331928253174,
+      "task_duration": 0.7015413930057548,
+      "total_duration": 0.7022037506103516,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5646,8 +5862,8 @@
           }
         }
       },
-      "task_duration": 0.8463238730328158,
-      "total_duration": 0.8491411209106445,
+      "task_duration": 0.811452966008801,
+      "total_duration": 0.8122198581695557,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5682,8 +5898,8 @@
           }
         }
       },
-      "task_duration": 0.7580117469769903,
-      "total_duration": 0.7597684860229492,
+      "task_duration": 0.7062107939855196,
+      "total_duration": 0.7069222927093506,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5718,8 +5934,8 @@
           }
         }
       },
-      "task_duration": 0.6979038479621522,
-      "total_duration": 0.6985316276550293,
+      "task_duration": 1.3286096240044571,
+      "total_duration": 1.3294155597686768,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5754,8 +5970,8 @@
           }
         }
       },
-      "task_duration": 0.6799920320045203,
-      "total_duration": 0.6806478500366211,
+      "task_duration": 0.6503448899602517,
+      "total_duration": 0.6509835720062256,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5790,8 +6006,8 @@
           }
         }
       },
-      "task_duration": 0.7813944339868613,
-      "total_duration": 0.7827742099761963,
+      "task_duration": 0.7632208479917608,
+      "total_duration": 0.7639214992523193,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5826,8 +6042,8 @@
           }
         }
       },
-      "task_duration": 0.6367045830120333,
-      "total_duration": 0.6372373104095459,
+      "task_duration": 1.3451499079819769,
+      "total_duration": 1.347127914428711,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5862,8 +6078,8 @@
           }
         }
       },
-      "task_duration": 0.674448645033408,
-      "total_duration": 0.6750993728637695,
+      "task_duration": 0.6231804330018349,
+      "total_duration": 0.6239993572235107,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5898,8 +6114,8 @@
           }
         }
       },
-      "task_duration": 1.7796764430240728,
-      "total_duration": 1.7804651260375977,
+      "task_duration": 0.7615325850201771,
+      "total_duration": 0.7622659206390381,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5934,8 +6150,8 @@
           }
         }
       },
-      "task_duration": 0.6977825049543753,
-      "total_duration": 0.6990020275115967,
+      "task_duration": 1.240443092014175,
+      "total_duration": 1.246647596359253,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5970,8 +6186,8 @@
           }
         }
       },
-      "task_duration": 0.6567193850059994,
-      "total_duration": 0.6572489738464355,
+      "task_duration": 0.6509283820050769,
+      "total_duration": 0.6520798206329346,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6006,8 +6222,8 @@
           }
         }
       },
-      "task_duration": 0.6573918960057199,
-      "total_duration": 0.6585688591003418,
+      "task_duration": 0.7609444120316766,
+      "total_duration": 0.7649681568145752,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6042,8 +6258,8 @@
           }
         }
       },
-      "task_duration": 0.7584134390344843,
-      "total_duration": 0.7598743438720703,
+      "task_duration": 0.7860737009905279,
+      "total_duration": 0.7909708023071289,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6078,8 +6294,8 @@
           }
         }
       },
-      "task_duration": 1.2002789989928715,
-      "total_duration": 1.201719045639038,
+      "task_duration": 0.8143247819971293,
+      "total_duration": 0.8237786293029785,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6114,8 +6330,8 @@
           }
         }
       },
-      "task_duration": 0.7623707859893329,
-      "total_duration": 0.7633557319641113,
+      "task_duration": 0.8951825090334751,
+      "total_duration": 0.8964142799377441,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6150,8 +6366,8 @@
           }
         }
       },
-      "task_duration": 0.6937131570302881,
-      "total_duration": 0.6945302486419678,
+      "task_duration": 0.7614865609793924,
+      "total_duration": 0.7628340721130371,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6186,8 +6402,8 @@
           }
         }
       },
-      "task_duration": 0.7611700380221009,
-      "total_duration": 0.7618997097015381,
+      "task_duration": 0.8450156730250455,
+      "total_duration": 0.8463921546936035,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6222,8 +6438,8 @@
           }
         }
       },
-      "task_duration": 0.9081716479850002,
-      "total_duration": 0.908851146697998,
+      "task_duration": 0.8118177760043181,
+      "total_duration": 0.8130066394805908,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6258,8 +6474,8 @@
           }
         }
       },
-      "task_duration": 0.7861978599685244,
-      "total_duration": 0.7872188091278076,
+      "task_duration": 0.7235517090302892,
+      "total_duration": 0.7244524955749512,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6294,8 +6510,8 @@
           }
         }
       },
-      "task_duration": 0.7315389040159062,
-      "total_duration": 0.7321450710296631,
+      "task_duration": 0.7720345060224645,
+      "total_duration": 0.7728664875030518,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6330,8 +6546,8 @@
           }
         }
       },
-      "task_duration": 0.6867747360374779,
-      "total_duration": 0.6873388290405273,
+      "task_duration": 0.7291413780185394,
+      "total_duration": 0.7300047874450684,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6366,8 +6582,8 @@
           }
         }
       },
-      "task_duration": 0.6891400609747507,
-      "total_duration": 0.6901946067810059,
+      "task_duration": 0.6755179070169106,
+      "total_duration": 0.6762881278991699,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6402,8 +6618,8 @@
           }
         }
       },
-      "task_duration": 0.7097237080452032,
-      "total_duration": 0.7102768421173096,
+      "task_duration": 0.6924952869885601,
+      "total_duration": 0.6932938098907471,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6438,8 +6654,8 @@
           }
         }
       },
-      "task_duration": 0.7078869119868614,
-      "total_duration": 0.7084798812866211,
+      "task_duration": 0.7561413290095516,
+      "total_duration": 0.7568891048431396,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6474,8 +6690,8 @@
           }
         }
       },
-      "task_duration": 0.7968156710267067,
-      "total_duration": 0.7973458766937256,
+      "task_duration": 0.8023551090154797,
+      "total_duration": 0.8030951023101807,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6510,8 +6726,8 @@
           }
         }
       },
-      "task_duration": 0.7893961579538882,
-      "total_duration": 0.7900657653808594,
+      "task_duration": 0.738260468991939,
+      "total_duration": 0.7390499114990234,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6546,8 +6762,8 @@
           }
         }
       },
-      "task_duration": 0.9049394009634852,
-      "total_duration": 0.9061932563781738,
+      "task_duration": 1.9122051220037974,
+      "total_duration": 1.9132041931152344,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6582,8 +6798,8 @@
           }
         }
       },
-      "task_duration": 0.8531565010198392,
-      "total_duration": 0.8536880016326904,
+      "task_duration": 0.7543218069477007,
+      "total_duration": 0.7551414966583252,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6618,8 +6834,8 @@
           }
         }
       },
-      "task_duration": 0.7680969279608689,
-      "total_duration": 0.7686243057250977,
+      "task_duration": 0.6373414349509403,
+      "total_duration": 0.6383223533630371,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6654,8 +6870,8 @@
           }
         }
       },
-      "task_duration": 0.8126163459965028,
-      "total_duration": 0.813148021697998,
+      "task_duration": 0.9517807860393077,
+      "total_duration": 0.9529454708099365,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6690,8 +6906,8 @@
           }
         }
       },
-      "task_duration": 0.9734657889930531,
-      "total_duration": 0.9742660522460938,
+      "task_duration": 0.6611132629914209,
+      "total_duration": 0.6623847484588623,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6726,8 +6942,8 @@
           }
         }
       },
-      "task_duration": 1.5168441209825687,
-      "total_duration": 1.5173389911651611,
+      "task_duration": 1.245110800024122,
+      "total_duration": 1.2458336353302002,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6762,8 +6978,8 @@
           }
         }
       },
-      "task_duration": 0.8397772239986807,
-      "total_duration": 0.840362548828125,
+      "task_duration": 0.6894422569894232,
+      "total_duration": 0.6906647682189941,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6798,8 +7014,8 @@
           }
         }
       },
-      "task_duration": 0.8725739329820499,
-      "total_duration": 0.8740379810333252,
+      "task_duration": 0.7049057569820434,
+      "total_duration": 0.7057995796203613,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6834,8 +7050,8 @@
           }
         }
       },
-      "task_duration": 0.9598674000008032,
-      "total_duration": 0.961151123046875,
+      "task_duration": 0.7193800500244834,
+      "total_duration": 0.7203104496002197,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6870,8 +7086,8 @@
           }
         }
       },
-      "task_duration": 0.8141355460393243,
-      "total_duration": 0.8153665065765381,
+      "task_duration": 0.7279973800177686,
+      "total_duration": 0.7300252914428711,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6906,8 +7122,8 @@
           }
         }
       },
-      "task_duration": 1.4493436850025319,
-      "total_duration": 1.4501447677612305,
+      "task_duration": 0.6713602649979293,
+      "total_duration": 0.6722030639648438,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6942,8 +7158,8 @@
           }
         }
       },
-      "task_duration": 0.8394652450224385,
-      "total_duration": 0.839979887008667,
+      "task_duration": 0.7122708130045794,
+      "total_duration": 0.713442325592041,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6959,10 +7175,10 @@
         "source_skill": "sdlc-pipeline"
       },
       "expected_output": "none",
-      "output": "pi-offload",
+      "output": "none",
       "metrics": {
         "input_tokens": 1452,
-        "output_tokens": 7
+        "output_tokens": 4
       },
       "attributes": {},
       "scores": {},
@@ -6970,7 +7186,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -6978,27 +7194,27 @@
           }
         }
       },
-      "task_duration": 1.30317476100754,
-      "total_duration": 1.304661512374878,
+      "task_duration": 0.677286466001533,
+      "total_duration": 0.6781556606292725,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
       "evaluator_failures": []
     },
     {
-      "name": "sdlc-pipeline::hard_neg::fix-the-clippy-warnings-in-this-rust-crate",
+      "name": "sdlc-pipeline::hard_neg::bump-serde-across-this-cargo-workspace-and-dedupe-the-lockfi",
       "inputs": {
-        "query": "Fix the clippy warnings in this Rust crate"
+        "query": "Bump serde across this Cargo workspace and dedupe the lockfile"
       },
       "metadata": {
         "category": "hard_negative",
         "source_skill": "sdlc-pipeline"
       },
       "expected_output": "rust-engineering",
-      "output": "pi-offload",
+      "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1456,
-        "output_tokens": 7
+        "input_tokens": 1460,
+        "output_tokens": 6
       },
       "attributes": {},
       "scores": {},
@@ -7006,7 +7222,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -7014,8 +7230,8 @@
           }
         }
       },
-      "task_duration": 1.548696793965064,
-      "total_duration": 1.5502376556396484,
+      "task_duration": 0.7459543489967473,
+      "total_duration": 0.7468178272247314,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7050,8 +7266,8 @@
           }
         }
       },
-      "task_duration": 0.7694003410288133,
-      "total_duration": 0.7707595825195312,
+      "task_duration": 0.6514165580156259,
+      "total_duration": 0.6523678302764893,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7086,8 +7302,8 @@
           }
         }
       },
-      "task_duration": 0.8675971050397493,
-      "total_duration": 0.8688137531280518,
+      "task_duration": 0.7768042259849608,
+      "total_duration": 0.7779600620269775,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7122,8 +7338,8 @@
           }
         }
       },
-      "task_duration": 0.9092623029719107,
-      "total_duration": 0.9107732772827148,
+      "task_duration": 0.6212869369774126,
+      "total_duration": 0.6220500469207764,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7158,8 +7374,8 @@
           }
         }
       },
-      "task_duration": 0.9334046649746597,
-      "total_duration": 0.9348495006561279,
+      "task_duration": 1.16913381498307,
+      "total_duration": 1.1699020862579346,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7194,8 +7410,8 @@
           }
         }
       },
-      "task_duration": 0.9372134139994159,
-      "total_duration": 0.9379937648773193,
+      "task_duration": 0.6812042380333878,
+      "total_duration": 0.6822915077209473,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7230,8 +7446,8 @@
           }
         }
       },
-      "task_duration": 1.0264277150272392,
-      "total_duration": 1.0272035598754883,
+      "task_duration": 0.7469247319968417,
+      "total_duration": 0.7479953765869141,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7266,8 +7482,8 @@
           }
         }
       },
-      "task_duration": 1.5189997929846868,
-      "total_duration": 1.5208187103271484,
+      "task_duration": 0.7062142899958417,
+      "total_duration": 0.7070512771606445,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7302,8 +7518,8 @@
           }
         }
       },
-      "task_duration": 0.8614751150016673,
-      "total_duration": 0.8630766868591309,
+      "task_duration": 0.7022959929890931,
+      "total_duration": 0.7030963897705078,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7338,8 +7554,8 @@
           }
         }
       },
-      "task_duration": 0.9732111880439334,
-      "total_duration": 0.9737396240234375,
+      "task_duration": 0.7368548819795251,
+      "total_duration": 0.7376649379730225,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7374,8 +7590,8 @@
           }
         }
       },
-      "task_duration": 2.2626398510183208,
-      "total_duration": 2.263892889022827,
+      "task_duration": 0.9541677850065753,
+      "total_duration": 0.9550044536590576,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7410,8 +7626,8 @@
           }
         }
       },
-      "task_duration": 1.1460135119850747,
-      "total_duration": 1.1473252773284912,
+      "task_duration": 0.7137299319729209,
+      "total_duration": 0.714404821395874,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7446,8 +7662,8 @@
           }
         }
       },
-      "task_duration": 1.3136111150379293,
-      "total_duration": 1.3141372203826904,
+      "task_duration": 0.7853569780127145,
+      "total_duration": 0.7862911224365234,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7482,8 +7698,8 @@
           }
         }
       },
-      "task_duration": 0.9593611629679799,
-      "total_duration": 0.9602029323577881,
+      "task_duration": 0.8049949959968217,
+      "total_duration": 0.8063230514526367,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7518,8 +7734,8 @@
           }
         }
       },
-      "task_duration": 0.944350938021671,
-      "total_duration": 0.945664644241333,
+      "task_duration": 0.7326921100029722,
+      "total_duration": 0.7392289638519287,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7554,8 +7770,8 @@
           }
         }
       },
-      "task_duration": 0.9953103860025294,
-      "total_duration": 0.9964797496795654,
+      "task_duration": 0.6813761809607968,
+      "total_duration": 0.684326171875,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7590,8 +7806,8 @@
           }
         }
       },
-      "task_duration": 1.4606789140379988,
-      "total_duration": 1.4621517658233643,
+      "task_duration": 0.7269276430015452,
+      "total_duration": 0.7283287048339844,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7626,8 +7842,8 @@
           }
         }
       },
-      "task_duration": 0.8215332480031066,
-      "total_duration": 0.8230576515197754,
+      "task_duration": 0.7628565229824744,
+      "total_duration": 0.7643618583679199,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7662,8 +7878,8 @@
           }
         }
       },
-      "task_duration": 2.2088891260209493,
-      "total_duration": 2.2096481323242188,
+      "task_duration": 0.7918867730186321,
+      "total_duration": 0.7960753440856934,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7698,8 +7914,8 @@
           }
         }
       },
-      "task_duration": 1.085744663956575,
-      "total_duration": 1.0867180824279785,
+      "task_duration": 1.2710429850267246,
+      "total_duration": 1.2738440036773682,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7734,8 +7950,8 @@
           }
         }
       },
-      "task_duration": 1.3667072519892827,
-      "total_duration": 1.3675353527069092,
+      "task_duration": 0.7839425989659503,
+      "total_duration": 0.7879054546356201,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7770,8 +7986,8 @@
           }
         }
       },
-      "task_duration": 1.3270316619891673,
-      "total_duration": 1.3285343647003174,
+      "task_duration": 0.8268666410003789,
+      "total_duration": 0.8540754318237305,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7806,8 +8022,8 @@
           }
         }
       },
-      "task_duration": 0.9006543289870024,
-      "total_duration": 0.9019298553466797,
+      "task_duration": 0.8601300289737992,
+      "total_duration": 0.8633551597595215,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7842,8 +8058,8 @@
           }
         }
       },
-      "task_duration": 1.1186071810079738,
-      "total_duration": 1.1199073791503906,
+      "task_duration": 0.809861984977033,
+      "total_duration": 0.8132030963897705,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7878,8 +8094,8 @@
           }
         }
       },
-      "task_duration": 1.0376800930243917,
-      "total_duration": 1.0382521152496338,
+      "task_duration": 1.5098349339677952,
+      "total_duration": 1.5122857093811035,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7914,8 +8130,8 @@
           }
         }
       },
-      "task_duration": 1.5681641479604878,
-      "total_duration": 1.5696864128112793,
+      "task_duration": 0.8746013509808108,
+      "total_duration": 0.8776030540466309,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7950,8 +8166,8 @@
           }
         }
       },
-      "task_duration": 1.2661063220002688,
-      "total_duration": 1.2672419548034668,
+      "task_duration": 0.8804550109780394,
+      "total_duration": 0.8839206695556641,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7986,8 +8202,8 @@
           }
         }
       },
-      "task_duration": 1.04194915399421,
-      "total_duration": 1.043550968170166,
+      "task_duration": 0.7337033440126106,
+      "total_duration": 0.7380034923553467,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8022,8 +8238,8 @@
           }
         }
       },
-      "task_duration": 1.1764966960181482,
-      "total_duration": 1.1770825386047363,
+      "task_duration": 0.7545524509623647,
+      "total_duration": 0.7561361789703369,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8058,8 +8274,8 @@
           }
         }
       },
-      "task_duration": 1.0393348960205913,
-      "total_duration": 1.0407724380493164,
+      "task_duration": 0.9341778109665029,
+      "total_duration": 0.9369709491729736,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8094,8 +8310,8 @@
           }
         }
       },
-      "task_duration": 0.8953398370067589,
-      "total_duration": 0.8968930244445801,
+      "task_duration": 0.779147783992812,
+      "total_duration": 0.7829992771148682,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8130,8 +8346,8 @@
           }
         }
       },
-      "task_duration": 1.4661205159500241,
-      "total_duration": 1.4669055938720703,
+      "task_duration": 1.4753525939886458,
+      "total_duration": 1.480116367340088,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8166,8 +8382,8 @@
           }
         }
       },
-      "task_duration": 1.181567717983853,
-      "total_duration": 1.1828994750976562,
+      "task_duration": 0.7603187740314752,
+      "total_duration": 0.7619357109069824,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8202,8 +8418,8 @@
           }
         }
       },
-      "task_duration": 0.9298267760314047,
-      "total_duration": 0.9306888580322266,
+      "task_duration": 0.7546863229945302,
+      "total_duration": 0.7627694606781006,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8238,8 +8454,8 @@
           }
         }
       },
-      "task_duration": 1.1312459509936161,
-      "total_duration": 1.1328158378601074,
+      "task_duration": 0.8920367119717412,
+      "total_duration": 0.8968608379364014,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8274,8 +8490,8 @@
           }
         }
       },
-      "task_duration": 1.658465665008407,
-      "total_duration": 1.6591336727142334,
+      "task_duration": 0.7217504300060682,
+      "total_duration": 0.7231972217559814,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8310,8 +8526,8 @@
           }
         }
       },
-      "task_duration": 1.0023449910222553,
-      "total_duration": 1.002892255783081,
+      "task_duration": 0.9924074219889008,
+      "total_duration": 0.9937999248504639,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8346,8 +8562,8 @@
           }
         }
       },
-      "task_duration": 0.9215395179926418,
-      "total_duration": 0.9233748912811279,
+      "task_duration": 0.7325647249817848,
+      "total_duration": 0.7350091934204102,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8382,8 +8598,8 @@
           }
         }
       },
-      "task_duration": 1.0875449129962362,
-      "total_duration": 1.0884604454040527,
+      "task_duration": 0.6909718129900284,
+      "total_duration": 0.6920790672302246,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8418,8 +8634,8 @@
           }
         }
       },
-      "task_duration": 0.9357064209762029,
-      "total_duration": 0.9373095035552979,
+      "task_duration": 0.6948868000181392,
+      "total_duration": 0.6958310604095459,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8454,8 +8670,8 @@
           }
         }
       },
-      "task_duration": 1.911288754956331,
-      "total_duration": 1.9118149280548096,
+      "task_duration": 0.8211706129950471,
+      "total_duration": 0.822293758392334,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8490,8 +8706,8 @@
           }
         }
       },
-      "task_duration": 0.9634828499983996,
-      "total_duration": 0.9640181064605713,
+      "task_duration": 0.7170107580022886,
+      "total_duration": 0.7177090644836426,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8526,8 +8742,8 @@
           }
         }
       },
-      "task_duration": 0.9894145370344631,
-      "total_duration": 0.9899764060974121,
+      "task_duration": 1.2664700690074824,
+      "total_duration": 1.2697780132293701,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8562,8 +8778,8 @@
           }
         }
       },
-      "task_duration": 1.134707821009215,
-      "total_duration": 1.1354784965515137,
+      "task_duration": 0.6600001660408452,
+      "total_duration": 0.660855770111084,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8598,8 +8814,8 @@
           }
         }
       },
-      "task_duration": 1.0930087679880671,
-      "total_duration": 1.0941550731658936,
+      "task_duration": 0.7929500750033185,
+      "total_duration": 0.7941684722900391,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8634,8 +8850,8 @@
           }
         }
       },
-      "task_duration": 1.0899705120245926,
-      "total_duration": 1.0911529064178467,
+      "task_duration": 0.7828767269966193,
+      "total_duration": 0.7896585464477539,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8670,8 +8886,8 @@
           }
         }
       },
-      "task_duration": 1.1585687460028566,
-      "total_duration": 1.1596574783325195,
+      "task_duration": 0.9656296670436859,
+      "total_duration": 0.9672248363494873,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8706,8 +8922,8 @@
           }
         }
       },
-      "task_duration": 1.007082152995281,
-      "total_duration": 1.0076193809509277,
+      "task_duration": 0.8512745070038363,
+      "total_duration": 0.8558907508850098,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8742,8 +8958,8 @@
           }
         }
       },
-      "task_duration": 1.1352232790086418,
-      "total_duration": 1.1358275413513184,
+      "task_duration": 0.9974583789589815,
+      "total_duration": 0.999169111251831,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8778,8 +8994,8 @@
           }
         }
       },
-      "task_duration": 1.51696121704299,
-      "total_duration": 1.51774001121521,
+      "task_duration": 0.8000447549857199,
+      "total_duration": 0.8016133308410645,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8814,8 +9030,8 @@
           }
         }
       },
-      "task_duration": 1.2440774560091086,
-      "total_duration": 1.2446327209472656,
+      "task_duration": 0.8097224270459265,
+      "total_duration": 0.8135788440704346,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8850,8 +9066,8 @@
           }
         }
       },
-      "task_duration": 1.1280750609585084,
-      "total_duration": 1.1288259029388428,
+      "task_duration": 0.7320537579944357,
+      "total_duration": 0.7365045547485352,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8886,8 +9102,8 @@
           }
         }
       },
-      "task_duration": 1.3152007999597117,
-      "total_duration": 1.3157615661621094,
+      "task_duration": 0.873900459962897,
+      "total_duration": 0.8788764476776123,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8922,8 +9138,8 @@
           }
         }
       },
-      "task_duration": 1.0514966209884733,
-      "total_duration": 1.0520617961883545,
+      "task_duration": 0.7197430820087902,
+      "total_duration": 0.7249021530151367,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8958,8 +9174,8 @@
           }
         }
       },
-      "task_duration": 1.0371723319985904,
-      "total_duration": 1.0383260250091553,
+      "task_duration": 0.7141787129803561,
+      "total_duration": 0.7187058925628662,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8994,8 +9210,8 @@
           }
         }
       },
-      "task_duration": 1.662509705987759,
-      "total_duration": 1.6630921363830566,
+      "task_duration": 0.7110078319674358,
+      "total_duration": 0.7192752361297607,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9021,6 +9237,7 @@
         "nix-flake-development",
         "none",
         "ntfy-notifications",
+        "observability-patterns",
         "orchestrated-review",
         "pcap-evidence-analysis",
         "pi-offload",
@@ -9057,6 +9274,7 @@
           0,
           0,
           0,
+          0,
           0
         ],
         [
@@ -9071,6 +9289,7 @@
           0,
           0,
           1,
+          0,
           0,
           0,
           0,
@@ -9104,6 +9323,7 @@
           0,
           0,
           0,
+          0,
           1,
           0,
           0,
@@ -9132,6 +9352,7 @@
           0,
           0,
           0,
+          0,
           0
         ],
         [
@@ -9140,6 +9361,7 @@
           0,
           0,
           4,
+          0,
           0,
           0,
           0,
@@ -9182,6 +9404,7 @@
           0,
           0,
           0,
+          0,
           0
         ],
         [
@@ -9191,12 +9414,13 @@
           0,
           0,
           0,
-          14,
+          15,
           0,
           0,
           0,
           0,
           0,
+          1,
           0,
           0,
           0,
@@ -9218,6 +9442,7 @@
           0,
           0,
           8,
+          0,
           0,
           0,
           0,
@@ -9257,6 +9482,33 @@
           0,
           0,
           0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
           0
         ],
         [
@@ -9269,37 +9521,13 @@
           0,
           0,
           0,
-          18,
+          0,
+          50,
           0,
           0,
           0,
           0,
           0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          47,
-          0,
-          0,
-          0,
-          1,
           0,
           0,
           4,
@@ -9332,6 +9560,33 @@
           0,
           0,
           0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
           0
         ],
         [
@@ -9346,6 +9601,7 @@
           0,
           0,
           2,
+          0,
           0,
           5,
           0,
@@ -9373,6 +9629,7 @@
           0,
           0,
           0,
+          0,
           13,
           0,
           0,
@@ -9385,6 +9642,7 @@
           0
         ],
         [
+          0,
           0,
           0,
           0,
@@ -9425,6 +9683,7 @@
           0,
           0,
           0,
+          0,
           4,
           0,
           0,
@@ -9451,6 +9710,7 @@
           0,
           0,
           0,
+          0,
           13,
           0,
           0,
@@ -9474,10 +9734,11 @@
           0,
           0,
           0,
-          2,
+          0,
+          1,
           0,
           0,
-          13,
+          14,
           0,
           0,
           2,
@@ -9485,6 +9746,7 @@
           0
         ],
         [
+          0,
           0,
           0,
           0,
@@ -9529,7 +9791,8 @@
           0,
           0,
           0,
-          12,
+          0,
+          13,
           0,
           0,
           0
@@ -9544,6 +9807,7 @@
           0,
           0,
           1,
+          0,
           0,
           0,
           0,
@@ -9581,10 +9845,12 @@
           0,
           0,
           0,
-          3,
+          0,
+          4,
           0
         ],
         [
+          0,
           0,
           0,
           0,

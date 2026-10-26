@@ -1,5 +1,5 @@
 {
-  "name": "solving-sdlc-pipeline-20261026-110836",
+  "name": "solving-sdlc-pipeline-20261026-114103",
   "cases": [
     {
       "name": "sdlc-pipeline::task-1",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe pipeline is not green because the current stage (migrate) is unverified, meaning its guard task has not yet run successfully against the current tree fingerprint.\n\n## Stages that must pass\n\nThis repo's SDLC pipeline requires all three configured stages to pass in order:\n1. migrate\n2. contract\n3. e2e\n\n## The command that decides\n\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nThis task runs all guard and verdict stages in order and exits 0 only when every stage passes. `sdlc-status --context` is read-only and reports current state; only `sdlc:done` actually verifies the pipeline and determines whether it is green.",
+        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe pipeline is not yet green because the current stage (migrate) is in an \"unverified\" state, meaning its guard has not yet been executed or passed. `sdlc-status --context` reports stage state and context; exit code 0 only means the status command itself succeeded, not that the pipeline guards have passed.\n\n**Stages that must pass for this repo:**\n1. migrate\n2. contract\n3. e2e\n\n**Command that decides if the pipeline is green:**\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nThis command runs the full task graph and exits 0 only when every configured stage guard passes (all three stages above exit 0 against the current fingerprint). Exit 0 from `sdlc:done` is the only reliable signal that the pipeline is green.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-65mwmx8p",
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-dezsn1cq",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 2.4961963110254146,
-      "total_duration": 2.5133540630340576,
+      "task_duration": 2.8639887319877744,
+      "total_duration": 2.8897950649261475,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
