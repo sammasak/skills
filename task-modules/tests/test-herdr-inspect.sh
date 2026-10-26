@@ -38,7 +38,10 @@ grep -q '^ssh .*-- lukas@lenovo.lan echo .* | base64 -d | bash' "$FAKE_LOG" && g
 FAKE_HERDR_READ="$FX/herdr/read-long.txt" run '{"host":"acer-swift","agent_id":"wF:p1","lines":1000}'
 grep -q -- '--lines 200 ' "$FAKE_LOG" && ok || bad "cap: requested lines must be capped at 200"
 [ "$(jqr .lines_returned)" -le 200 ] && ok || bad "cap: lines_returned <= 200"
-[ "$(jqr .truncated)" = true ] && ok || bad "cap: truncated flag"
+[ "$(jqr .truncated)" = true ] && [ "$(jqr .capped)" = true ] && ok || bad "cap: truncated+capped flags"
+FAKE_HERDR_READ="$FX/herdr/read-visible.txt" run '{"host":"acer-swift","agent_id":"wF:p1","lines":500}'
+[ "$(jqr .truncated)" = false ] && [ "$(jqr .capped)" = true ] && ok || bad "short pane with capped request: capped but not truncated"
+run '{"host":"acer-swift","agent_id":"wF:p1","lines":99999999999}'; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "huge lines rejected"
 
 # invalid input is refused before any call
 for bad_input in '{"host":"acer-swift","agent_id":"wF:p1; rm -rf /"}' '{"host":"nothere","agent_id":"wF:p1"}' '{"host":"acer-swift"}' '{"host":"acer-swift","agent_id":"wF:p1","source":"detection; id"}' '{"host":"acer-swift","agent_id":"wF:p1","lines":"abc"}'; do

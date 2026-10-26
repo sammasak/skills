@@ -10,7 +10,8 @@ let
   validId = s: builtins.match "[A-Za-z0-9_][A-Za-z0-9_:.@/-]*" s != null;
   validGh = s: builtins.match "[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" s != null;
   validCheckout = s: builtins.match "/[A-Za-z0-9_./-]*" s != null;
-  raw = builtins.fromJSON (builtins.readFile cfg.fleetFile);
+  # A missing fleet file yields an empty graph (tests and fresh clones still evaluate); the launcher host renders one.
+  raw = if builtins.pathExists cfg.fleetFile then builtins.fromJSON (builtins.readFile cfg.fleetFile) else { schema_version = 1; hosts = [ ]; repos = [ ]; };
   hosts = map (h: { name = h.name; ssh = h.ssh or null; }) (raw.hosts or [ ]);
   repos = map (r: { name = r.name; gh = r.gh or null; checkout = r.checkout or null; }) (raw.repos or [ ]);
   home = builtins.getEnv "HOME";
@@ -19,8 +20,9 @@ in
   options.coordinator = {
     fleetFile = lib.mkOption {
       type = t.path;
-      default = "${if builtins.getEnv "XDG_CONFIG_HOME" != "" then builtins.getEnv "XDG_CONFIG_HOME" else "${home}/.config"}/coordinator/fleet.json";
-      description = "Schema-1 fleet file: hosts (name, ssh|null) and repos (name, gh, checkout).";
+      default = if builtins.getEnv "COORDINATOR_FLEET" != "" then builtins.getEnv "COORDINATOR_FLEET"
+                else "${if builtins.getEnv "XDG_CONFIG_HOME" != "" then builtins.getEnv "XDG_CONFIG_HOME" else "${home}/.config"}/coordinator/fleet.json";
+      description = "Schema-1 fleet file: hosts (name, ssh|null) and repos (name, gh, checkout). Env COORDINATOR_FLEET overrides; absent file = empty fleet.";
     };
     stateDir = lib.mkOption {
       type = t.str;
