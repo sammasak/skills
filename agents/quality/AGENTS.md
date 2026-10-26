@@ -36,11 +36,14 @@ retry with a variation.
   tasks cannot run under Codex until Codex can ask.
 - **No edit denial.** Claude denies Edit/Write; Codex's patch tool is not
   covered by a Bash hook. Codex must therefore run against a checkout whose
-  `.integrity` manifest the guard verifies on every call (nixos-config writes
-  it at materialisation; the parity test writes it in its copy): editing a
-  contract, task, hook or devenv file makes the guard refuse everything.
-  Running Codex with `--sandbox workspace-write` on an unmanaged clone is
-  **not enforced** and must not be described as such.
+  `.integrity` manifest the guard verifies on every call, in a session that
+  exports `COORDINATOR_REQUIRE_INTEGRITY=1` and the manifest's pinned hash
+  (nixos-config writes both at materialisation and makes the guarded files
+  read-only; the parity test does the same in its copy). Then editing or
+  deleting a contract, task, hook, devenv or `devenv.local.*` file makes the
+  guard refuse everything. Running Codex with `--sandbox workspace-write` on
+  an unmanaged clone, or without the pin, is **not enforced** and must not be
+  described as such; the `.devenv/` evaluation cache is not covered either.
 - **Global hooks file.** `~/.codex/hooks.json` is per user, so a guard
   registered there applies to every Codex session on the host; the launcher
   has to use a dedicated `CODEX_HOME` for role sessions. Unverified until the

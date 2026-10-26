@@ -38,5 +38,5 @@ other roles may share. Nothing here needs a new script runner.
    `nixos-config/docs/coordinator.md` for the pattern.
 
 The quality role (`agents/quality/`) is the worked example: three existing
-skills, two shared tasks, two new tasks, 20 fixture assertions, and the same
+skills, two shared tasks, two new tasks, 27 fixture assertions, and the same
 guard as the coordinator.

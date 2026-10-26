@@ -164,6 +164,20 @@ ihook() { local out; out=$(jq -cn --arg c "devenv tasks run coord:brief" --arg d
 [ "$(ihook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): pristine copy must allow"; }
 echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"
 [ "$(ihook)" = block ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): modified task file must block"; }
+( cd "$ITMP" && git -C "$ROOT" show HEAD:agents/coordinator/tasks.nix > agents/coordinator/tasks.nix )   # restore
+[ "$(ihook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): restored copy must allow again"; }
+pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1)
+# managed session: a missing manifest blocks; a rewritten manifest fails the pin; an unlisted devenv.local.nix blocks
+mhook() { jq -cn --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | COORDINATOR_CHECKOUT="$ITMP" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin" ROLE=coordinator "$ITMP/hooks/validate-role.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty'; }
+[ "$(mhook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): managed pristine copy must allow"; }
+mv "$ITMP/.integrity" "$ITMP/.integrity.bak"; [ -z "$(mhook)" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): missing manifest in a managed session must block"; }; mv "$ITMP/.integrity.bak" "$ITMP/.integrity"
+echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; ( cd "$ITMP" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
+[ -z "$(mhook)" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): a rewritten manifest must fail the pinned hash"; }
+( cd "$ITMP" && git -C "$ROOT" show HEAD:agents/coordinator/tasks.nix > agents/coordinator/tasks.nix && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
+echo '{ ... }: { coordinator.devenvCommand = "/tmp/evil"; }' > "$ITMP/devenv.local.nix"
+[ -z "$(mhook)" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): an unlisted devenv.local.nix must block"; }
+( cd "$ITMP" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock devenv.local.nix -type f -print0 | sort -z | xargs -0 sha256sum > .integrity ); pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1)
+[ "$(mhook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): a listed devenv.local.nix is fine"; }
 rm -rf "$ITMP"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]

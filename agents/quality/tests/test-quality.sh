@@ -37,6 +37,13 @@ rm -f "$TMP/repo/.devenv/state/sdlc/"*; run quality:report "{\"checkout\":\"$TMP
 [ "$CODE" -eq 0 ] && [ "$(jqr '.red|length')" = 0 ] && [ "$(jqr '.verdicts|length')" = 0 ] && ok || bad "report: empty state dir ($(tail -2 "$TMP/run.log"))"
 run quality:report '{"checkout":"/tmp/not-in-fleet"}'; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "report: non-fleet checkout refused ($(jqr .error.kind))"
 mkdir -p "$TMP/empty"; FAKE_SDLC_DIR="$TMP/empty" run quality:report "{\"checkout\":\"$TMP/repo\"}"; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = no_sdlc ] && ok || bad "report: repo without sdlc machine ($(jqr .error.kind))"
+# a consumer devenv that fails to evaluate is command_failed, not no_sdlc
+printf '#!/usr/bin/env bash\necho "error: evaluation aborted" >&2; exit 1\n' > "$TMP/broken-devenv"; chmod +x "$TMP/broken-devenv"
+devenv tasks run quality:report --option coordinator.fleetFile:path "$TMP/fleet.json" --option coordinator.devenvCommand:string "$TMP/broken-devenv" --show-output --input-json "{\"checkout\":\"$TMP/repo\"}" > "$TMP/run.log" 2>&1; CODE=$?
+OUT=$(grep -E '^\s*\{"schema_version":1' "$TMP/run.log" | tail -1 | sed -E 's/^\s+//'); [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = command_failed ] && ok || bad "report: broken consumer devenv => command_failed ($(jqr .error.kind))"
+# a stage row echoed inside the red tail must not flip a state (only the table window counts)
+mkdir -p "$TMP/sdlc2" && cp "$FX/sdlc/machine.json" "$TMP/sdlc2/" && { cat "$FX/sdlc/status.txt"; printf '\n| test | green |\n'; } > "$TMP/sdlc2/status.txt"
+FAKE_SDLC_DIR="$TMP/sdlc2" run quality:report "{\"checkout\":\"$TMP/repo\"}"; [ "$(jqr '.stages[] | select(.stage=="test") | .state')" = red ] && ok || bad "report: table window ignores rows outside the table"
 rm -f "$FAKE_LOG.leak"
 
 : > "$FAKE_LOG"

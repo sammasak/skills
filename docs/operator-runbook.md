@@ -33,10 +33,13 @@ Claude: from the checkout, `claude --agent quality --permission-mode default
 role's permissions.json rules>` (the same shape the coordinator launcher
 uses). Codex: `codex exec --cd "$COORDINATOR_CHECKOUT" "$(cat
 agents/quality/AGENTS.md)"$'\n\n'"<request>"` with the guard in a dedicated
-`CODEX_HOME/hooks.json`; see `agents/quality/AGENTS.md` for what Codex cannot
-enforce. The checkout must carry `.integrity` for either harness to be
-considered guarded. `quality:gate` is bounded to 540 s so a harness tool
-timeout cannot swallow its record.
+`CODEX_HOME/hooks.json` and `--sandbox workspace-write`; see
+`agents/quality/AGENTS.md` for what Codex cannot enforce. A guarded session
+exports `COORDINATOR_REQUIRE_INTEGRITY=1` and `COORDINATOR_INTEGRITY_SHA256`
+(the manifest's hash kept outside the checkout; the launcher does this), so a
+missing, rewritten or bypassed manifest blocks every call. `quality:gate` is
+bounded to 540 s and the launcher settings raise Claude's Bash timeout to
+600 s so a long gate still reports.
 
 ## Reading failures
 

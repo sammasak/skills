@@ -19,13 +19,13 @@ mkdir -p "$CK/.claude/agents" "$CK/.claude/skills"
 ln -sfn ../../agents/quality.md "$CK/.claude/agents/quality.md"
 for sk in sdlc-pipeline rust-engineering orchestrated-review; do ln -sfn "../../skills/$sk" "$CK/.claude/skills/$sk"; done
 # the copy carries the same .integrity manifest nixos-config writes, so the guard refuses once a contract/task/hook file changes
-( cd "$CK" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
-export COORDINATOR_CHECKOUT="$CK" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
+( cd "$CK" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock devenv.local.nix -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
+export COORDINATOR_CHECKOUT="$CK" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$(sha256sum "$CK/.integrity" | cut -d' ' -f1)" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
 # nothing is planted in $HOME: the guard reaches Claude through the settings file below, not the frontmatter path
 ASK="Report the SDLC quality state of the checkout $REPO. Run exactly one command: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output. Then answer from its JSON with exactly one line per stage in the form 'STAGE <name>: <state>' followed by one line 'HEAD <sha>' and one line 'ALL_GREEN <true|false>'. Do not run any gate and do not run anything else."
 # Claude honours a PreToolUse allow only from settings-level hooks in this mode (an agent-frontmatter hook alone
 # left every Bash call at the permission prompt in a live run), so the guard is registered the way the launcher does it.
-jq -n --arg g "$CK/hooks/validate-quality.sh" '{permissions:{allow:[],deny:["Edit","Write","NotebookEdit"]}, hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g,timeout:10}]}]}}' > "$OUT/claude-settings.json"
+jq -n --arg g "$CK/hooks/validate-quality.sh" '{permissions:{allow:[],deny:["Edit","Write","NotebookEdit"]}, env:{BASH_DEFAULT_TIMEOUT_MS:"600000",BASH_MAX_TIMEOUT_MS:"600000"}, hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g,timeout:10}]}]}}' > "$OUT/claude-settings.json"
 
 echo "== claude"; : > "$FAKE_LOG"
 ( cd "$CK" && CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-$(cat /run/secrets/claude_oauth_token 2>/dev/null)}" timeout 600 claude -p --agent quality --permission-mode default --setting-sources project,local --settings "$OUT/claude-settings.json" --output-format json --max-turns 10 "$ASK" > "$OUT/claude.json" 2> "$OUT/claude.err" ); echo "claude exit=$?"
@@ -40,7 +40,7 @@ if ! codex login status 2>/dev/null | grep -qi 'logged in'; then echo "codex: no
 cp "$FAKE_LOG" "$OUT/codex-fake-calls.log"
 
 echo "== compare"
-extract() { grep -oE '^(STAGE [a-z]+: [a-z]+|HEAD [0-9a-f]+|ALL_GREEN (true|false))' "$1" | sort -u; }
+extract() { grep -oE '^(STAGE [A-Za-z0-9_-]+: [a-z]+|HEAD [0-9a-f]+|ALL_GREEN (true|false))' "$1" | sort -u; }
 extract "$OUT/claude.txt" > "$OUT/claude.fields"; extract "$OUT/codex.txt" > "$OUT/codex.fields"
 echo "claude fields: $(wc -l < "$OUT/claude.fields")  codex fields: $(wc -l < "$OUT/codex.fields")"
 if [ ! -s "$OUT/claude.fields" ] || [ ! -s "$OUT/codex.fields" ]; then echo "INCOMPLETE: a harness reported no fields (claude $(wc -l < "$OUT/claude.fields"), codex $(wc -l < "$OUT/codex.fields")); no parity claim"
