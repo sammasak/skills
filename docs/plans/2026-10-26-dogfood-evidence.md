@@ -89,7 +89,9 @@ Installed skills revision: **`2730201`** (nixos-config main `6f18d82` `flake.loc
 repository branch HEAD differs (see the PR). The branch was **not** deployed: its tree was built
 through nixos-config with `--override-input skills git+file://…/skills?rev=<HEAD>`, which built
 only `home-manager-files` and two settings derivations. The built `.claude/skills`,
-`.codex/skills`, `.agents/skills` and `.claude/CLAUDE.md` are byte-identical to the branch.
+`.codex/skills`, `.agents/skills` and `.claude/CLAUDE.md` are byte-identical to the branch
+(rebuilt and re-compared at `b18cba0`: 0 mismatches; the session table below ran on the
+`916894d`/`dd8f0ec` trees). `~/.claude/skills/*` on acer still resolve to `2730201` content.
 
 - **Codex 0.162.1:** `codex debug prompt-input` lists 9 sammasak skills from root
   `~/.codex/skills` (installed descriptions); with `CODEX_HOME` pointing at the built tree, the
