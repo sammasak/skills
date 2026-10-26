@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "role": "coordinator",
+  "allow": [
+    "Bash(devenv tasks run coord:brief*)",
+    "Bash(devenv tasks run coord:handoff*)",
+    "Bash(devenv tasks run herdr:inventory*)",
+    "Bash(devenv tasks run herdr:inspect*)",
+    "Bash(devenv tasks run harness:session-summary*)",
+    "Bash(devenv tasks run gh:work*)",
+    "Bash(devenv tasks run git:recent*)",
+    "Bash(devenv tasks run work:status*)",
+    "Read"
+  ],
+  "deny": [
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Bash(ssh*)",
+    "Bash(git push*)",
+    "Bash(gh pr merge*)",
+    "Bash(nixos-rebuild*)",
+    "Bash(kubectl*)",
+    "Bash(rm *)",
+    "Bash(sudo*)"
+  ],
+  "ask": [
+    "Bash(devenv tasks run herdr:message*)",
+    "Bash(devenv tasks run herdr:await*)"
+  ]
+}

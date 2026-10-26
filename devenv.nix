@@ -5,6 +5,8 @@ let
     { name = "hooks"; script = "bash tests/test-hooks.sh"; }
     { name = "manifests"; script = "bash tests/test-plugin-manifests.sh"; }
     { name = "policy"; script = "bash tests/test-policy.sh"; }
+    { name = "contract"; script = "bash tests/test-role-contract.sh"; }
+    { name = "negative"; script = "bash tests/test-coordinator-negative.sh"; }
   ];
 in
 {

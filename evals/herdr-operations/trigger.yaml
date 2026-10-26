@@ -1,0 +1,14 @@
+skill: herdr-operations
+positives:
+  - "What are my coding agents doing right now?"
+  - "Is the claude session on lenovo still working or is it waiting for me?"
+  - "Show me the last 40 lines of what the agent in pane wF:p1 printed."
+  - "How old is the status you have for the acer worker?"
+  - "List every herdr agent across my hosts and tell me which are blocked."
+hard_negatives:
+  - "Send the lenovo agent a message asking it to rebase its branch."  # → agent-handoff
+  - "Start a Claude session on acer-swift for the herman repo."  # → agent-orchestration
+  - "Delegate these clippy fixes to the Pi worker."  # → pi-offload
+true_negatives:
+  - "Explain how iroh relays work."
+  - "Why does my Rust build fail with a lifetime error?"
