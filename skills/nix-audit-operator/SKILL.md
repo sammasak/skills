@@ -6,7 +6,7 @@ allowed-tools: Bash, Read
 
 # nix-audit operator
 
-Authority: the [README](https://github.com/sammasak/nix-audit/blob/main/README.md) of the revision you run (operator guide: `docs/USER-GUIDE.md` once nix-audit PR #46 lands). This skill is the safe entrypoint, not a copy.
+Authority: the [USER-GUIDE](https://github.com/sammasak/nix-audit/blob/main/docs/USER-GUIDE.md), [PILOT](https://github.com/sammasak/nix-audit/blob/main/docs/PILOT.md) and [README](https://github.com/sammasak/nix-audit/blob/main/README.md) of the revision you run ([CHANGELOG](https://github.com/sammasak/nix-audit/blob/main/CHANGELOG.md) for what changed). This skill is the safe entrypoint, not a copy.
 
 **Status:** advisory, report-only pilot. #32 is closed (ready to integrate as advisory), but automatic enforcement stays **off**: never add `--gate` to a rebuild, deploy or CI path. Blocking integration needs a separate explicit owner decision. A manual `diff … --gate` run is fine; report its exit code as evidence, not as approval.
 
@@ -25,11 +25,11 @@ Installed only on Lenovo (nixos-config `nix-audit-lenovo.nix`, pinned `12d640a`,
 nix-audit scan /run/current-system --no-scan    # inventory only: no scanners, no root, no vulnerability claim
 ```
 
-Full scans (`--scanners grype,vulnix`, the default) may download databases and vulnix needs network; run them only when asked. `--scanners grype --offline` is the offline option; it refuses a grype DB older than 5 days (exit 3): check `grype db status`, refresh online with `grype db update`. Do not drop a scanner to get a green result.
+Full scans (`--scanners grype,vulnix`, the default) may download databases and vulnix needs network; run them only when asked, under the host's shared lock (`flock /tmp/$(hostname)-heavy-work.lock …`, PILOT.md). `--scanners grype --offline` is the offline option; it refuses a grype DB older than 5 days (exit 3): check `grype db status`, refresh online with `grype db update`. Do not drop a scanner to get a green result.
 
 ## Compare running vs an already-built candidate
 
-Same binary, scanners and policy on both sides. Remove old snapshots first: a usage error (exit 2) leaves an existing file untouched.
+Same binary, scanners and policy on both sides; pass the policy as an absolute path (`examples/policy.toml` exists only in a checkout). Remove old snapshots first: a usage error (exit 2) leaves an existing file untouched.
 
 ```sh
 rm -f current.json candidate.json
@@ -43,7 +43,7 @@ nix-audit diff current.json candidate.json --policy p.toml   # add --gate only w
 
 `--json-out` writes the report on exit 0, 1 and 3 (exit 3 = incomplete) and removes FILE only when the scan fails before a report exists (unresolved or unbuilt target). Do not pipe `diff` into `head` on `12d640a`: it exits 3 on a closed pipe (fixed on main).
 
-**Hosts built elsewhere** (deploy-rs targets such as acer/msi) have no local `.drv`: vulnix fails (`no local derivation … (built on another host?)`), scan and `diff --gate` exit 3. Record that first. The documented fallback is an explicit grype-only comparison (`diff a.json b.json --scanners grype --policy p.toml --gate`), which labels itself `[scanners compared: grype only]`; report it as grype-only, never as the full verdict. Config-only upgrades of such hosts can show `unscannable` regressions with `findings: +0`: fail-closed identity matching, not new vulnerabilities.
+**Hosts built elsewhere** (deploy-rs targets such as acer/msi) have no local `.drv`: vulnix fails (`no local derivation … (built on another host?)`), scan and `diff --gate` exit 3. Record that first. The documented fallback is an explicit grype-only comparison (`diff a.json b.json --scanners grype --policy p.toml --gate`), which labels itself `[scanners compared: grype only]`; report it as grype-only, never as the full verdict, and review any `N findings after not compared` in the candidate's own scan before calling the upgrade clean. Config-only upgrades of such hosts can show `unscannable` regressions with `findings: +0`: fail-closed identity matching, not new vulnerabilities.
 
 ## Exit codes and what they prove
 
@@ -60,4 +60,4 @@ nix-audit diff current.json candidate.json --policy p.toml   # add --gate only w
 
 ## Feedback
 
-A real bug or confusing output → `tooling-feedback`. CLI behaviour: `sammasak/nix-audit` (its `docs/FEEDBACK.md` once PR #46 lands). Packaging, PATH, pin: `sammasak/nixos-config` (public). Never file without authorization.
+A real bug or confusing output → `tooling-feedback`. CLI behaviour: `sammasak/nix-audit`, using its [FEEDBACK.md](https://github.com/sammasak/nix-audit/blob/main/docs/FEEDBACK.md) template and `jq` evidence extract. Packaging, PATH, pin: `sammasak/nixos-config` (public). Never file without authorization.
