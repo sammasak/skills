@@ -3,6 +3,7 @@
 # fake ssh/herdr injected through devenv options. Run from the repo root inside
 # the devenv: bash task-modules/tests/test-herdr-inventory.sh
 set -uo pipefail
+unset COORDINATOR_SSH_IDENTITY  # a leaked value would flip the no-key-options case
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 FX="$ROOT/task-modules/fixtures"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -54,10 +55,12 @@ FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/remote.json"
 grep -q "^ssh .*-- lukas@lenovo.lan bash -c '.*' _ " "$FAKE_LOG" && grep -q '^herdr agent list' "$FAKE_LOG" && ok || bad "remote: expected ssh <target> herdr agent list"
 [ "$(jqr '.hosts[0].agents[0].approval_required')" = true ] && ok || bad "remote: blocked => approval_required"
 [ "$(jqr '.hosts[0].agents[0].host')" = lenovo ] && ok || bad "remote: host field"
-grep -q '^ssh .* -i ' "$FAKE_LOG" && bad "remote: no -i without COORDINATOR_SSH_IDENTITY" || ok
-# the dedicated key goes on the command line (beats any ~/.ssh/config layer); -- still separates it from the target
+grep -qE '^ssh .* (-F |-i |-o IdentitiesOnly)' "$FAKE_LOG" && bad "remote: no key options without COORDINATOR_SSH_IDENTITY" || ok
+# with the identity set, exactly one key is offered: -F none (no ssh_config read) -i <key> -o IdentitiesOnly=yes,
+# all before -- and the target; the remote command must still run and its agents come back
 : > "$FAKE_LOG"; COORDINATOR_SSH_IDENTITY=/keys/coordinator FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/remote.json"
-grep -q "^ssh .* -i /keys/coordinator -o IdentitiesOnly=yes -- lukas@lenovo.lan " "$FAKE_LOG" && [ "$CODE" -eq 0 ] && ok || bad "remote: expected -i <key> -o IdentitiesOnly=yes before --"
+grep -q "^ssh .* -F none -i /keys/coordinator -o IdentitiesOnly=yes -- lukas@lenovo.lan " "$FAKE_LOG" && ok || bad "remote: expected -F none -i <key> -o IdentitiesOnly=yes before --"
+grep -q '^herdr agent list' "$FAKE_LOG" && [ "$(jqr '.hosts[0].agents | length')" -ge 1 ] && ok || bad "remote: the remote herdr call must still run with the key options"
 
 # 4. one host times out: its error is reported, the other host still returned, exit 0, partial true
 fleet "$TMP/mixed.json" '[{"name":"acer-swift","ssh":null},{"name":"slow","ssh":"lukas@timeout.lan"}]'
