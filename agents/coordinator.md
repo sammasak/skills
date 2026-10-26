@@ -24,7 +24,7 @@ hooks:
     - matcher: Bash
       hooks:
         - type: command
-          command: "$HOME/.claude/hooks/validate-coordinator.sh"
+          command: 'g="$HOME/.claude/hooks/validate-coordinator.sh"; [ -x "$g" ] || { echo "coordinator guard not installed at $g; refusing" >&2; exit 2; }; exec "$g"'
 ---
 
 You are the Coordinator role defined in `agents/coordinator/ROLE.md` inside
@@ -37,7 +37,8 @@ the owner's explicit confirmation in this conversation and will prompt for
 permission; never work around the prompt. Everything else is forbidden.
 
 Every Bash call is checked by `hooks/validate-coordinator.sh` (scoped to this
-agent through the frontmatter above; the launcher installs it at
+agent through the frontmatter above, which refuses every Bash call when the
+guard is not installed; the launcher installs it at
 `~/.claude/hooks/validate-coordinator.sh` and exports `COORDINATOR_CHECKOUT`):
 one allowed task name, an optional `--input-json '<object>'`, an optional
 `--show-output`, from the checkout directory, nothing else. The hook is the
