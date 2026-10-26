@@ -1,0 +1,27 @@
+# SDLC status: rust
+
+| stage | state |
+|---|---|
+| sketch | green |
+| model | green |
+| test | red |
+| review | unverified |
+| perf | unverified |
+| security | unverified |
+
+SDLC machine: rust -- test (red) -- rust:test failed
+
+### Last red
+
+- wrapper: sdlc:test-rust-test
+- stage: test
+- guard: rust:test
+- at: 2026-10-26T10:00:00Z
+
+```
+test result: FAILED. 1 failed
+```
+
+### Current stage brief (test)
+
+Run the unit tests

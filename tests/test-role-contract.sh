@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Contract test: every role's ROLE.md frontmatter, its adapters and its
-# permissions.json agree, and every named skill/task exists.
+# Contract test: every role's ROLE.md frontmatter, its adapters, its permissions.json
+# and the shared guard parser agree, and every named skill/task exists.
 # Run inside the devenv (needs yq-go, jq): bash tests/test-role-contract.sh
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,7 +9,7 @@ FAIL=0; PASS=0
 ok() { PASS=$((PASS+1)); }
 bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
 
-TASKS="$(devenv tasks list --option coordinator.fleetFile:path "$ROOT/task-modules/fixtures/fleet-empty.json" 2>/dev/null | grep -oE '[a-z]+:[a-z-]+(:[a-z-]+)*' | sort -u)"
+TASKS="$(devenv tasks list --option coordinator.fleetFile:path "$ROOT/task-modules/fixtures/fleet-empty.json" 2>/dev/null | grep -oE '[a-z0-9_-]+(:[a-z0-9_-]+)+' | sort -u)"
 [ -n "$TASKS" ] || { echo "FAIL: devenv tasks list returned nothing"; exit 1; }
 
 for role_md in agents/*/ROLE.md; do
@@ -17,20 +17,27 @@ for role_md in agents/*/ROLE.md; do
   fm="$(yq --front-matter=extract -o=json '.' "$role_md")" || { bad "$role: frontmatter not parseable"; continue; }
   [ "$(jq -r .name <<<"$fm")" = "$role" ] && ok || bad "$role: name != directory"
   [ "$(jq -r .version <<<"$fm")" = "1" ] && ok || bad "$role: version must be 1"
+  jq -e '(.tasks.read | type == "array" and length > 0) and (.tasks.act | type == "array") and (.skills | type == "array" and length > 0)' <<<"$fm" >/dev/null && ok || bad "$role: tasks.read, tasks.act and skills must be lists"
+  jq -e '.tasks.inputless | type == "array" and length > 0' <<<"$fm" >/dev/null && ok || bad "$role: tasks.inputless must be a non-empty list"
 
   for s in $(jq -r '.skills[]' <<<"$fm"); do
     [ -f "skills/$s/SKILL.md" ] && ok || bad "$role: skill $s missing"
   done
-  for t in $(jq -r '.tasks.read[], .tasks.act[]' <<<"$fm"); do
-    grep -qx "$t" <<<"$TASKS" && ok || bad "$role: task $t not in devenv tasks list"
+  for t in $(jq -r '.tasks.read[], (.tasks.run // [])[], .tasks.act[]' <<<"$fm"); do
+    grep -qxF "$t" <<<"$TASKS" && ok || bad "$role: task $t not in devenv tasks list"
   done
   [ "$(jq '.forbidden|length' <<<"$fm")" -ge 5 ] && ok || bad "$role: forbidden list too short"
+
+  # the shared guard must read the same lists the contract declares (the shipped awk == yq)
+  for key in read run act inputless; do
+    want=$(jq -r --arg k "$key" '(.tasks[$k] // []) | join("|")' <<<"$fm")
+    have=$(awk -v key="$key" -f hooks/lib/role-list.awk "$role_md" | paste -sd'|' -) || { bad "$role: guard parser rejected the contract"; continue; }
+    [ "$want" = "$have" ] && ok || bad "$role: guard parser reads tasks.$key as '$have', contract says '$want'"
+  done
 
   perms="$dir/permissions.json"
   [ -f "$perms" ] || { bad "$role: permissions.json missing"; continue; }
   # input-less read tasks (declared in ROLE.md tasks.inputless) get exact settings rules; the rest are guard-only
-  jq -e '.tasks.inputless | type == "array" and length > 0' <<<"$fm" >/dev/null && ok || bad "$role: tasks.inputless must be a non-empty list"
-  jq -e '(.tasks.read | type == "array" and length > 0) and (.tasks.act | type == "array") and (.skills | type == "array" and length > 0)' <<<"$fm" >/dev/null && ok || bad "$role: tasks.read, tasks.act and skills must be lists"
   for t in $(jq -r '.tasks.inputless[]?' <<<"$fm"); do
     jq -e --arg t "$t" '.tasks.read | index($t)' <<<"$fm" >/dev/null && ok || bad "$role: inputless task $t is not a read task"
     jq -e --arg r "Bash(devenv tasks run ${t})" '.allow|index($r)' "$perms" >/dev/null && ok || bad "$role: exact rule for $t missing"
@@ -39,10 +46,10 @@ for role_md in agents/*/ROLE.md; do
     jq -e --arg t "$t" '[.allow[] | select(contains($t))] | length == 0' "$perms" >/dev/null && ok || bad "$role: act task $t is allowlisted"
     jq -e --arg t "$t" '[.ask[] | select(contains($t))] | length > 0' "$perms" >/dev/null && ok || bad "$role: act task $t not in ask"
   done
-  # every Bash allow rule names a read task; nothing else is allowed besides Read
-  extra=$(jq -r --argjson r "$(jq -c '.tasks.inputless' <<<"$fm")" '.allow[] | select(startswith("Bash(")) | ((capture("^Bash\\(devenv tasks run (?<t>[a-z]+:[a-z-]+)( --show-output)?\\)$").t) // "<malformed>") | select(. as $t | ($r | index($t)) == null)' "$perms") || { bad "$role: allow-rule filter failed"; extra=""; }
+  # every Bash allow rule names an inputless read task; nothing else is allowed besides a scoped Read
+  extra=$(jq -r --argjson r "$(jq -c '.tasks.inputless' <<<"$fm")" '.allow[] | select(startswith("Bash(")) | ((capture("^Bash\\(devenv tasks run (?<t>[a-z0-9_-]+(:[a-z0-9_-]+)+)( --show-output)?\\)$").t) // "<malformed>") | select(. as $t | ($r | index($t)) == null)' "$perms") || { bad "$role: allow-rule filter failed"; extra=""; }
   [ -z "$extra" ] && ok || bad "$role: Bash allow rules outside the inputless read tasks: $extra"
-  jq -e --arg r "$role" '[.allow[] | select(startswith("Bash(") | not)] == ["Read(./**)", "Read(~/.local/state/\($r)/**)"]' "$perms" >/dev/null && ok || bad "$role: Read must be scoped to the checkout and the role's state dir"
+  jq -e --arg r "$role" '[.allow[] | select(startswith("Bash(") | not)] | . == ["Read(./**)"] or . == ["Read(./**)", "Read(~/.local/state/\($r)/**)"]' "$perms" >/dev/null && ok || bad "$role: Read must be scoped to the checkout (plus the role's state dir if it keeps one)"
   [ -x "$ROOT/$(jq -r .guard "$perms")" ] && ok || bad "$role: guard hook missing or not executable"
 
   for adapter in $(jq -r '.adapters[]' <<<"$fm"); do
@@ -64,4 +71,11 @@ for role_md in agents/*/ROLE.md; do
     esac
   done
 done
+
+# adversarial contracts: the guard parser must refuse every fixture under tests/fixtures/roles (fail closed, exit 3)
+for f in tests/fixtures/roles/*.md; do
+  awk -v key=read -f hooks/lib/role-list.awk "$f" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 3 ] && ok || bad "guard parser accepted $(basename "$f") (exit $rc)"
+done
+
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]

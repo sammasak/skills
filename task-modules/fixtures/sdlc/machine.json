@@ -1,0 +1,3 @@
+{"schemaVersion":1,"name":"rust","bar":9,"requireEvidence":true,"requiredStages":[],"order":["sketch","model","test","review","perf","security"],"terminal":["perf","security"],
+ "stages":{"sketch":{"after":[],"guards":["rust:check","rust:clippy-soft"],"verdict":false},"model":{"after":["sketch"],"guards":["rust:lint","rust:fmt-check"],"verdict":false},
+ "test":{"after":["model"],"guards":["rust:test"],"verdict":false},"review":{"after":["test"],"guards":[],"verdict":true},"perf":{"after":["review"],"guards":["rust:criterion"],"verdict":false},"security":{"after":["review"],"guards":["rust:audit"],"verdict":false}}}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "role": "quality",
+  "guard": "hooks/validate-quality.sh",
+  "allow": [
+    "Bash(devenv tasks run gh:work)",
+    "Bash(devenv tasks run gh:work --show-output)",
+    "Bash(devenv tasks run git:recent)",
+    "Bash(devenv tasks run git:recent --show-output)",
+    "Read(./**)"
+  ],
+  "ask": [],
+  "deny": [
+    "Edit", "Write", "NotebookEdit",
+    "Read(~/.ssh/**)", "Read(/run/secrets/**)", "Read(~/.config/sops/**)", "Read(~/.config/age/**)", "Read(~/.age/**)", "Read(~/.gnupg/**)",
+    "Read(~/.claude/.credentials.json)", "Read(~/.claude.json)", "Read(~/.config/gh/**)", "Read(~/.kube/**)", "Read(~/.config/herdr/**)",
+    "Read(~/.netrc)", "Read(~/.git-credentials)", "Read(~/.docker/config.json)",
+    "Bash(devenv tasks run * -O*)", "Bash(devenv tasks run * --option*)", "Bash(devenv tasks run * --from*)", "Bash(devenv tasks run * --override-input*)",
+    "Bash(ssh*)", "Bash(scp*)", "Bash(git push*)", "Bash(gh pr merge*)", "Bash(nixos-rebuild*)", "Bash(kubectl*)", "Bash(rm *)", "Bash(sudo*)", "Bash(cargo*)"
+  ]
+}

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fake devenv for quality tests: answers the three calls quality:report/quality:gate make inside a checkout.
+# FAKE_SDLC_DIR holds machine.json and status.txt; FAKE_GATE_EXIT forces `tasks run sdlc:<stage>`'s exit.
+echo "devenv($PWD) $*" >> "${FAKE_LOG:-/dev/null}"
+env | grep -E '^(DEVENV_|SDLC_|IN_NIX_SHELL=|name=|NIX_CFLAGS|PKG_CONFIG_PATH=|DIRENV_|TZ=$|XDG_[A-Z_]+=$)' >> "${FAKE_LOG:-/dev/null}.leak" || true   # also: no empty-but-set TZ/XDG_*
+case ":$PATH:" in *".devenv/profile"*) echo "PATH=$PATH" >> "${FAKE_LOG:-/dev/null}.leak" ;; esac
+case "$1 $2" in
+  "shell -q") # one-shot: sh -c '<script>' sh <workdir>  -> write machine/status/fp like the real consumer shell would
+    work="${*: -1}"
+    # the fake stands for the consumer shell + the shipped script: no machine => the script's own `exit 42`
+    [ -f "${FAKE_SDLC_DIR:?}/machine.json" ] || exit 42
+    cp "$FAKE_SDLC_DIR/machine.json" "$work/machine.json"; cp "$FAKE_SDLC_DIR/status.txt" "$work/status.txt"; printf '%s\n' "${FAKE_SDLC_FP:-fp1}" > "$work/fp.txt" ;;
+  "tasks run") case "$3" in sdlc:*) echo "fake stage $3 running"; echo "fake tail line"; exit "${FAKE_GATE_EXIT:-0}" ;; *) echo "fake devenv: unknown task $3" >&2; exit 2 ;; esac ;;
+  *) echo "fake devenv: unsupported $*" >&2; exit 2 ;;
+esac
