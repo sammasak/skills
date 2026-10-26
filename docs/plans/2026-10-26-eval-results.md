@@ -9,7 +9,7 @@ Reproduce: `python3 evals/results/baseline-main-2730201/compare.py evals/results
 
 ## Solving (skill body advice), n=3 per task, final graders
 
-| Task | Tests | main | branch `2953d43` |
+| Task | Tests | main | branch `c677aa1` |
 |---|---|---|---|
 | nix-audit-operator/task-1 | missing scanner evidence is UNKNOWN | 3/3 | 3/3 |
 | nix-audit-operator/task-2 | unsupported `--json-out`, stale snapshots, no unasked gate | **0/3** | **3/3** |
@@ -23,9 +23,9 @@ Reproduce: `python3 evals/results/baseline-main-2730201/compare.py evals/results
 Variance: tooling-feedback/task-2 on `main` was 3/3 in the previous run and 0/3 in this one, so
 `main` leaks sometimes rather than always. In that previous run the branch was **0/3**, because
 a line added in this cycle ("anything filed publicly must not…") read as if private repos could
-hold secrets; `2953d43` fixed it and is the measured revision. Earlier runs also exposed a
-runner bug (`.md` artifacts cut to their first code fence, fixed in `17bfdc3`) and a grader that
-rejected `## Skip tests: no` (`126464c`); results from those runs were discarded, not reported.
+hold secrets; `c677aa1` fixed it and is the measured revision. Earlier runs also exposed a
+runner bug (`.md` artifacts cut to their first code fence, fixed in `bbddf00`) and a grader that
+rejected `## Skip tests: no` (`74fdc37`); results from those runs were discarded, not reported.
 
 ## Trigger (description routing), 250 cases, n=1
 
