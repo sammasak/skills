@@ -19,7 +19,7 @@ in
 
   config.tasks."harness:session-summary" = {
     description = "Last events of one harness session: last prompt, last answer, tools, awaiting_input.";
-    input = { host = null; harness = null; session_id = null; cwd = null; tail = 50; };
+    input = { host = null; harness = null; session_id = null; cwd = null; tail = 200; };
     exec = ''
       set -uo pipefail
       . ${cfg.lib}
@@ -28,7 +28,7 @@ in
       [ -n "$host" ] && [ -n "$harness" ] && [ -n "$sid" ] && [ -n "$cwd" ] || fail 3 invalid_input "host, harness, session_id and cwd are required" "$(ctx)"
       [[ "$sid" =~ ^[A-Za-z0-9_-]+$ ]] || fail 3 invalid_input "session_id has unsafe characters" "$(ctx)"
       [[ "$cwd" =~ ^/[A-Za-z0-9_./-]*$ ]] || fail 3 invalid_input "cwd has unsafe characters" "$(ctx)"
-      [[ "$tail_n" =~ ^[0-9]+$ ]] || tail_n=50; [ "$tail_n" -gt 500 ] && tail_n=500
+      [[ "$tail_n" =~ ^[0-9]+$ ]] || tail_n=200; [ "$tail_n" -gt 500 ] && tail_n=500
       target=""
       case "$host" in
         ${lib.concatMapStringsSep "\n        " (h: ''${h.name}) target="${sshTarget h}" ;;'') cfg.hosts}

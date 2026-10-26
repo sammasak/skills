@@ -129,8 +129,8 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 **Interfaces:** `gh-work --repo OWNER/REPO [--ref N]` → `{issues:[{number,title,state,updated_at,labels}], prs:[{number,title,state,review_decision,checks,merged_at}]}` bounded to 20 each. `git-recent --checkout PATH [--since 24h]` → `{head, branch, dirty, ahead, behind, unpushed:[sha subj], commits:[sha,at,subject]}`; checkout must be in fleet.json `repos[].checkout`.
 
-- [ ] Tests: fake gh output parsed; gh failure → `error.kind=gh_error`; checkout outside allowlist → exit 3; dirty/unpushed detection on a fixture repo.
-- [ ] Implement; PASS; live run on `~/skills-epic16` and `sammasak/skills`. Commit.
+- [x] Tests: fake gh output parsed; gh failure → `error.kind=gh_error`; checkout outside allowlist → exit 3; dirty/unpushed detection on a fixture repo.
+- [x] Implement; PASS; live run on `~/skills-epic16` and `sammasak/skills`. Commit.
 
 ### Task 2.5: `work:status` and `coord:brief` DAG
 
@@ -138,8 +138,8 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 **Interfaces:** `work-status` reads `DEVENV_TASKS_OUTPUTS`, joins agents to `task_ref` (from terminal title `#N` or session cwd→repo), emits per-item `{agent, herdr_state, work_verdict: verified|unverified|blocked|unknown, needs_owner: bool, reasons:[..], sources:[{task, observed_at}]}` plus `partial: true` + `failed_sources` when any upstream errored. `coord:brief` renders a ≤40-line Markdown summary from it and also writes the JSON.
 
-- [ ] Tests: done agent + no merged PR → `unverified`; blocked agent → `needs_owner:true`; upstream failure → `partial:true` with `failed_sources` and exit 0; all upstream failed → exit 2; `herdr_state` and `work_verdict` are distinct keys.
-- [ ] Implement; `devenv tasks run coord:brief --show-output` live. Commit.
+- [x] Tests: done agent + no merged PR → `unverified`; blocked agent → `needs_owner:true`; upstream failure → `partial:true` with `failed_sources` and exit 0; all upstream failed → exit 2; `herdr_state` and `work_verdict` are distinct keys.
+- [x] Implement; `devenv tasks run coord:brief --show-output` live. Commit.
 
 ### Task 2.6: Skill `herdr-operations` + eval + live read-only run
 
@@ -197,4 +197,5 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 | 2026-10-26 17:30 | Slice 1 M0 (PR #17) | 8475e31, a35f049, 67e278a, f61a592 | skills:test (0): policy, manifests, contract, negative, hooks | Review 1: 5/10 (prefix-glob allows, pi-ticket stand-in, ssh fallback) → fixed with agent-scoped grammar hook + exact rules; re-review pending; owner gate: merge |
 | 2026-10-26 18:30 | Slice 2 Task 2.1 first pass | bac4c5c (reworked) | task test 42/42, live inventory on acer-swift | **Owner redirect:** no standalone scripts; tasks + DAG only. Probe confirmed eval-time fleet → per-host tasks, `@completed` aggregation, `--option :path` override, cache invalidation |
 | 2026-10-26 19:30 | M0 reviews 2–4 | f61a592, 22aa856, 8be175f, acdb376 | skills:test (0) each round | 6/10 → 7/10 → **9/10**; guard fails closed, exact-only rules, Read scoped; PR #17 comment carries the trail; #16 M0 boxes ticked (4/5; "minimum runtime permissions" waits for M3 measurements) |
+| 2026-10-26 20:30 | Slice 2 Tasks 2.2–2.5 | a241253 + next | tasks suite: inspect 24/24, session-summary 18/18, evidence 24/24, coord:brief 20/20; live inspect + session summary on acer-swift | Full DAG runs 4 leaf tasks in parallel → aggregates → work:status → coord:brief; a `done` agent with only an open PR stays `unverified`; gh outage → `partial` + `unknown` verdicts |
 | 2026-10-26 20:00 | Slice 2 Task 2.1 DAG-first | c64d896 | skills:test incl. tasks suite (0): inventory 41/41 | `herdr:list:<host>` per fleet host → `herdr:inventory@completed`; devenv drops failed tasks' outputs, so list tasks always complete and carry `error` as data |

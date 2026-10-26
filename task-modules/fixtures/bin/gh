@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Fake gh for task tests: FAKE_GH_DIR holds <repo-slug>.issues.json / .prs.json; FAKE_GH_EXIT forces failure.
+echo "gh $*" >> "${FAKE_LOG:-/dev/null}"
+[ -n "${FAKE_GH_EXIT:-}" ] && { echo "gh: HTTP 401 Bad credentials" >&2; exit "$FAKE_GH_EXIT"; }
+repo=""; kind=""; prev=""
+for a in "$@"; do case "$prev" in -R|--repo) repo="$a" ;; esac; prev="$a"; done
+case "$1 $2" in "issue list") kind="issues" ;; "pr list") kind="prs" ;; *) echo "fake gh: unsupported $*" >&2; exit 2 ;; esac
+f="${FAKE_GH_DIR:?}/${repo//\//__}.$kind.json"; [ -r "$f" ] && cat "$f" || echo "[]"
