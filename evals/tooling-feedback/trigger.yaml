@@ -4,11 +4,15 @@ positives:
   - "Which repo should I report a broken pi-ticket integration in, and what logs do I need?"
   - "Make a constructive GitHub issue for the Factum testplan failure, including rustc versions and a minimal repro"
   - "I upgraded the gateway and got a 429; write a useful sanitized bug report"
+  - "pi-offload printed status invalid twice for a passing check; which repo owns that and what should the report contain?"
+  - "sdlc-status crashes with a schema mismatch after re-pinning devenv-platform; draft an issue without leaking my tokens"
 hard_negatives:
   - "Install and configure a new NixOS flake module" # → nix-flake-development
   - "Delegate a small Clippy fix to the Pi worker" # → pi-offload
   - "Prune a plan into Pi-ready implementation tickets" # → pi-ticket
   - "Show me how to run the nix-audit scanner for the first time" # → nix-audit-operator
+  - "Add a new subcommand to the factum CLI"  # → rust-engineering
+  - "Run nix-audit diff on the two generations and tell me what changed"  # → nix-audit-operator
 true_negatives:
   - "What is the weather in Stockholm?"
   - "Write a poem about Rust"

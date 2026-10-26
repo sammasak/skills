@@ -1,0 +1,54 @@
+{
+  "name": "solving-rust-engineering-20261026-121221",
+  "cases": [
+    {
+      "name": "rust-engineering::task-6",
+      "inputs": {
+        "instruction": "# Task: Can we skip tests because Factum found nothing?\n\nA teammate ran the deterministic Factum CLI on a Rust change and pasted the tail of\n`factum review --diff change.patch --format json`:\n\n```json\n{\"schema\":\"facts-review/v3\",\n \"candidates\":{\"referencing\":[],\"unresolved\":[],\"dependent_only\":[\n   {\"package\":\"ledger-sync\"},{\"package\":\"ledger-cli\"},{\"package\":\"ledger-web\"}]},\n \"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"],\n \"verification\":{\"status\":\"not_run\"}}\n```\n\nThey propose: \"No package references the changed items, so we can skip the test suite and merge.\"\nThe repo uses the homelab devenv Rust gates.\n\nWrite `assessment.md`. Include a line `Skip tests: yes` or `Skip tests: no`, a short explanation\ngrounded in the fields above, and the exact command(s) that decide whether to merge.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "rust-engineering",
+        "task_id": "task-6",
+        "output_filename": "assessment.md"
+      },
+      "metadata": {
+        "test_script": "evals/rust-engineering/tasks/task-6/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Assessment: Test Skip Decision\n\n## Finding\n\nThe Factum report shows:\n- `referencing: []` — no packages reference the changed items\n- `dependent_only: [ledger-sync, ledger-cli, ledger-web]` — these depend on the changed code *transitively*, not directly\n- `unavailable: [\"compiler_semantics\", \"feature_target_cfg\", \"test_inventory\"]` — the test inventory is **unavailable**, meaning Factum cannot enumerate the affected test suite\n\n## Decision\n\n**Skip tests: no**\n\n## Rationale\n\nThe absence of direct references does not mean the change is safe. Factum's `test_inventory` is unavailable, so we cannot verify whether the changed code is exercised by the test suite at all. The `dependent_only` packages may contain integration tests that cover the change's effects indirectly—and those tests exist, but Factum cannot list them.\n\nSkipping tests would violate the deterministic gates: the `unavailable` fields are explicit caveats that evidence is incomplete. An empty `referencing` list combined with missing test inventory is precisely the scenario where the mechanical scan is *least* informative.\n\n## Merge Path\n\nRun the required project checks; do not shortcut based on Factum's incomplete evidence:\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nIf both gates pass, proceed to review and merge. The `unavailable` fields confirm that Factum is advisory—the deterministic workflow (CI + verify) is the actual decision point.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-w9qd492e",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 4.685177974984981,
+      "total_duration": 4.698088884353638,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

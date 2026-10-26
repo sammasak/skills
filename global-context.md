@@ -18,6 +18,10 @@
 - Stop only for what no agent can do: physical access, a real-terminal `sudo`, or spending money.
 - **A human-accepted hardware blocker is a valid terminal state.** When the only remaining work depends solely on one of those no-agent-can-do things, and the human has explicitly accepted the blocker, stopping is correct and complete — not abandonment. Record the acceptance verbatim (quote it) and leave the unmet criterion documented as blocked, with everything buildable/testable already done and the exact operator steps written down. This never weakens the criterion: it stays unmet, and simulated or partial evidence is never relabeled as satisfying it. For a `/goal` or loop whose condition still needs such a blocker, treat the condition as terminal once the transcript contains that explicit human acceptance, and phrase future such conditions as "X holds, OR the human has explicitly accepted the hardware blocker" so the check can clear honestly.
 
+## Our Tools
+
+- Prefer installed tools to ad-hoc checks (`factum`, `nix-audit`, `sdlc-status`, `pi-offload`; their skills say how), after confirming the real binary. Missing or incomplete tool output is unknown, never a pass; a tool defect or stale skill command gets a `tooling-feedback` draft.
+
 ## Knowledge Vault
 
 Personal knowledge base at `~/knowledge`. Organised as rooms — directories with `INDEX.md` (what's in this room) and `CONTEXT.md` (how to operate in it). Read `~/knowledge/CLAUDE.md` for the full routing map of what lives where.

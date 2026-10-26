@@ -7,12 +7,16 @@ positives:
   - "sdlc:done fails saying stage review requires an agent review verdict"
   - "Walk the stage machine and dispatch the agent for the first failing stage"
   - "What does the stamp mean in the sdlc status output?"
+  - "sdlc-status --context says the database stage is unverified in this repo; what should I run next?"
+  - "This repo defines platform.sdlc with custom stages; get sdlc:done green"
 
 # Queries that look similar but should activate a different skill
 hard_negatives:
   - "Review this implementation across quality categories"           # → orchestrated-review
   - "Set up devenv and git hooks in this new Rust repo"              # → nix-flake-development / adopt workflow
   - "Run the tests and fix the failures"                             # → none (no project context)
+  - "Bump serde across this Cargo workspace and dedupe the lockfile"  # → rust-engineering
+  - "sdlc:done passes locally but the platform module rejects schemaVersion 2; who do I report it to?"  # → tooling-feedback
 
 # Queries that should activate no skill
 true_negatives:

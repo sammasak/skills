@@ -1,0 +1,54 @@
+{
+  "name": "solving-sdlc-pipeline-20261026-121212",
+  "cases": [
+    {
+      "name": "sdlc-pipeline::task-1",
+      "inputs": {
+        "instruction": "# Task: Is this repo's pipeline green?\n\nIn a repo whose devenv enables `platform.sdlc`:\n\n```\n$ devenv shell -q -- sdlc-status --context; echo \"exit=$?\"\nSDLC machine: billing -- migrate (unverified) -- not yet verified\n\n### Current stage brief (migrate)\n\nReplay migrations against disposable PostgreSQL.\nexit=0\n$ devenv shell -q -- sh -c 'jq -c .order \"$SDLC_MACHINE\"'\n[\"migrate\",\"contract\",\"e2e\"]\n```\n\nA release script asks: \"sdlc-status exited 0 — is the pipeline green?\"\n\nWrite `status.md` with a line `Green: yes` or `Green: no`, one sentence why, the stages that must\npass for this repo, and the single command whose exit code actually decides.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "sdlc-pipeline",
+        "task_id": "task-1",
+        "output_filename": "status.md"
+      },
+      "metadata": {
+        "test_script": "evals/sdlc-pipeline/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe pipeline is not green because the current stage \"migrate\" reports \"(unverified)\" — it has not yet been verified. `sdlc-status --context` exiting 0 only means the status command itself succeeded; it does not indicate that all stages have passed their guards.\n\n## Stages that must pass\n\nThis repo's pipeline requires these stages in order:\n1. migrate\n2. contract\n3. e2e\n\n## Command that decides\n\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nThis command runs the complete stage graph and exits 0 only when every configured stage's guard passes against the current tree fingerprint. Exit 0 means the pipeline is green; any other exit code means it is not.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-0hof7dss",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 2.6077901470125653,
+      "total_duration": 2.6262643337249756,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

@@ -1,6 +1,6 @@
 ---
 name: tooling-feedback
-description: "Use when reporting a bug, usability problem, performance regression, or enhancement for sammasak's tools (nix-audit, factum, devenv-platform, llm-gateway, NixOS integration), including deciding which GitHub repo owns it and collecting a safe reproducer. Not for generic feature implementation or unapproved issue filing."
+description: "Use when reporting a bug, usability problem, performance regression, or enhancement for sammasak's tools (nix-audit, factum, devenv-platform, llm-gateway, NixOS integration), including deciding which GitHub repo owns it and collecting a safe reproducer. Not for implementing a feature or fix in those tools, or for filing without the owner's approval."
 allowed-tools: Bash, Read, Grep
 ---
 
@@ -22,6 +22,8 @@ Choose the repo responsible for the broken behavior, **not** necessarily the rep
 | Cluster deployment, ingress, NetworkPolicy, Flux, gateway Kubernetes Service | `sammasak/homelab-gitops` |
 | Incorrect skill advice, wrong skill trigger, broken instructions or skill packaging | `sammasak/skills` |
 
+`sammasak/nixos-config` and `sammasak/skills` are **public**: also keep private-repo content and internal details out of them. Secrets and personal data stay out of every repo, private ones included. Prefer the owner's own template when it exists: devenv-platform `docs/FEEDBACK.md`, nix-audit `docs/FEEDBACK.md`. A skill whose commands no longer match the installed tool is a `sammasak/skills` regression, separate from any tool bug.
+
 When uncertain, state the evidence for ownership, open a **single primary issue**, and cross-link other repos rather than cloning the issue everywhere. Never blame the upstream tool for an error introduced by a downstream wrapper without checking the boundary.
 
 ## Collect evidence before drafting
@@ -34,7 +36,7 @@ When uncertain, state the evidence for ownership, open a **single primary issue*
 
 ## Security and privacy boundary
 
-Before sharing, **remove** API keys, bearer headers, SOPS/age private identities, decrypted secret values, tokens in URLs, user data, cookies, private configuration fragments, credentials, and raw packet captures. Never run an unrelated reproduction against production data to create an issue. If redaction prevents reproduction, describe the needed access privately and attach a minimal synthetic fixture instead. For a security vulnerability, prefer a private disclosure to the repo owner/security advisory rather than publicly publishing exploitation instructions or sensitive material.
+Before sharing, **remove** API keys, bearer headers, SOPS/age private identities, decrypted secret values, tokens in URLs, user data (emails, names), cookies, private configuration fragments, credentials, and raw packet captures. Replace each with a placeholder (`<token>`, `<user>`) everywhere: quoted logs, reproducer commands and environment lines alike; never repeat an original value, not even to say it was redacted. Before presenting the draft, search it for every raw value you were given. Never run an unrelated reproduction against production data to create an issue. If redaction prevents reproduction, describe the needed access privately and attach a minimal synthetic fixture instead. For a security vulnerability, prefer a private disclosure to the repo owner/security advisory rather than publicly publishing exploitation instructions or sensitive material.
 
 ## Issue draft format
 

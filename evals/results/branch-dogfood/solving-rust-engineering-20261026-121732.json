@@ -1,0 +1,54 @@
+{
+  "name": "solving-rust-engineering-20261026-121732",
+  "cases": [
+    {
+      "name": "rust-engineering::task-6",
+      "inputs": {
+        "instruction": "# Task: Can we skip tests because Factum found nothing?\n\nA teammate ran the deterministic Factum CLI on a Rust change and pasted the tail of\n`factum review --diff change.patch --format json`:\n\n```json\n{\"schema\":\"facts-review/v3\",\n \"candidates\":{\"referencing\":[],\"unresolved\":[],\"dependent_only\":[\n   {\"package\":\"ledger-sync\"},{\"package\":\"ledger-cli\"},{\"package\":\"ledger-web\"}]},\n \"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"],\n \"verification\":{\"status\":\"not_run\"}}\n```\n\nThey propose: \"No package references the changed items, so we can skip the test suite and merge.\"\nThe repo uses the homelab devenv Rust gates.\n\nWrite `assessment.md`. Include a line `Skip tests: yes` or `Skip tests: no`, a short explanation\ngrounded in the fields above, and the exact command(s) that decide whether to merge.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "rust-engineering",
+        "task_id": "task-6",
+        "output_filename": "assessment.md"
+      },
+      "metadata": {
+        "test_script": "evals/rust-engineering/tasks/task-6/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Assessment: Factum Review Output\n\n## Finding\n\nFactum's `facts-review/v3` report shows:\n- **`referencing: []`** — No packages directly reference the changed items.\n- **`dependent_only: [ledger-sync, ledger-cli, ledger-web]`** — Three packages depend *transitively* on the changed code but do not reference changed entities directly.\n- **`unavailable: [compiler_semantics, feature_target_cfg, test_inventory]`** — The analysis is incomplete; **`test_inventory` is unavailable**, meaning Factum cannot tell which tests exercise the change.\n- **`verification: not_run`** — Factum did not run verification (it only does impact/review analysis).\n\n## Decision\n\n**Skip tests: no**\n\n## Rationale\n\nThe `dependent_only` packages are not evidence of zero impact. Per the Factum guide, \"dependent_only is not evidence of no use\" — these packages may call the changed items indirectly through intermediate APIs, and the change may alter runtime behavior or type signatures in ways that break them.\n\nMore critically, **`test_inventory` is unavailable**. This means Factum cannot list which tests in the workspace exercise the changed code. Without this, we have no deterministic proof that zero tests cover the change; the claim \"no tests are affected\" rests on absence of evidence, not evidence of absence.\n\nThe homelab Rust gates are the authoritative verification step. Skipping them based on incomplete Factum output violates the policy that \"Rust CI, tests and review stay authoritative. If Factum is absent or fails, say so and run the normal gates.\"\n\n## Command to Decide Merge\n\nRun the pre-push gate:\n\n```\ndevenv tasks run rust:ci\n```\n\nThis executes strict clippy, cargo-deny, rustdoc, and `cargo nextest` with doctests. It will compile and run all affected and candidate tests, producing the actual evidence needed to merge safely.\n\nIf `rust:ci` passes, the change is safe to merge. If the teammate wants release/merge confidence, run:\n\n```\ndevenv tasks run rust:verify\n```\n\nThis adds coverage floor validation on top of `rust:ci`.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-d2azhm5h",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 6.767625651031267,
+      "total_duration": 6.7809858322143555,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

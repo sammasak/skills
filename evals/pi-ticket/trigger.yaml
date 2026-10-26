@@ -1,0 +1,12 @@
+skill: pi-ticket
+
+positives:
+  - "Prune this ChatGPT plan into size:xs Pi tickets with acceptance criteria and verification commands"
+  - "pi-ticket run left the issue agent:pi-blocked with gate quota; what now?"
+
+hard_negatives:
+  - "Quickly have Pi fix one clippy warning in my current session"   # → pi-offload
+  - "Review this pull request across quality categories"   # → orchestrated-review
+
+true_negatives:
+  - "How do I open a GitHub issue from the web UI?"

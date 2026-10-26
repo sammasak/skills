@@ -1,0 +1,54 @@
+{
+  "name": "solving-pi-offload-20261026-121806",
+  "cases": [
+    {
+      "name": "pi-offload::task-1",
+      "inputs": {
+        "instruction": "# Task: Two Pi decisions\n\n(a) You delegated \"add tests for parse_amount\" and pi-offload printed:\n\n```json\n{\"status\":\"invalid\",\"rounds\":1,\"patch\":\"/home/u/.cache/pi-offload/ab12/change.patch\",\"diffstat\":\"\",\"added_files\":\"\",\"dirty_source\":true,\"check_timed_out\":false,\"new_refs\":[],\"moved_refs\":[],\"summary\":\"Tests already pass.\"}\n```\n\n(b) Next, a teammate wants to offload \"rotate the JWT signing-key handling in auth/keys.rs and\nupdate the token validation\" to Pi, with `cargo test -p auth` as the check.\n\n(c) Then someone asks to offload \"tidy up the README wording so it reads better\"; the repo has no\ncheck that could judge it.\n\nWrite `decision.md` with exactly these three lines first, then a short reason for each:\n`Apply patch: yes|no`, `Offload JWT task: yes|no` and `Offload README task: yes|no`.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "pi-offload",
+        "task_id": "task-1",
+        "output_filename": "decision.md"
+      },
+      "metadata": {
+        "test_script": "evals/pi-offload/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "Apply patch: no\nOffload JWT task: no\nOffload README task: no\n\n(a) The patch is `invalid` because `dirty_source` is true and the diff is empty. Pi did not see the test files you intended (they were uncommitted or untracked at `HEAD`), so it saw passing tests and produced no changes. Commit your test additions before dispatching, or Pi will not see them. Do not apply an empty patch.\n\n(b) JWT key rotation and token validation are security-sensitive and design-heavy. This is not mechanical: it requires architectural judgment about key versioning, rotation windows, token expiry, and backward compatibility. These decisions belong in code review and threat modeling, not an LLM. Offload only if the rotation scheme is already decided in a design document or issue that Pi can reference; even then, security code demands human verification at every step. Do the work yourself or pair with a colleague.\n\n(c) \"Tidy up wording so it reads better\" has no check command that decides success. README quality is subjective; no test passes or fails on prose. Pi needs a crisp oracle (linter, build, test suite) to know when to stop iterating. Without one, Pi will loop until timeout or token budget exhaustion, and you will distrust the result. Write the README improvements yourself, or establish a measurable criterion (e.g., a spell-check tool or word-count limit) before dispatching.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-pi-offload-task-1-_6cyq347",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 4.866462666948792,
+      "total_duration": 4.880473613739014,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

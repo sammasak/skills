@@ -1,0 +1,54 @@
+{
+  "name": "solving-rust-engineering-20261026-121658",
+  "cases": [
+    {
+      "name": "rust-engineering::task-6",
+      "inputs": {
+        "instruction": "# Task: Can we skip tests because Factum found nothing?\n\nA teammate ran the deterministic Factum CLI on a Rust change and pasted the tail of\n`factum review --diff change.patch --format json`:\n\n```json\n{\"schema\":\"facts-review/v3\",\n \"candidates\":{\"referencing\":[],\"unresolved\":[],\"dependent_only\":[\n   {\"package\":\"ledger-sync\"},{\"package\":\"ledger-cli\"},{\"package\":\"ledger-web\"}]},\n \"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"],\n \"verification\":{\"status\":\"not_run\"}}\n```\n\nThey propose: \"No package references the changed items, so we can skip the test suite and merge.\"\nThe repo uses the homelab devenv Rust gates.\n\nWrite `assessment.md`. Include a line `Skip tests: yes` or `Skip tests: no`, a short explanation\ngrounded in the fields above, and the exact command(s) that decide whether to merge.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "rust-engineering",
+        "task_id": "task-6",
+        "output_filename": "assessment.md"
+      },
+      "metadata": {
+        "test_script": "evals/rust-engineering/tasks/task-6/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Assessment: Skip Tests on Factum Review Result\n\n## Skip tests: no\n\n## Explanation\n\nThe Factum report shows three critical limitations that prevent treating a lack of referencing packages as evidence of safety:\n\n1. **`unavailable: [\"test_inventory\"]`** — Factum cannot enumerate tests in this workspace. It cannot determine which tests actually exercise the changed code, so \"no referencing packages\" does not mean \"no tests should run.\"\n\n2. **`dependent_only` is not a correctness claim** — The three packages (ledger-sync, ledger-cli, ledger-web) appear only because they *depend on* the changed package, not because they reference the changed items. Dependent-only presence signals uncertainty, not safety. Combined with the missing test inventory, this is insufficient grounds to skip testing.\n\n3. **`verification: not_run`** — The model did not perform semantic analysis. We lack evidence about direct callers, macro expansion, or trait impl sites within the changed package itself.\n\n## Decision Path\n\nRun the standard homelab gates. The authority is the test suite, not Factum's advisory:\n\n```bash\ndevenv tasks run rust:ci\n```\n\nIf `rust:ci` passes (strict clippy, cargo-deny, rustdoc, nextest + doctests), merge. Factum's empty `referencing` list is context for code review, not a test-skip justification.\n\nFor a future change where Factum *does* have full availability and reports both empty referencing *and* verification status \"success\", you would still run `rust:ci`—but Factum's report would then reduce review friction by confirming isolated impact.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-ba28x187",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 5.552292184031103,
+      "total_duration": 5.563633441925049,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

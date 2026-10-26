@@ -1,0 +1,54 @@
+{
+  "name": "solving-rust-engineering-20261026-121812",
+  "cases": [
+    {
+      "name": "rust-engineering::task-6",
+      "inputs": {
+        "instruction": "# Task: Can we skip tests because Factum found nothing?\n\nA teammate ran the deterministic Factum CLI on a Rust change and pasted the tail of\n`factum review --diff change.patch --format json`:\n\n```json\n{\"schema\":\"facts-review/v3\",\n \"candidates\":{\"referencing\":[],\"unresolved\":[],\"dependent_only\":[\n   {\"package\":\"ledger-sync\"},{\"package\":\"ledger-cli\"},{\"package\":\"ledger-web\"}]},\n \"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"],\n \"verification\":{\"status\":\"not_run\"}}\n```\n\nThey propose: \"No package references the changed items, so we can skip the test suite and merge.\"\nThe repo uses the homelab devenv Rust gates.\n\nWrite `assessment.md`. Include a line `Skip tests: yes` or `Skip tests: no`, a short explanation\ngrounded in the fields above, and the exact command(s) that decide whether to merge.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "rust-engineering",
+        "task_id": "task-6",
+        "output_filename": "assessment.md"
+      },
+      "metadata": {
+        "test_script": "evals/rust-engineering/tasks/task-6/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Assessment\n\n## Skip tests: no\n\n**Explanation:**\n\nThe Factum report has three disqualifying issues that prevent using it to skip tests:\n\n1. **`dependent_only` packages exist.** The report lists three packages (`ledger-sync`, `ledger-cli`, `ledger-web`) as dependent-only — they depend on the changed code but are not detected as referencing the *specific items* that changed. Per the homelab convention, \"dependent_only is not evidence of no use.\" These packages may still be affected by the change and need verification.\n\n2. **`unavailable: [\"test_inventory\"]`.** Factum could not enumerate the full test suite, so it cannot guarantee that no tests cover the changed code. The `verification: not_run` field confirms this — no actual test run was performed to validate the impact.\n\n3. **Factum is advisory only.** The homelab standard explicitly states: \"rust:ci, tests and review stay authoritative.\" Even with a clean report, the deterministic gate is not a merge blocker in the absence of full verification.\n\n## Command to decide merge:\n\nRun the homelab gate before merging:\n\n```bash\ndevenv tasks run rust:ci\n```\n\nThis command is strict CI (clippy, cargo-deny, rustdoc, nextest + doctests) and is the authoritative decision point. If it passes, the change is safe to merge. If Factum was run on demand for insight only, acknowledge its findings in review but defer to the CI gate.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-2mrtzcje",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 4.9970112619921565,
+      "total_duration": 5.008493185043335,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

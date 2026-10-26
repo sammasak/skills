@@ -1,0 +1,54 @@
+{
+  "name": "solving-pi-offload-20261026-121652",
+  "cases": [
+    {
+      "name": "pi-offload::task-1",
+      "inputs": {
+        "instruction": "# Task: Two Pi decisions\n\n(a) You delegated \"add tests for parse_amount\" and pi-offload printed:\n\n```json\n{\"status\":\"invalid\",\"rounds\":1,\"patch\":\"/home/u/.cache/pi-offload/ab12/change.patch\",\"diffstat\":\"\",\"added_files\":\"\",\"dirty_source\":true,\"check_timed_out\":false,\"new_refs\":[],\"moved_refs\":[],\"summary\":\"Tests already pass.\"}\n```\n\n(b) Next, a teammate wants to offload \"rotate the JWT signing-key handling in auth/keys.rs and\nupdate the token validation\" to Pi, with `cargo test -p auth` as the check.\n\n(c) Then someone asks to offload \"tidy up the README wording so it reads better\"; the repo has no\ncheck that could judge it.\n\nWrite `decision.md` with exactly these three lines first, then a short reason for each:\n`Apply patch: yes|no`, `Offload JWT task: yes|no` and `Offload README task: yes|no`.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "pi-offload",
+        "task_id": "task-1",
+        "output_filename": "decision.md"
+      },
+      "metadata": {
+        "test_script": "evals/pi-offload/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "Apply patch: no\nOffload JWT task: no\nOffload README task: no\n\n(a) `dirty_source: true` means the source checkout was modified before the worktree was created—Pi did not see the full state of the repo. The summary claims tests already pass, but this is unreliable when the inputs are incomplete. Do not apply; commit any pending changes, then re-run pi-offload if the task is still needed.\n\n(b) JWT key rotation and token validation changes are security-sensitive and require design judgement. The task mixes cryptographic concerns with token lifecycle—too risky for Pi even with a passing check. Do this locally with security review. Do not offload to a free-tier model that may log prompts.\n\n(c) README wording improvements are subjective. There is no check command that can decide success (\"reads better\" is opinion, not a testable assertion). Pi requires an objective pass/fail criterion. Do this yourself or use a human reviewer; do not offload.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-pi-offload-task-1-2w6q1phe",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 4.052242160018068,
+      "total_duration": 4.066020488739014,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

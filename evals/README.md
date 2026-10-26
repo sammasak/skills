@@ -34,6 +34,14 @@ uv sync
 export ANTHROPIC_API_KEY="sk-ant-..."  # or CLAUDE_CODE_OAUTH_TOKEN
 ```
 
+On NixOS the profile Python may lack `_ssl`; use nixpkgs' interpreter and the sops token:
+
+```bash
+nix shell nixpkgs#uv nixpkgs#python312 -c bash -c \
+  'export CLAUDE_CODE_OAUTH_TOKEN="$(cat /run/secrets/claude_oauth_token)"
+   UV_PYTHON=$(command -v python3.12) UV_PYTHON_DOWNLOADS=never uv run python -m runner.trigger'
+```
+
 ## Running trigger evals
 
 ```bash
@@ -125,7 +133,9 @@ JSON reports are saved to:
 
 Reports include per-case inputs, outputs, evaluator scores, and reasons. Use `--no-save` on either runner to skip writing the report.
 
-## Current baselines (2026-10-09)
+Latest measured comparison (tool skills, baseline vs branch): `docs/plans/2026-10-26-eval-results.md`.
+
+## Earlier baselines (2026-10-09, superseded by the comparison above)
 
 - Trigger dispatch: 135/152 (89±1% plateau across reruns). A real GEPA run
   (4 rollouts, local qwen2.5-coder-7b reflection via ollama; committed

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from runner.solving.dataset import SolvingInput
-from runner.solving.task import _load_skill_body, _strip_code_fence, run_solving
+from runner.solving.task import _artifact_content, _load_skill_body, _strip_code_fence, run_solving
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -94,6 +94,20 @@ def test_strip_code_fence_with_surrounding_text():
     """Only the fenced block is extracted, preamble is dropped."""
     text = "Here is the code:\n```rust\nfn main() {}\n```\nDone."
     assert _strip_code_fence(text) == "fn main() {}"
+
+
+def test_markdown_artifact_keeps_text_around_fences():
+    """A .md answer whose body contains a fenced command must not shrink to that command."""
+    text = "Skip tests: no\nWhy: not_run.\n```bash\ndevenv tasks run rust:ci\n```\n"
+    assert _artifact_content(text, "assessment.md") == text
+
+
+def test_markdown_artifact_unwraps_a_whole_markdown_fence():
+    assert _artifact_content("```markdown\nGreen: no\n```", "status.md") == "Green: no"
+
+
+def test_code_artifact_still_extracts_the_fence():
+    assert _artifact_content("Here:\n```bash\nrm -f x\n```\nDone.", "snapshot.sh") == "rm -f x"
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,8 @@ positives:
   - "I need to force Flux to pull the latest changes from Git now"
   - "How do I set up image update automation in Flux?"
   - "My Kustomization is showing 'not ready' and I don't know why"
+  - "Validate every Flux overlay in homelab-gitops before I push"
+  - "I changed the Alloy collector filter for native OTLP logs; what proves it does not leak private fields?"
 
 # Queries that look similar but should activate a different skill
 hard_negatives:
@@ -20,6 +22,7 @@ hard_negatives:
   - "My Nix flake won't evaluate because of a missing input"         # → nix-flake-development
   - "How do I set up structured logging in my Axum service?"         # → rust-engineering
   - "My container image is too large, how do I reduce it?"           # → none
+  - "Encrypt the new native OTLP bearer token for the cluster"  # → secrets-management
 
 # Queries that should activate no skill
 true_negatives:

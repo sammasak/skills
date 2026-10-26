@@ -1,0 +1,54 @@
+{
+  "name": "solving-rust-engineering-20261026-121359",
+  "cases": [
+    {
+      "name": "rust-engineering::task-6",
+      "inputs": {
+        "instruction": "# Task: Can we skip tests because Factum found nothing?\n\nA teammate ran the deterministic Factum CLI on a Rust change and pasted the tail of\n`factum review --diff change.patch --format json`:\n\n```json\n{\"schema\":\"facts-review/v3\",\n \"candidates\":{\"referencing\":[],\"unresolved\":[],\"dependent_only\":[\n   {\"package\":\"ledger-sync\"},{\"package\":\"ledger-cli\"},{\"package\":\"ledger-web\"}]},\n \"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"],\n \"verification\":{\"status\":\"not_run\"}}\n```\n\nThey propose: \"No package references the changed items, so we can skip the test suite and merge.\"\nThe repo uses the homelab devenv Rust gates.\n\nWrite `assessment.md`. Include a line `Skip tests: yes` or `Skip tests: no`, a short explanation\ngrounded in the fields above, and the exact command(s) that decide whether to merge.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "rust-engineering",
+        "task_id": "task-6",
+        "output_filename": "assessment.md"
+      },
+      "metadata": {
+        "test_script": "evals/rust-engineering/tasks/task-6/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Assessment: Test Skip Decision\n\n## Verdict\n**Skip tests: no**\n\n## Analysis\n\nThe Factum output shows `\"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"]`. Critically, **`test_inventory` is unavailable**, meaning Factum could not enumerate which tests exercise the changed code. This is an **incomplete evidence state**, not a clean bill of health.\n\nThe `candidates.dependent_only` field lists three packages with no direct references to the change—but this only means Factum's static analysis did not find call chains. It does not mean those packages are unaffected:\n\n1. The change may affect shared test fixtures, error types, or configuration that dependent packages use indirectly.\n2. Integration tests in those packages may exercise the changed behavior through public APIs that Factum's brief view does not capture.\n3. The unavailable `test_inventory` is a red flag: Factum cannot tell you what *should* run.\n\n## Decision\n\nPer ADR-026 + ADR-027 and the homelab Rust engineering standard:\n\n**Run the deterministic gates before merge:**\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nFactum is advisory. An empty or partial report does not override the required checks. Merge only after `rust:verify` (coverage floor + ci) passes.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-kpooyqtu",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 5.063678060017992,
+      "total_duration": 5.113677501678467,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

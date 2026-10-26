@@ -12,6 +12,8 @@ positives:
   - "How do I cross-compile a Rust binary to musl for a minimal container?"
   - "Should this workspace use thiserror or anyhow for its library errors?"
   - "Model this feature as a type-state machine under our strict clippy lints"
+  - "Which crates does my uncommitted Rust change affect? Use factum on the diff before I pick tests"
+  - "Summarize the clippy diagnostics of this Rust workspace compactly with factum"
 
 # Queries that look similar but should activate a different skill
 hard_negatives:
@@ -19,6 +21,7 @@ hard_negatives:
   - "My Flux deployment of the Rust API keeps failing"                # → kubernetes-gitops
   - "I need to encrypt a config file containing my Rust service API key"  # → secrets-management
   - "How do I write a Nix flake devShell for Rust development?"       # → nix-flake-development
+  - "factum review crashed on a valid patch; write a sanitized bug report for its maintainers"  # → tooling-feedback
 
 # Queries that should activate no skill
 true_negatives:

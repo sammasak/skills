@@ -1,0 +1,15 @@
+skill: pi-offload
+
+positives:
+  - "Hand the 14 clippy warnings in crate ledger to the free Pi worker; cargo clippy -p ledger -- -D warnings decides"
+  - "Delegate adding unit tests for parse_amount to Pi with cargo test -p ledger as the check"
+  - "pi-offload returned status invalid with dirty_source true; can I apply the patch?"
+
+hard_negatives:
+  - "Turn this plan into Pi-ready GitHub issues with red tests"   # → pi-ticket
+  - "Should we pick Postgres or SQLite for the new ledger service?"   # → none
+  - "Rotate the age recipients for the homelab SOPS secrets"   # → secrets-management
+
+true_negatives:
+  - "What is the value of pi to ten digits?"
+  - "Recommend a Raspberry Pi case"

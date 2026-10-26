@@ -1,0 +1,54 @@
+{
+  "name": "solving-sdlc-pipeline-20261026-121649",
+  "cases": [
+    {
+      "name": "sdlc-pipeline::task-1",
+      "inputs": {
+        "instruction": "# Task: Is this repo's pipeline green?\n\nIn a repo whose devenv enables `platform.sdlc`:\n\n```\n$ devenv shell -q -- sdlc-status --context; echo \"exit=$?\"\nSDLC machine: billing -- migrate (unverified) -- not yet verified\n\n### Current stage brief (migrate)\n\nReplay migrations against disposable PostgreSQL.\nexit=0\n$ devenv shell -q -- sh -c 'jq -c .order \"$SDLC_MACHINE\"'\n[\"migrate\",\"contract\",\"e2e\"]\n```\n\nA release script asks: \"sdlc-status exited 0 — is the pipeline green?\"\n\nWrite `status.md` with a line `Green: yes` or `Green: no`, one sentence why, the stages that must\npass for this repo, and the single command whose exit code actually decides.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "sdlc-pipeline",
+        "task_id": "task-1",
+        "output_filename": "status.md"
+      },
+      "metadata": {
+        "test_script": "evals/sdlc-pipeline/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe exit code 0 from `sdlc-status --context` means the tool ran successfully and reported state; it does not mean the pipeline passed. The \"unverified\" status on the migrate stage and the incomplete graph indicate stages have not yet been verified.\n\n## Stages that must pass for this repo\n\n1. migrate\n2. contract\n3. e2e\n\n## Command that decides pipeline status\n\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nThis command exits 0 only when every configured stage (migrate, contract, e2e) has passed its guard or obtained an approved verdict. Its exit code is the sole authoritative verdict; `sdlc-status --context` is read-only state reporting and always succeeds regardless of pass/fail.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-34bmu_gx",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 2.6664193379692733,
+      "total_duration": 2.684781789779663,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

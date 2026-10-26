@@ -11,6 +11,8 @@ positives:
   - "My NixOS module is not recognized — how do I wire it into my flake?"
   - "How do I add a new NixOS host to my flake?"
   - "I need to create a custom NixOS module with options and config"
+  - "After switching, codex --version in fish prints the version twice; where in nixos-config does that come from?"
+  - "Run the nixos-config verification gate before I push this module change"
 
 # Queries that look similar but should activate a different skill
 hard_negatives:
@@ -18,6 +20,7 @@ hard_negatives:
   - "My Rust code won't compile because of a lifetime error"          # → rust-engineering
   - "How do I build a minimal container image for my Go service?"     # → none
   - "My cluster secrets are not being decrypted by Flux SOPS"         # → secrets-management
+  - "Confirm the new app deploy is actually live behind Authentik"  # → verify-service
 
 # Queries that should activate no skill
 true_negatives:
