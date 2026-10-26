@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "coordinator",
+  "guard": "hooks/validate-coordinator.sh",
+  "allow": [
+    "Bash(devenv tasks run coord:brief)",
+    "Bash(devenv tasks run coord:brief --show-output)",
+    "Bash(devenv tasks run herdr:inventory)",
+    "Bash(devenv tasks run herdr:inventory --show-output)",
+    "Bash(devenv tasks run work:status)",
+    "Bash(devenv tasks run work:status --show-output)",
+    "Read(./**)",
+    "Read(~/.local/state/coordinator/**)"
+  ],
+  "ask": [
+    "Bash(devenv tasks run herdr:message --input-json *)"
+  ],
+  "deny": [
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Bash(devenv tasks run * -O*)",
+    "Bash(devenv tasks run * --option*)",
+    "Bash(devenv tasks run * --from*)",
+    "Bash(devenv tasks run * --override-input*)",
+    "Bash(ssh*)",
+    "Bash(scp*)",
+    "Bash(git push*)",
+    "Bash(gh pr merge*)",
+    "Bash(nixos-rebuild*)",
+    "Bash(kubectl*)",
+    "Bash(rm *)",
+    "Bash(sudo*)",
+    "Read(~/.ssh/**)",
+    "Read(/run/secrets/**)",
+    "Read(~/.config/sops/**)",
+    "Read(~/.config/age/**)",
+    "Read(~/.age/**)",
+    "Read(~/.gnupg/**)",
+    "Read(~/.claude/.credentials.json)",
+    "Read(~/.claude.json)",
+    "Read(~/.config/gh/**)",
+    "Read(~/.kube/**)",
+    "Read(~/.config/herdr/**)",
+    "Read(~/.netrc)",
+    "Read(~/.git-credentials)",
+    "Read(~/.docker/config.json)"
+  ]
+}

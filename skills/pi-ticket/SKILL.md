@@ -76,14 +76,14 @@ pi-ticket never merges. Neither does the reviewer.
 
 1. An independent fresh-context reviewer grades the PR (`orchestrated-review` skill, an opus subagent). Pi's summary in the PR is a claim; the gate table is evidence. The reviewer re-runs the Verification on the PR head. G3 already checked scope, the red hunks, the Verification, the pre-review sdlc stages and, in cargo projects, that no test stopped running and the red tests pass; a `factum review` block, when present, is advisory input for the reviewer.
 2. Repos with `platform.sdlc`: pi-ticket's G3 ran the stages up to the last pre-verdict stage. The verdict and post-verdict stages are the G4 obligation: the reviewer's verdict is written on the PR head (`sdlc-pipeline` skill), and `devenv tasks run sdlc:done` must be green there. Red `sdlc:done` blocks the merge.
-3. Grade >= 9: the merge decision is the owner's, or a named owner stand-in's. Stand-in = a Fable subagent (model `fable`); when Fable is unavailable (429), a fresh-context opus subagent separate from the reviewer. Give it the PR, the review and the gate table. Then:
+3. Grade >= 9: mark the PR ready and record an open owner gate. The merge decision is the owner's alone; no subagent may make it.
 
 ```bash
 gh pr ready PR -R OWNER/REPO
-gh pr merge PR -R OWNER/REPO --merge --body "Merge decision: MERGE by <decider, and why not Fable if not>; review <grade>/10"
+gh pr comment PR -R OWNER/REPO --body "Ready for owner merge: review <grade>/10, gates green (see table). Owner gate: merge."
 gh issue edit N -R OWNER/REPO --remove-label agent:pi-review
 ```
 
-The merge comment must name the decider; GitHub shows `sammasak` whoever decided.
+Then continue with the next unblocked issue. When the owner merges, the merge comment names the decider; an AI review score is evidence, not a decision.
 
 4. Grade below 9: fix forward yourself on the branch and re-review. Fixing forward is not another Pi round. A finding that changes the target goes back to prune: new or edited issue, new red tests.

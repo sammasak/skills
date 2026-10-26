@@ -1,0 +1,196 @@
+# Epic #16 — Harness-agnostic agents + Coordinator: goal and implementation plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This file is the **goal file** for the `/goal` loop driving the epic: the goal condition below must hold, every task box must be ticked with evidence, and the effort log at the bottom is updated after every slice. Durable progress for other sessions lives in [issue #16](https://github.com/sammasak/skills/issues/16) comments; this file is the working plan.
+
+**Goal:** A small Coordinator agent (and one quality agent) defined once as a role contract in `sammasak/skills`, running through Claude Code and Codex, that retrieves bounded structured context on demand through devenv tasks (Herdr, harness session stores, GitHub, git) instead of carrying host-resident context, installed declaratively via an opt-in nixos-config module (lenovo first).
+
+**Architecture:** *Small role, fat tasks.* Standalone bash+jq executables under `task-modules/bin/` emit versioned JSON records; devenv tasks wrap them into native DAGs (`coord:brief` fans out over `herdr:*`, `harness:*`, `gh:*`, `git:*`, aggregates through `work:status` with partial failures surfaced). The role contract is `agents/coordinator/ROLE.md` (YAML frontmatter + prose); harness adapters (`agents/coordinator.md` for Claude, `agents/coordinator/AGENTS.md` for Codex) are thin and contract-tested against ROLE.md. The human gate for any remote action is the harness permission prompt plus an audit log; OS-level boundaries come from nixos-config.
+
+**Tech Stack:** bash 5 + jq 1.8 (runtime), devenv 2.4.0 tasks (DAG, `input`/`DEVENV_TASK_INPUT`, `DEVENV_TASK_OUTPUT_FILE`/`DEVENV_TASKS_OUTPUTS`, `@completed`, `status`), herdr 0.9.5 CLI (JSON out), gh CLI, Claude Code 2.1.300 (`--agent`, `--permission-mode`, permission allowlists), codex-cli 0.162.1, Nix/Home Manager in nixos-config.
+
+**Spec:** [issue #16](https://github.com/sammasak/skills/issues/16) (acceptance criteria + working protocol) and the goal condition below.
+
+## Goal condition (verbatim, what the loop must satisfy)
+
+Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked with linked commit/PR evidence and recorded devenv task exit codes; a Coordinator role and one quality role share ROLE.md contracts, portable skills and devenv task DAGs in sammasak/skills, each proven through Claude Code and Codex adapters on identical fixtures; unit, contract, negative-permission, unreachable-host/timeout, duplicate-message and stale-state tests pass on pinned revisions; a reviewed nixos-config PR adds an opt-in coordinator module (lenovo first, no new dev profile) with an activation+rollback procedure; and either the owner has activated it and a fresh-SSH end-to-end canary passed, OR the owner has explicitly deferred activation in this transcript or on the issue and the epic is labeled "deployment-ready pending owner activation".
+
+## Global Constraints
+
+- **Host is not the point.** Target lenovo (daily driver, has devTools/herdr/claude, reaches acer + black-pi). black-pi is an optional stretch gated on measured footprint and explicit owner wish. Where #16 says black-pi, read "the coordinator host" and say so on the issue.
+- **Approval boundaries override `global-context.md` "The Owner Is Never the Blocker"** for this epic: no AI stand-in for merges, host switches, release tags, secret/permission changes, new privileged remote actions, destructive ops. AI review = evidence, not authority. Record each open owner gate on the issue and continue with unblocked work.
+- Coordinator never codes, builds, merges, deploys, deletes, runs arbitrary SSH, or grants approvals. `herdr_state` ≠ `work_verdict`; done/idle is never completion.
+- Repo ownership: contracts/tasks/evals/adapters → `skills`; host wiring → `nixos-config`; platform mechanisms → `devenv-platform` only if truly missing. No new broker/queue/DB.
+- Host/repo/checkout allowlists live in one config file installed by nixos-config (`$XDG_CONFIG_HOME/coordinator/fleet.json`, override `COORDINATOR_FLEET`), never in skills source.
+- Fresh checkouts: `~/skills-epic16` (`~/skills` belongs to another live session), `~/devenv-platform-epic16`, `~/nixos-config-epic16`. Branch + PR per slice; merges need owner approval. Heavy work under `flock /tmp/$(hostname)-heavy-work.lock`, never parallel.
+- Verified tool facts (2026-10-26): herdr 0.9.5 protocol 22; `agent list/get` JSON by default; states `idle|working|blocked|done|unknown`; `agent_session.value` = harness session id; no timestamps anywhere (compute `state_age` from local snapshots via `revision`/`state_change_seq`); `agent read --lines N --source visible|recent`; `agent wait/prompt --until --timeout <ms>`; prompt timeout ≠ non-delivery; `--remote` launch-only → cross-host = `ssh <host> herdr agent list`; zero saved machines; config.toml read-only HM symlink. Claude session store: `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl` (lines with `type`, `timestamp`, `sessionId`, `cwd`). Pi: `~/.pi/agent/sessions/<cwd-slug>/`. Codex: `~/.codex/` (no sessions dir yet on acer).
+- From acer-swift there is no SSH to black-pi/lenovo/msi (publickey denied). Cross-host slices use sanitized fixtures + local Herdr until the owner authorizes access or runs from lenovo. Record the exact access change as an owner gate.
+- Commits: subject ≤72, body carries `Why: <one line>` (repo `.githooks/commit-msg`), trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- Three bounded failed attempts on one item → document blocker on #16, move on. Near context exhaustion → post precise state (SHAs, evidence, next action) to #16 first.
+
+## Review Focus
+
+1. An agent id or host name containing shell metacharacters (`; rm -rf`, `$(...)`, spaces) must be rejected before any `ssh`/`herdr` invocation, never interpolated. (Task 2.1 tests.)
+2. A host that hangs (SSH connect but no output) must yield a record with `error.kind = "timeout"` within the configured bound and the rest of the inventory must still be returned. (Task 2.1 tests.)
+3. A Herdr `done` agent whose linked task has no merged PR / passing evidence must report `work_verdict: "unverified"`, never "complete". (Task 2.5 tests.)
+4. Re-running `herdr:message` with the same payload after a timeout must be refused unless `--resend` with the prior audit id is given, and a `blocked` target must be refused up front. (Task 3.2 tests.)
+5. A stale snapshot (older than `max_age_s`) must be labeled `stale: true` with the age, never presented as current. (Task 2.1 tests.)
+
+---
+
+## Slice 0 — Kickoff on the issue
+
+**Files:** none in repo except this plan.
+
+- [ ] **Step 1:** Post a kickoff comment on #16: verified tool versions, Herdr CLI realities, lenovo-first reinterpretation, acer SSH gap as owner gate, stale skill commands found (agent-orchestration has no herdr subcommands; pi-ticket uses `ssh acer-swift herdr pane read` which is the right cross-host pattern), link to this plan once pushed.
+- [ ] **Step 2:** Record in the effort log.
+
+## Slice 1 — M0: contract and authority boundaries
+
+### Task 1.1: Correct owner stand-in language
+
+**Files:**
+- Modify: `global-context.md:14-18`
+- Test: `tests/test-policy.sh` (new)
+
+- [ ] Write `tests/test-policy.sh`: greps `global-context.md` and `docs/agentic-lifecycle.md`; FAIL if any line matches `stand in|to stand in|merge and keep going`; PASS requires a line matching `may not approve|cannot approve|AI review is evidence`.
+- [ ] Run it → expect FAIL.
+- [ ] Rewrite the section as "Keep Moving Without Impersonating the Owner": agents draft, review, and continue with unblocked work; owner-only decisions (merge, deploy/switch, tag, secrets/permissions, new privileged remote actions, destructive ops) are recorded as open gates with the exact proposed action; a subagent may review but may not approve. Keep the hardware-blocker terminal-state paragraph.
+- [ ] Run test → PASS. Commit.
+
+### Task 1.2: Root devenv graph for the skills repo
+
+**Files:**
+- Create: `devenv.yaml` (nixpkgs input only), `devenv.nix` (imports `./task-modules/*.nix`, `./agents/coordinator/tasks.nix`; defines `skills:test:hooks`, `skills:test:policy`, `skills:test:manifests`, `skills:test:tasks`, `skills:test:contract`, umbrella `skills:test` with `after` on all), `.gitignore` entry `.devenv/`
+- Test: `devenv tasks run skills:test` green; existing `tests/test-hooks.sh` and `tests/test-plugin-manifests.sh` unchanged.
+
+- [ ] Write `devenv.yaml`/`devenv.nix` with `skills:test:hooks` and `skills:test:policy` wired to the existing scripts.
+- [ ] `devenv tasks run skills:test` → PASS; `tests/test-plugin-manifests.sh` still passes (no plugin manifest references devenv files). Commit.
+
+### Task 1.3: ROLE.md schema + Coordinator contract + Claude adapter + contract test
+
+**Files:**
+- Create: `agents/coordinator/ROLE.md`, `agents/coordinator.md` (Claude adapter), `docs/rfc/2026-10-26-agent-roles.md` (≤120 lines: role/skill/task/DAG/adapter definitions, record schema v1, read vs act vs privileged classes)
+- Create: `tests/test-role-contract.sh`
+- Modify: `devenv.nix` (`skills:test:contract`)
+
+**Interfaces (produced):**
+- ROLE.md frontmatter: `name`, `version: 1`, `mission`, `skills: [..]`, `tasks: {read: [..], act: [..]}`, `forbidden: [..]`, `evidence: {completion_requires: [..]}`, `adapters: [claude, codex]`.
+- Record schema v1 (every task output): `{schema_version:1, task, observed_at, host, server, agent_id, harness, observed_state, state_age_s, stale, task_ref, evidence_ref, approval_required, error:{kind,message}|null}`.
+- Claude adapter frontmatter: `name: coordinator`, `description`, `model`, `tools: [Bash, Read]`, `permissions` expressed as a documented allowlist `Bash(devenv tasks run coord:*)`, `Bash(devenv tasks run herdr:inventory*)`, `Bash(devenv tasks run herdr:inspect*)`, `Bash(devenv tasks run work:status*)` and body = "read ROLE.md; invoke only listed tasks".
+
+- [ ] Write `tests/test-role-contract.sh`: parses ROLE.md frontmatter with `yq`/awk; asserts every skill listed exists under `skills/<name>/SKILL.md`; every `tasks.read`/`tasks.act` name exists in `devenv tasks list`; adapter `agents/coordinator.md` mentions each `tasks.read` entry and no `tasks.act` entry in its allowlist; adapter `tools` ⊆ `[Bash, Read]`.
+- [ ] Run → FAIL (files missing).
+- [ ] Write ROLE.md, RFC, Claude adapter; placeholder tasks exist from Task 1.4 so names resolve.
+- [ ] Run → PASS. Commit.
+
+### Task 1.4: Negative tests for the coordinator surface
+
+**Files:**
+- Create: `tests/test-coordinator-negative.sh`, `tests/lib/claude-permission-match.sh` (reimplements Claude Code `Bash(prefix:*)` prefix semantics for allowlist strings)
+- Modify: `devenv.nix` (`skills:test:negative`)
+
+- [ ] Write tests: for each forbidden command in `ssh lenovo rm -rf /`, `git push`, `gh pr merge 1`, `nixos-rebuild switch`, `kubectl delete ns x`, `devenv tasks run herdr:message ...`, `cargo build`, assert the adapter allowlist does NOT match; for `devenv tasks run coord:brief` assert it DOES match. Also assert `agents/coordinator.md` contains no `Edit`/`Write` tool.
+- [ ] Run → FAIL until allowlist file exists; implement; PASS. Commit.
+- [ ] Open PR "epic-16 M0: contracts, policy fix, root devenv graph"; request independent subagent review; fix findings; record owner merge gate on #16.
+
+## Slice 2 — M1: read-only coordinator, working locally
+
+### Task 2.1: `herdr:inventory` executable + fixtures
+
+**Files:**
+- Create: `task-modules/lib.sh` (`emit_record`, `now_iso`, `valid_id`, `run_bounded <timeout_s> <cmd...>`), `task-modules/bin/herdr-inventory`, `task-modules/herdr.nix` (`herdr:inventory` task: `input = {fleet=null; timeout_s=8; max_age_s=120}`, writes merged JSON to `DEVENV_TASK_OUTPUT_FILE`)
+- Fixtures: `task-modules/fixtures/herdr/{local-two-agents,remote-ok,remote-timeout,remote-unreachable,malformed}.json` + a fake `ssh`/`herdr` on PATH (`task-modules/fixtures/bin/`)
+- Test: `task-modules/tests/test-herdr-inventory.sh`
+
+**Interfaces (produced):** `herdr-inventory [--fleet FILE] [--timeout-s N] [--state-dir DIR]` → stdout JSON `{schema_version:1, task:"herdr:inventory", observed_at, hosts:[{host, reachable, error, agents:[record]}]}`; exit 0 if ≥1 host answered, 2 if all failed, 3 on invalid fleet/ids. Snapshots persisted to `$state_dir/herdr/<host>.json` for `state_age_s`.
+
+- [ ] Tests: local list parsed to records; remote host via `ssh <host> herdr agent list` (fake ssh) parsed; timeout host → `error.kind=timeout`, others present, exit 0; all unreachable → exit 2; host not in fleet → exit 3; id with `;` → exit 3 and no fake-ssh invocation recorded; `state_age_s` grows between two runs with unchanged `state_change_seq`; `stale:true` when snapshot older than `max_age_s`.
+- [ ] Run → FAIL; implement; PASS; `devenv tasks run herdr:inventory --show-output` against the real local Herdr → records for live panes. Commit.
+
+### Task 2.2: `herdr:inspect` (bounded read)
+
+**Files:** `task-modules/bin/herdr-inspect`, `herdr.nix` task (`input={host, agent_id, lines=40, source="visible"}`), fixtures, `task-modules/tests/test-herdr-inspect.sh`
+
+- [ ] Tests: `lines` capped at 200 (request 1000 → 200), invalid id rejected (exit 3), unknown host rejected, output record has `excerpt` (text), `lines_returned`, never exceeds cap; remote path uses `ssh <host> herdr agent read <id> --lines N --format text`.
+- [ ] Implement; PASS; live run against own pane. Commit.
+
+### Task 2.3: `harness:session-summary`
+
+**Files:** `task-modules/bin/harness-session-summary`, `task-modules/harness.nix`, fixtures (Claude JSONL with user/assistant/system lines incl. a final assistant question; Pi session dir), `task-modules/tests/test-harness-session-summary.sh`
+
+**Interfaces:** input `{harness, session_id, cwd, tail=50}` → record with `last_event_at`, `last_role`, `last_user_prompt_excerpt` (≤200 chars), `last_assistant_excerpt` (≤400 chars), `awaiting_input` (bool: last line is assistant text ending in `?` or a permission/`AskUserQuestion` tool use), `event_count`. Remote via `ssh <host> tail -n`.
+
+- [ ] Tests: Claude fixture → correct fields; missing session → `error.kind=not_found`, exit 2; unsupported harness → exit 3; excerpt lengths bounded; Pi fixture parsed; Codex → `error.kind=unsupported` recorded honestly until a real store exists.
+- [ ] Implement; PASS; live run with this session id from `herdr agent list`. Commit.
+
+### Task 2.4: `gh:work` and `git:recent`
+
+**Files:** `task-modules/bin/gh-work`, `task-modules/bin/git-recent`, `task-modules/evidence.nix`, fixtures (canned `gh` JSON via fake `gh` on PATH; a throwaway git repo), tests
+
+**Interfaces:** `gh-work --repo OWNER/REPO [--ref N]` → `{issues:[{number,title,state,updated_at,labels}], prs:[{number,title,state,review_decision,checks,merged_at}]}` bounded to 20 each. `git-recent --checkout PATH [--since 24h]` → `{head, branch, dirty, ahead, behind, unpushed:[sha subj], commits:[sha,at,subject]}`; checkout must be in fleet.json `repos[].checkout`.
+
+- [ ] Tests: fake gh output parsed; gh failure → `error.kind=gh_error`; checkout outside allowlist → exit 3; dirty/unpushed detection on a fixture repo.
+- [ ] Implement; PASS; live run on `~/skills-epic16` and `sammasak/skills`. Commit.
+
+### Task 2.5: `work:status` and `coord:brief` DAG
+
+**Files:** `task-modules/bin/work-status`, `agents/coordinator/tasks.nix` (`work:status` after `herdr:inventory@completed harness:session-summary@completed gh:work@completed git:recent@completed`; `coord:brief` after `work:status`), `agents/coordinator/tests/test-coord-brief.sh`
+
+**Interfaces:** `work-status` reads `DEVENV_TASKS_OUTPUTS`, joins agents to `task_ref` (from terminal title `#N` or session cwd→repo), emits per-item `{agent, herdr_state, work_verdict: verified|unverified|blocked|unknown, needs_owner: bool, reasons:[..], sources:[{task, observed_at}]}` plus `partial: true` + `failed_sources` when any upstream errored. `coord:brief` renders a ≤40-line Markdown summary from it and also writes the JSON.
+
+- [ ] Tests: done agent + no merged PR → `unverified`; blocked agent → `needs_owner:true`; upstream failure → `partial:true` with `failed_sources` and exit 0; all upstream failed → exit 2; `herdr_state` and `work_verdict` are distinct keys.
+- [ ] Implement; `devenv tasks run coord:brief --show-output` live. Commit.
+
+### Task 2.6: Skill `herdr-operations` + eval + live read-only run
+
+**Files:** `skills/herdr-operations/SKILL.md` (≤80 lines: when to run which task, how to read records, never infer completion), `evals/herdr-operations/trigger.yaml` (positives/hard_negatives/true_negatives), update `agents/coordinator/ROLE.md` skills list, `tests/test-plugin-manifests.sh` passes.
+
+- [ ] Write skill + trigger eval; run `uv run python -m runner.trigger --skill herdr-operations` (token from `/run/secrets/claude_oauth_token`); record result.
+- [ ] Start Claude as `claude --agent coordinator --permission-mode default` in a pane; ask "what are my agents doing"; capture that it ran only allowlisted tasks (check session JSONL tool_use names). Record evidence on #16.
+- [ ] Open PR "epic-16 M1: read-only coordinator"; subagent review; fix; owner merge gate.
+
+## Slice 3 — M2: explicit handoffs and idempotent communication
+
+### Task 3.1: `coord:handoff` (draft only)
+- Files: `task-modules/bin/coord-handoff`, task in `agents/coordinator/tasks.nix`, `skills/agent-handoff/SKILL.md`, tests.
+- [ ] Input `{host, agent_id, task_ref, scope, expected_evidence, acceptance}` → brief Markdown + JSON with `handoff_id = sha256(host|agent_id|task_ref|text)[:12]`, saved to `$state_dir/handoffs/<id>.json`, `approval_required:true`. Tests: missing fields exit 3; id stable; nothing sent (fake ssh log empty).
+
+### Task 3.2: `herdr:message` + audit + duplicate detection
+- Files: `task-modules/bin/herdr-message`, `herdr.nix`, tests with fake herdr that can simulate `agent_blocked`, `timeout`, success.
+- [ ] Requires `--handoff-id` of an existing draft and `--confirm "<host>/<agent_id>"` literal; refuses if target state is `blocked`; refuses if an audit entry for the same handoff exists unless `--resend <audit_id>`; appends `$state_dir/audit.jsonl` `{audit_id, handoff_id, host, agent_id, at, outcome}` before and after sending; timeout outcome recorded as `unknown_delivery`. Not in any adapter allowlist (permission prompt is the gate). Negative test from Task 1.4 keeps asserting it is not allowlisted.
+
+### Task 3.3: `herdr:await`
+- [ ] Wraps `herdr agent wait <id> --until idle --until done --until blocked --timeout <ms>`; record distinguishes `herdr_state`, `receipt` (prompt accepted), `worker_done` (state), `accepted` (always false here; comes only from `work:status` evidence). Tests: timeout → `error.kind=timeout`, exit 2.
+
+### Task 3.4: Supervised two-agent scenario
+- [ ] Local first: two Claude panes on this host (one plain worker given a trivial doc-only task in a scratch repo), coordinator inspects → handoff → owner confirms → message → await → work:status shows `unverified` until a commit lands, then `verified`. Capture JSON + transcript excerpts to #16. Cross-host (lenovo↔acer) repeat recorded as owner gate if SSH still unavailable.
+- [ ] Tests for authorization refusal, malformed JSON, duplicate, agent restart (pane id change → `error.kind=agent_missing`), wrong-host identity.
+- [ ] PR "epic-16 M2"; review; owner merge gate.
+
+## Slice 4 — M3: nixos-config opt-in coordinator module (lenovo first)
+
+- [ ] In `~/nixos-config-epic16`: `modules/programs/cli/coordinator/default.nix` exposing `sam.coordinator.enable`, `sam.coordinator.fleet` (hosts/repos → renders `~/.config/coordinator/fleet.json`), installs `jq`, the `task-modules/bin/*` from the `skills` input as a package, symlinks `agents/coordinator.md` (already via skills.nix), adds the Claude permission allowlist for the coordinator agent only, `herdr` user service already present on devTools hosts. No `devTools` flag changes.
+- [ ] `nix eval`/`nh os build -H lenovo` under the heavy-work lock (or `nixos:qa` devenv task); `just diff` output recorded; module doc with activation (`just switch` on lenovo by owner) + rollback (`nixos-rebuild --rollback` / previous generation) + verification (`claude --agent coordinator`, `devenv tasks run coord:brief`).
+- [ ] Measure on acer (proxy) and record: cold/warm `coord:brief` wall time, RSS of claude + tasks, CPU; k3s health before/after via `kubectl top`/node conditions if reachable.
+- [ ] PR in nixos-config; independent review; **owner gates:** merge + `just switch` on lenovo. If granted: fresh SSH → `claude --agent coordinator` → fleet status → inspect one blocker → authorize a message → retrieve answer; record latency/RAM; else label "deployment-ready pending owner activation".
+- [ ] Optional black-pi stretch only if the owner asks: check `nix path-info --store https://cache.nixos.org` substitutability for aarch64 claude-code/nodejs/herdr first.
+
+## Slice 5 — M4: second role proves reusability
+
+- [ ] `agents/quality/ROLE.md` composing skills `rust-engineering`, `sdlc-pipeline`, `orchestrated-review` and tasks `sdlc:*` from devenv-platform (via a fixture consumer repo under `agents/quality/fixtures/rust-consumer` importing `~/devenv-platform-epic16` by path) plus `quality:report` (reads `$DEVENV_STATE/sdlc/*` stamps/red records → record schema v1).
+- [ ] Claude adapter `agents/quality.md` and Codex adapter `agents/quality/AGENTS.md` (+ `.agents/plugins` entry if needed); contract test extended to both roles; same fixture run through `claude -p --agent quality` and `codex exec` with identical instruction; outputs compared field-by-field; differences recorded as adapter limitations, not hidden.
+- [ ] Evals: trigger evals for new skills; negative permission tests for quality role (no `git push`, no merge); upgrade/rollback check: pin bump of skills input in nixos-config evaluates (`nix eval`) and `git revert` of the bump evaluates.
+- [ ] `docs/operator-runbook.md` + `docs/adding-a-role.md` (third role by composition, no bespoke scripts). PR; review; owner merge gate.
+
+## Slice 6 — Close-out
+
+- [ ] Tick #16 checkboxes only for verified items; link all PRs/SHAs/task exit codes; label activation state honestly; update this file's effort log; final comment with "what the owner must do next" list.
+
+---
+
+## Effort log
+
+| When (UTC) | Slice / task | Commit / PR | Tasks run (exit) | Outcome / limitation |
+|---|---|---|---|---|
+| 2026-10-26 15:00 | Survey (pre-plan) | — | manual probes | Versions, herdr CLI facts, devenv 2.4.0 task IO verified; acer→lenovo/black-pi SSH denied; `~/skills` in use by another session → `~/skills-epic16` |
+| 2026-10-26 16:00 | Slice 0 kickoff | #16 comment | — | lenovo-first reinterpretation recorded; stale skill commands listed |
