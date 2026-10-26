@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake devenv for quality tests: answers the three calls quality:report/quality:gate make inside a checkout.
+# FAKE_SDLC_DIR holds machine.json and status.txt; FAKE_GATE_EXIT forces `tasks run sdlc:<stage>`'s exit.
+echo "devenv($PWD) $*" >> "${FAKE_LOG:-/dev/null}"
+case "$*" in
+  "shell -q -- sh -c cat \"\$SDLC_MACHINE\"") [ -f "${FAKE_SDLC_DIR:?}/machine.json" ] && cat "$FAKE_SDLC_DIR/machine.json" || exit 1 ;;
+  "shell -q -- sdlc-status --context") cat "${FAKE_SDLC_DIR:?}/status.txt" ;;
+  "tasks run sdlc:"*" --show-output") echo "fake stage $2 running"; echo "fake tail line"; exit "${FAKE_GATE_EXIT:-0}" ;;
+  *) echo "fake devenv: unsupported $*" >&2; exit 2 ;;
+esac

@@ -16,6 +16,7 @@ in
     ./task-modules/harness.nix
     ./task-modules/evidence.nix
     ./agents/coordinator/tasks.nix
+    ./agents/quality/tasks.nix
   ];
 
   packages = [ pkgs.yq-go pkgs.shellcheck pkgs.git pkgs.openssh pkgs.fish ];

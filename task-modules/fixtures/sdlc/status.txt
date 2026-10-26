@@ -1,0 +1,8 @@
+sdlc rust @ 3f2a9c1 (bar 9)
+  sketch: fresh
+  model: fresh
+  test: red  (rust:test, 2026-10-26T10:00:00Z)
+  review: unverified
+  perf: stale
+  security: unverified
+next: devenv tasks run sdlc:test

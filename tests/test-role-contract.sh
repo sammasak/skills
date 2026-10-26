@@ -21,7 +21,7 @@ for role_md in agents/*/ROLE.md; do
   for s in $(jq -r '.skills[]' <<<"$fm"); do
     [ -f "skills/$s/SKILL.md" ] && ok || bad "$role: skill $s missing"
   done
-  for t in $(jq -r '.tasks.read[], .tasks.act[]' <<<"$fm"); do
+  for t in $(jq -r '.tasks.read[], (.tasks.run // [])[], .tasks.act[]' <<<"$fm"); do
     grep -qx "$t" <<<"$TASKS" && ok || bad "$role: task $t not in devenv tasks list"
   done
   [ "$(jq '.forbidden|length' <<<"$fm")" -ge 5 ] && ok || bad "$role: forbidden list too short"
@@ -41,6 +41,12 @@ for role_md in agents/*/ROLE.md; do
   done
   # every Bash allow rule names a read task; nothing else is allowed besides Read
   extra=$(jq -r --argjson r "$(jq -c '.tasks.inputless' <<<"$fm")" '.allow[] | select(startswith("Bash(")) | ((capture("^Bash\\(devenv tasks run (?<t>[a-z]+:[a-z-]+)( --show-output)?\\)$").t) // "<malformed>") | select(. as $t | ($r | index($t)) == null)' "$perms") || { bad "$role: allow-rule filter failed"; extra=""; }
+  # the shared guard must read the same lists the contract declares (awk parser == yq parser)
+  for key in read run act; do
+    want=$(jq -r --arg k "$key" '(.tasks[$k] // []) | join("|")' <<<"$fm")
+    have=$(ROLE_MD="$role_md" bash -c 'awk -v key="$1" '"'"'/^---$/ { fm++; next } fm != 1 { next } /^tasks:/ { intasks=1; next } intasks && /^[A-Za-z]/ { intasks=0 } intasks && $1 ~ /^(read|run|act|inputless):$/ { cur=$1; sub(":","",cur); next } intasks && cur == key && $1 == "-" { print $2 }'"'"' "$ROLE_MD" | paste -sd"|" -' _ "$key")
+    [ "$want" = "$have" ] && ok || bad "$role: guard parser reads tasks.$key as '$have', contract says '$want'"
+  done
   [ -z "$extra" ] && ok || bad "$role: Bash allow rules outside the inputless read tasks: $extra"
   jq -e --arg r "$role" '[.allow[] | select(startswith("Bash(") | not)] == ["Read(./**)", "Read(~/.local/state/\($r)/**)"]' "$perms" >/dev/null && ok || bad "$role: Read must be scoped to the checkout and the role's state dir"
   [ -x "$ROOT/$(jq -r .guard "$perms")" ] && ok || bad "$role: guard hook missing or not executable"

@@ -117,6 +117,24 @@ if command -v yq >/dev/null; then
   [ "$dec" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): installed guard must exec through (got '$dec')"; }
 else echo "note: yq missing, adapter hook command cases skipped"; fi
 
+# the same guard serves the quality role: run-class allowed, coordinator-only and act tasks blocked
+qhook() { # <want> <command>
+  local out code dec
+  out=$(jq -cn --arg c "$2" --arg d "$ROOT" '{session_id:"t",cwd:$d,tool_name:"Bash",tool_input:{command:$c}}' | "$ROOT/hooks/validate-quality.sh" 2>/dev/null); code=$?
+  dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null)
+  if [ "$1" = block ]; then [ "$code" -eq 2 ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(qhook): '$2' -> exit $code dec=$dec (want block)"; }
+  else [ "$code" -eq 0 ] && [ "$dec" = "$1" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(qhook): '$2' -> exit $code dec=$dec (want $1)"; }; fi
+}
+qhook allow "devenv tasks run quality:report --input-json '{\"checkout\":\"/home/x/repo\"}'"
+qhook allow "devenv tasks run quality:gate --input-json '{\"checkout\":\"/home/x/repo\",\"stage\":\"test\"}'"
+qhook allow "devenv tasks run gh:work --show-output"
+qhook block "devenv tasks run coord:brief"
+qhook block "devenv tasks run herdr:message --input-json '{}'"
+qhook block "devenv tasks run herdr:inspect --input-json '{}'"
+qhook block "cargo test"
+qhook block "devenv tasks run quality:gate --input-json '{\"stage\":\"test\"}' && git push"
+( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run gh:work"}}' | ROLE=nosuchrole "$ROOT/hooks/validate-role.sh" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: unknown ROLE must block"; }
+
 # the Claude adapter must not carry editing tools
 if grep -qE '^\s*-\s*(Edit|Write|NotebookEdit)\s*$' <(awk '/^tools:/{f=1;next} /^[a-zA-Z]+:/{f=0} f' "$ROOT/agents/coordinator.md"); then
   FAIL=$((FAIL+1)); echo "FAIL: adapter lists an editing tool"
@@ -124,14 +142,11 @@ else PASS=$((PASS+1)); fi
 
 # allow rules carry no wildcard at all: a wildcard after the task name admits -O overrides and extra task names
 if jq -r '.allow[] | select(startswith("Bash("))' "$P" | grep -q '\*'; then FAIL=$((FAIL+1)); echo "FAIL: a Bash allow rule contains a wildcard"; else PASS=$((PASS+1)); fi
-# the hook's task lists equal the role contract
+# the guard honours the role contract behaviourally: every read/run task allows, every act task asks (lists are parsed from ROLE.md at runtime)
 rtasks=$(yq --front-matter=extract -o=json '.' "$ROOT/agents/coordinator/ROLE.md" 2>/dev/null)
 if [ -n "$rtasks" ]; then
-  want_read=$(jq -r '.tasks.read|sort|join("|")' <<<"$rtasks"); want_act=$(jq -r '.tasks.act|sort|join("|")' <<<"$rtasks")
-  have_read=$(grep -oE "^READ='[^']*'" "$HOOK" | sed -E "s/^READ='(.*)'$/\1/" | tr '|' '\n' | sort | paste -sd'|')
-  have_act=$(grep -oE "^ACT='[^']*'" "$HOOK" | sed -E "s/^ACT='(.*)'$/\1/" | tr '|' '\n' | sort | paste -sd'|')
-  [ "$want_read" = "$have_read" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: hook READ list ($have_read) != ROLE.md tasks.read ($want_read)"; }
-  [ "$want_act" = "$have_act" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: hook ACT list ($have_act) != ROLE.md tasks.act ($want_act)"; }
-else echo "note: yq missing, hook/ROLE list comparison skipped"; fi
+  for t in $(jq -r '.tasks.read[], (.tasks.run // [])[]' <<<"$rtasks"); do hook allow "devenv tasks run $t --input-json '{}'"; done
+  for t in $(jq -r '.tasks.act[]' <<<"$rtasks"); do hook ask "devenv tasks run $t --input-json '{}'"; done
+else echo "note: yq missing, role-list behaviour cases skipped"; fi
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]
