@@ -109,8 +109,13 @@ hook allow "devenv tasks run coord:handoff --input-json '{\"scope\":\"A & B | \$
 ( jq -cn '{tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): missing cwd must block"; }
 ( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\u0000; ssh x"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): NUL byte must block"; }
 # the adapter's hook command refuses when the guard file is absent (fail closed)
-cmd=$(awk '/command:/{sub(/^[^:]*: /,""); print; exit}' "$ROOT/agents/coordinator.md" | sed -E "s/^'(.*)'$/\1/")
-( HOME="$TMP_HOME_MISSING" bash -c "$cmd" </dev/null >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): hook command must exit 2 when guard is missing ($cmd)"; }
+if command -v yq >/dev/null; then
+  cmd=$(yq --front-matter=extract -r '.hooks.PreToolUse[0].hooks[0].command' "$ROOT/agents/coordinator.md")
+  ( HOME="$TMP_HOME_MISSING" bash -c "$cmd" </dev/null >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): hook command must exit 2 when guard is missing ($cmd)"; }
+  mkdir -p "$TMP_HOME_MISSING/.claude/hooks" && ln -sf "$HOOK" "$TMP_HOME_MISSING/.claude/hooks/validate-coordinator.sh"
+  dec=$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | HOME="$TMP_HOME_MISSING" bash -c "$cmd" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty')
+  [ "$dec" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): installed guard must exec through (got '$dec')"; }
+else echo "note: yq missing, adapter hook command cases skipped"; fi
 
 # the Claude adapter must not carry editing tools
 if grep -qE '^\s*-\s*(Edit|Write|NotebookEdit)\s*$' <(awk '/^tools:/{f=1;next} /^[a-zA-Z]+:/{f=0} f' "$ROOT/agents/coordinator.md"); then

@@ -7,9 +7,10 @@
 # anything else -> exit 2, blocked. The call must come from the coordinator
 # checkout ($COORDINATOR_CHECKOUT, set by the launcher) so `devenv tasks run`
 # resolves our devenv.nix and not another project's. Text matching is a
-# guardrail; the OS boundary is nixos-config's job. If this hook is not
-# installed, Claude falls through to the settings rules, which allow only the
-# input-less exact forms, so a missing guard degrades to prompting, not to open.
+# guardrail; the OS boundary is nixos-config's job. The adapter's hook command
+# refuses every Bash call when this file is missing (fail closed); the settings
+# allow rules in permissions.json only matter for a bare `claude --settings`
+# session without the adapter, and they cover input-less exact forms only.
 set -uo pipefail
 READ='coord:brief|coord:handoff|herdr:inventory|herdr:inspect|herdr:await|harness:session-summary|gh:work|git:recent|work:status'
 ACT='herdr:message'
