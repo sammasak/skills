@@ -69,3 +69,19 @@ produce a properly routed, reproducible issue draft. Concretely, all of:
 Terminal condition for a `/goal` or loop: items 1–7 hold, OR the human has explicitly accepted
 a blocker for the remaining item (quote the acceptance verbatim in the PR and leave the item
 documented as unmet).
+
+## Accepted blockers (2026-10-26)
+
+Owner acceptance, received verbatim through the session's stop-hook feedback channel:
+
+> "I accept the Codex-login and branch-history blockers"
+
+Documented as blocked, not satisfied:
+
+- **Codex task run on acer:** Codex has no credentials there (`codex doctor`). Evidence that does
+  exist: Codex's own `debug prompt-input` lists the branch skills from the Nix-built tree; Claude
+  Code and Pi activate them. Operator step: `codex login` on acer, then rerun the scenarios in
+  `2026-10-26-dogfood-evidence.md` §6 with `CODEX_HOME` pointing at the built tree.
+- **Private product name in PR #15 branch history:** not in HEAD; GitHub keeps PR commits and the
+  repo hook forbids force-push. Operator step: squash-merge so it does not reach `main`.
+
