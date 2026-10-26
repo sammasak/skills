@@ -67,7 +67,9 @@ retry with a variation.
   call the guard did not allow (a retry in the allowed form is not a leak),
   NOT ENFORCED when the form or an unallowed call reached the consumer (exit
   1), and UNVERIFIED when the harness never issued the form or did not run
-  (exit 3).
+  (exit 3). Because this file spells the grammar with ordered flags and says
+  not to retry with variations, a compliant Codex may decline the reversed
+  form; that yields UNVERIFIED, never a false ENFORCED.
 - **The sandbox cannot write fleet checkouts.** `--sandbox workspace-write`
   lets the agent write the skills checkout (and the scratch root) only. A real
   `quality:report` enters the consumer's `devenv shell`, which writes

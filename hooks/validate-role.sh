@@ -12,10 +12,11 @@ ROLE="${ROLE:-coordinator}"
 [[ "$ROLE" =~ ^[a-z][a-z-]*$ ]] || { echo "guard: ROLE must be a lowercase role name" >&2; exit 2; }
 
 input=$(cat)
-# the command and every working-directory field must be strings free of control characters (a newline-only
-# workdir would otherwise read as empty and skip the directory check below)
-jq -e '.tool_input | [.command, .workdir, .cwd, .working_directory, .working_dir] | map(select(. != null))
-       | all(type == "string" and (explode | all(. >= 32 and . != 127)))' <<<"$input" >/dev/null 2>&1 \
+# the session cwd, the command and every working-directory field must be strings free of control characters
+# (a newline-only workdir would read as empty and skip the directory check; a trailing newline in cwd would
+# be stripped by $(...) and compare equal to the checkout)
+jq -e '[.cwd, .tool_input.command, .tool_input.workdir, .tool_input.cwd, .tool_input.working_directory, .tool_input.working_dir]
+       | map(select(. != null)) | all(type == "string" and (explode | all(. >= 32 and . != 127)))' <<<"$input" >/dev/null 2>&1 \
   || { echo "$ROLE: control characters or unparseable input" >&2; exit 2; }
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null) || cmd=""
 cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null) || cwd=""
@@ -42,7 +43,8 @@ role_md="$want/agents/$ROLE/ROLE.md"
 # An installed checkout carries .integrity (sha256 of the roots in hooks/lib/integrity-paths). A managed session
 # (the launcher sets COORDINATOR_REQUIRE_INTEGRITY=1 and pins the manifest's own hash in COORDINATOR_INTEGRITY_SHA256,
 # kept outside the checkout) needs both: a missing manifest, a missing pin, a rewritten manifest, a changed listed
-# file, or an unlisted devenv.local.* / .claude/settings*.json all block every call. Without the launcher a present
+# file, or an unlisted policy file (devenv.local.*, .claude/settings*.json, AGENTS*.md, CLAUDE.md, .mcp.json,
+# .codex/*) all block every call. Without the launcher a present
 # manifest is still checked. The predicate lives in lib/integrity-check.sh, shared with the nixos-config activation.
 here="$(dirname "$(readlink -f "$0")")"
 if { [ -n "${COORDINATOR_REQUIRE_INTEGRITY:-}" ] && [ "${COORDINATOR_REQUIRE_INTEGRITY}" != 0 ]; } || [ -n "${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
