@@ -20,7 +20,8 @@ ln -sfn ../../agents/quality.md "$CK/.claude/agents/quality.md"
 for sk in sdlc-pipeline rust-engineering orchestrated-review; do ln -sfn "../../skills/$sk" "$CK/.claude/skills/$sk"; done
 # the copy carries the same .integrity manifest nixos-config writes, so the guard refuses once a contract/task/hook file changes
 ( cd "$CK" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock devenv.local.nix -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
-export COORDINATOR_CHECKOUT="$CK" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$(sha256sum "$CK/.integrity" | cut -d' ' -f1)" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
+pin=$(sha256sum "$CK/.integrity" | cut -d' ' -f1)
+export COORDINATOR_CHECKOUT="$CK" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
 # nothing is planted in $HOME: the guard reaches Claude through the settings file below, not the frontmatter path
 ASK="Report the SDLC quality state of the checkout $REPO. Run exactly one command: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output. Then answer from its JSON with exactly one line per stage in the form 'STAGE <name>: <state>' followed by one line 'HEAD <sha>' and one line 'ALL_GREEN <true|false>'. Do not run any gate and do not run anything else."
 # Claude honours a PreToolUse allow only from settings-level hooks in this mode (an agent-frontmatter hook alone
