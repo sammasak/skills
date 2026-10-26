@@ -15,7 +15,8 @@ if [ "$pin" != - ]; then
   [ "$(printf %s "$m" | sha256sum | cut -d' ' -f1)" = "$pin" ] || { echo ".integrity does not match the pinned hash" >&2; exit 1; }
 fi
 (cd "$dir" && printf %s "$m" | sha256sum --check --quiet --strict - >/dev/null 2>&1) || { echo "checkout integrity check failed (a listed file changed or is missing)" >&2; exit 1; }
-listed() { printf %s "$m" | grep -qE "^[0-9a-f]{64}  (\./)?${1//./\\.}\$"; }
+# pure bash match: a pipe into grep -q could SIGPIPE the writer under pipefail and fail closed for the wrong reason
+listed() { local re; re=$'(^|\n)[0-9a-f]{64}  (\\./)?'"${1//./\\.}"$'($|\n)'; [[ "$m" =~ $re ]]; }
 for must in hooks/validate-role.sh hooks/lib/role-list.awk hooks/lib/integrity-check.sh devenv.nix devenv.yaml devenv.lock; do
   listed "$must" || { echo ".integrity does not cover $must" >&2; exit 1; }
 done

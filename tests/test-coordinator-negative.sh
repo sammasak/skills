@@ -125,11 +125,14 @@ wdcase "one good field and one bad field" "$(jq -cn --arg d "$ROOT" '{workdir:$d
 wdcase "non-string workdir" '{"workdir":{"path":"/tmp"}}'
 wdcase "newline-only workdir" '{"workdir":"\n"}'
 wdcase "workdir with an embedded newline" "$(jq -cn --arg d "$ROOT" '{workdir:($d+"\n/tmp")}')"
-wdcase "control character in working_dir" "$(jq -cn --arg d "$ROOT" '{working_dir:($d+"\t")}')"
-( jq -cn --arg d "$ROOT" '{cwd:($d+"\n"),tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): trailing newline in cwd must block"; }
-( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:"devenv tasks run coord:brief"}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): string tool_input must block"; }
-( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:["devenv tasks run coord:brief"]}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): array tool_input must block"; }
-( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:["devenv","tasks","run","coord:brief"]}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): non-string command must block"; }
+# these must be refused by the control-character/type check itself (reason pinned), not by a later check
+cchook() { local label="$1" payload="$2" err code; err=$(printf '%s' "$payload" | "$HOOK" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'control characters or unparseable input' <<<"$err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): $label -> $code '$err' (want the control-character refusal)"; }; }
+cchook "control character in working_dir" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",working_dir:($d+"\t")}}')"
+cchook "trailing newline in cwd" "$(jq -cn --arg d "$ROOT" '{cwd:($d+"\n"),tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}')"
+cchook "string tool_input" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:"devenv tasks run coord:brief"}')"
+cchook "array tool_input" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:["devenv tasks run coord:brief"]}')"
+cchook "non-string command" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:["devenv","tasks","run","coord:brief"]}}')"
+cchook "newline-only workdir" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",workdir:"\n"}}')"
 # the adapter's hook command refuses when the guard file is absent (fail closed)
 if command -v yq >/dev/null; then
   cmd=$(yq --front-matter=extract -r '.hooks.PreToolUse[0].hooks[0].command' "$ROOT/agents/coordinator.md")
