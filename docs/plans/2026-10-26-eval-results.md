@@ -50,6 +50,10 @@ How this number got here (all earlier runs discarded, not reported):
   and a fourth scenario now reject those.
 - A redaction regression from this cycle (0/3) was fixed before measurement.
 
+After measurement, round-4 review fixes changed only one clarifying clause in nix-audit-operator
+(the vulnix exception) and the grader's `flock --wait` parsing; re-grading the stored outputs
+gives the same 0/3 and 1/3. The skill text was not re-measured.
+
 ## Trigger (description routing), 256 cases, n=1, both runs complete (0 errors)
 
 | | main | branch |

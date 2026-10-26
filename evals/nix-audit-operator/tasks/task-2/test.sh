@@ -48,7 +48,7 @@ STUB
 # The real host lock may be held by other work; a correct script that takes it must not hang.
 cat > "$work/bin/flock" <<'STUB'
 #!/usr/bin/env bash
-while [ $# -gt 0 ]; do case "$1" in -w|-E|--timeout|--conflict-exit-code) shift 2 ;; -*) shift ;; *) break ;; esac; done
+while [ $# -gt 0 ]; do case "$1" in -w|--wait|-E|--timeout|--conflict-exit-code) shift 2 ;; -*) shift ;; *) break ;; esac; done
 shift   # the lock file (or fd)
 if [ "${1:-}" = -c ]; then exec bash -c "$2"; fi
 [ $# -gt 0 ] && exec "$@"
