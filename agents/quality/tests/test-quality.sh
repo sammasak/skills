@@ -11,7 +11,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
 git init -q "$TMP/repo" && (cd "$TMP/repo" && git config user.email t@t && git config user.name t && echo a > a && printf '.devenv/\n' > .gitignore && git add a .gitignore && git commit -qm init && mkdir -p .devenv/state/sdlc && printf '%s' 'fp1' > .devenv/state/sdlc/sketch-rust-check && printf '{"wrapper":"sdlc:test-rust-test","stage":"test","guard":"rust:test","at":"2026-10-26T10:00:00Z","tail":"test result: FAILED. 1 failed","fingerprint":"fp1"}' > .devenv/state/sdlc/last-red-test-rust-test.json && printf '{"fingerprint":"fp0","grade":9}' > .devenv/state/sdlc/verdict-review.json)
 printf '{"schema_version":1,"hosts":[{"name":"acer-swift","ssh":null}],"repos":[{"name":"repo","gh":null,"checkout":"%s"}]}' "$TMP/repo" > "$TMP/fleet.json"
 run() { # <task> <input>
-  devenv tasks run "$1" --option coordinator.fleetFile:path "$TMP/fleet.json" --option coordinator.devenvCommand:string "$FX/bin/devenv" --option coordinator.timeoutSeconds:int 5 --show-output --input-json "$2" > "$TMP/run.log" 2>&1; CODE=$?
+  devenv tasks run "$1" --option coordinator.fleetFile:path "$TMP/fleet.json" --option coordinator.devenvCommand:string "$FX/bin/devenv" --option coordinator.consumerEnvPassthrough:string "FAKE_SDLC_DIR FAKE_SDLC_FP FAKE_LOG FAKE_GATE_EXIT" --option coordinator.timeoutSeconds:int 5 --show-output --input-json "$2" > "$TMP/run.log" 2>&1; CODE=$?
   OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
 }
 jqr() { jq -r "$1" <<<"$OUT"; }
@@ -39,7 +39,7 @@ run quality:report '{"checkout":"/tmp/not-in-fleet"}'; [ "$CODE" -ne 0 ] && [ "$
 mkdir -p "$TMP/empty"; FAKE_SDLC_DIR="$TMP/empty" run quality:report "{\"checkout\":\"$TMP/repo\"}"; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = no_sdlc ] && ok || bad "report: repo without sdlc machine ($(jqr .error.kind))"
 # a consumer devenv that fails to evaluate is command_failed, not no_sdlc
 printf '#!/usr/bin/env bash\necho "error: evaluation aborted" >&2; exit 1\n' > "$TMP/broken-devenv"; chmod +x "$TMP/broken-devenv"
-devenv tasks run quality:report --option coordinator.fleetFile:path "$TMP/fleet.json" --option coordinator.devenvCommand:string "$TMP/broken-devenv" --show-output --input-json "{\"checkout\":\"$TMP/repo\"}" > "$TMP/run.log" 2>&1; CODE=$?
+devenv tasks run quality:report --option coordinator.fleetFile:path "$TMP/fleet.json" --option coordinator.devenvCommand:string "$TMP/broken-devenv" --option coordinator.consumerEnvPassthrough:string "FAKE_LOG" --show-output --input-json "{\"checkout\":\"$TMP/repo\"}" > "$TMP/run.log" 2>&1; CODE=$?
 OUT=$(grep -E '^\s*\{"schema_version":1' "$TMP/run.log" | tail -1 | sed -E 's/^\s+//'); [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = command_failed ] && ok || bad "report: broken consumer devenv => command_failed ($(jqr .error.kind))"
 # a stage row echoed inside the red tail must not flip a state (only the table window counts)
 mkdir -p "$TMP/sdlc2" && cp "$FX/sdlc/machine.json" "$TMP/sdlc2/" && { cat "$FX/sdlc/status.txt"; printf '\n| test | green |\n'; } > "$TMP/sdlc2/status.txt"

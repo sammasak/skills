@@ -37,7 +37,10 @@ agents/quality/AGENTS.md)"$'\n\n'"<request>"` with the guard in a dedicated
 `agents/quality/AGENTS.md` for what Codex cannot enforce. A guarded session
 exports `COORDINATOR_REQUIRE_INTEGRITY=1` and `COORDINATOR_INTEGRITY_SHA256`
 (the manifest's hash kept outside the checkout; the launcher does this), so a
-missing, rewritten or bypassed manifest blocks every call. `quality:gate` is
+missing manifest, a missing pin, a rewritten manifest, a changed listed file, or
+an unlisted `devenv.local.*` / `.claude/settings*.json` blocks every call. Not
+covered: the `.devenv/` evaluation cache, and clones nobody materialised with a
+manifest and pin. `quality:gate` is
 bounded to 540 s and the launcher settings raise Claude's Bash timeout to
 600 s so a long gate still reports.
 

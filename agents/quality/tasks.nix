@@ -7,6 +7,14 @@ let
   cfg = config.coordinator;
   t = lib.types;
   checkouts = map (r: r.checkout) (lib.filter (r: r.checkout != null) cfg.repos);
+  # the consumer's devenv sees a clean environment: an allowlist of host variables (only those that are set),
+  # a system-only PATH, and nothing from the outer skills shell
+  consumerEnv = ''
+    cenv=(HOME="$HOME" TERM="''${TERM:-dumb}" LANG="''${LANG:-C.UTF-8}" PATH="/run/current-system/sw/bin:/etc/profiles/per-user/''${USER:-nobody}/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin")
+    for v in USER LOGNAME TZ NIX_PATH NIX_SSL_CERT_FILE SSL_CERT_FILE XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME XDG_STATE_HOME ${cfg.consumerEnvPassthrough}; do
+      [ -n "''${!v+x}" ] && cenv+=("$v=''${!v}")
+    done
+  '';
   # resolve $checkout against the fleet or fail; $repo gets the fleet name
   checkoutCase = ''
     repo=""
@@ -20,6 +28,7 @@ in
   imports = [ ../../task-modules/fleet.nix ];
 
   options.coordinator.devenvCommand = lib.mkOption { type = t.str; default = "devenv"; description = "Overridable for tests (fake devenv)."; };
+  options.coordinator.consumerEnvPassthrough = lib.mkOption { type = t.str; default = ""; description = "Extra variable names forwarded to the consumer's devenv (tests use it for FAKE_*)."; };
   options.coordinator.consumerTimeoutSeconds = lib.mkOption { type = t.int; default = 180; description = "Bound for evaluating the consumer's devenv shell (cold evals of Rust consumers take a while)."; };
   # below Claude's longest Bash tool timeout (600s) so a gate call can always report
   options.coordinator.gateTimeoutSeconds = lib.mkOption { type = t.int; default = 540; };
@@ -44,11 +53,8 @@ in
         work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
         devenv_bin=$(command -v ${cfg.devenvCommand}) || fail 2 command_failed "devenv not on PATH" "$ctx"
         rc=0
-        # the consumer's devenv sees only a clean allowlisted environment (no outer DEVENV_*/SDLC_*, no outer shell PATH or build vars)
-        (cd "$checkout" && timeout -k 1 ${toString cfg.consumerTimeoutSeconds} env -i HOME="$HOME" USER="''${USER:-}" LOGNAME="''${LOGNAME:-}" TERM="''${TERM:-dumb}" LANG="''${LANG:-C.UTF-8}" TZ="''${TZ:-}" \
-            NIX_PATH="''${NIX_PATH:-}" NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-}" SSL_CERT_FILE="''${SSL_CERT_FILE:-}" XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-}" XDG_CACHE_HOME="''${XDG_CACHE_HOME:-}" XDG_DATA_HOME="''${XDG_DATA_HOME:-}" XDG_STATE_HOME="''${XDG_STATE_HOME:-}" \
-            FAKE_SDLC_DIR="''${FAKE_SDLC_DIR:-}" FAKE_SDLC_FP="''${FAKE_SDLC_FP:-}" FAKE_LOG="''${FAKE_LOG:-}" FAKE_GATE_EXIT="''${FAKE_GATE_EXIT:-}" \
-            PATH="/run/current-system/sw/bin:/etc/profiles/per-user/''${USER:-nobody}/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin" \
+        ${consumerEnv}
+        (cd "$checkout" && timeout -k 1 ${toString cfg.consumerTimeoutSeconds} env -i "''${cenv[@]}" \
             "$devenv_bin" shell -q -- sh -c '[ -n "''${SDLC_MACHINE:-}" ] || exit 42; cat "$SDLC_MACHINE" > "$1/machine.json" && sdlc-status > "$1/status.txt" && sdlc-fingerprint > "$1/fp.txt"' sh "$work") >/dev/null 2>"$work/err.txt" || rc=$?
         case "$rc" in
           0) ;;
@@ -91,14 +97,11 @@ in
         [[ "$stage" =~ ^[A-Za-z0-9_-]{1,40}$ ]] || fail 3 invalid_input "stage must be a short name ([A-Za-z0-9_-])" "$ctx"
         ${checkoutCase}
         [ -d "$checkout" ] || fail 2 not_found "checkout does not exist: $checkout" "$ctx"
+        devenv_bin=$(command -v ${cfg.devenvCommand}) || fail 2 command_failed "devenv not on PATH" "$ctx"
         at=$(now_iso); log=$(mktemp); rc=0
         head=$(timeout -k 1 ${toString cfg.timeoutSeconds} git -C "$checkout" rev-parse --short HEAD 2>/dev/null) || head=null
-        devenv_bin=$(command -v ${cfg.devenvCommand}) || fail 2 command_failed "devenv not on PATH" "$ctx"
-        (cd "$checkout" && timeout -k 5 ${toString cfg.gateTimeoutSeconds} env -i HOME="$HOME" USER="''${USER:-}" LOGNAME="''${LOGNAME:-}" TERM="''${TERM:-dumb}" LANG="''${LANG:-C.UTF-8}" TZ="''${TZ:-}" \
-            NIX_PATH="''${NIX_PATH:-}" NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-}" SSL_CERT_FILE="''${SSL_CERT_FILE:-}" XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-}" XDG_CACHE_HOME="''${XDG_CACHE_HOME:-}" XDG_DATA_HOME="''${XDG_DATA_HOME:-}" XDG_STATE_HOME="''${XDG_STATE_HOME:-}" \
-            FAKE_SDLC_DIR="''${FAKE_SDLC_DIR:-}" FAKE_LOG="''${FAKE_LOG:-}" FAKE_GATE_EXIT="''${FAKE_GATE_EXIT:-}" \
-            PATH="/run/current-system/sw/bin:/etc/profiles/per-user/''${USER:-nobody}/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin" \
-            "$devenv_bin" tasks run "sdlc:$stage" --show-output) >"$log" 2>&1 || rc=$?
+        ${consumerEnv}
+        (cd "$checkout" && timeout -k 5 ${toString cfg.gateTimeoutSeconds} env -i "''${cenv[@]}" "$devenv_bin" tasks run "sdlc:$stage" --show-output) >"$log" 2>&1 || rc=$?
         tail_txt=$(tail -n 40 "$log" | LC_ALL=C cut -c1-400); rm -f "$log"
         kind=null
         if [ "$rc" -eq 124 ]; then kind='{"kind":"timeout","message":"stage did not finish within ${toString cfg.gateTimeoutSeconds}s"}'

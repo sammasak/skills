@@ -47,7 +47,7 @@ for role_md in agents/*/ROLE.md; do
     jq -e --arg t "$t" '[.ask[] | select(contains($t))] | length > 0' "$perms" >/dev/null && ok || bad "$role: act task $t not in ask"
   done
   # every Bash allow rule names an inputless read task; nothing else is allowed besides a scoped Read
-  extra=$(jq -r --argjson r "$(jq -c '.tasks.inputless' <<<"$fm")" '.allow[] | select(startswith("Bash(")) | ((capture("^Bash\\(devenv tasks run (?<t>[a-z]+:[a-z-]+)( --show-output)?\\)$").t) // "<malformed>") | select(. as $t | ($r | index($t)) == null)' "$perms") || { bad "$role: allow-rule filter failed"; extra=""; }
+  extra=$(jq -r --argjson r "$(jq -c '.tasks.inputless' <<<"$fm")" '.allow[] | select(startswith("Bash(")) | ((capture("^Bash\\(devenv tasks run (?<t>[a-z0-9_-]+(:[a-z0-9_-]+)+)( --show-output)?\\)$").t) // "<malformed>") | select(. as $t | ($r | index($t)) == null)' "$perms") || { bad "$role: allow-rule filter failed"; extra=""; }
   [ -z "$extra" ] && ok || bad "$role: Bash allow rules outside the inputless read tasks: $extra"
   jq -e --arg r "$role" '[.allow[] | select(startswith("Bash(") | not)] | . == ["Read(./**)"] or . == ["Read(./**)", "Read(~/.local/state/\($r)/**)"]' "$perms" >/dev/null && ok || bad "$role: Read must be scoped to the checkout (plus the role's state dir if it keeps one)"
   [ -x "$ROOT/$(jq -r .guard "$perms")" ] && ok || bad "$role: guard hook missing or not executable"

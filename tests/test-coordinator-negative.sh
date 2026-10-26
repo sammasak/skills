@@ -157,27 +157,33 @@ if command -v yq >/dev/null; then
     done
   done
 else echo "note: yq missing, role-list behaviour cases skipped"; fi
-# integrity: a checkout with an .integrity manifest refuses every call once a guarded file changes
+# integrity: a checkout with an .integrity manifest refuses every call once a guarded file changes; managed sessions
+# need manifest AND pin; refusals are checked by their reason, not just by the absence of a decision
 ITMP=$(mktemp -d); git -C "$ROOT" archive --format=tar HEAD | tar -x -C "$ITMP"; cp -r "$ROOT/hooks/." "$ITMP/hooks/"   # the guard under test is the working tree's
-( cd "$ITMP" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
-ihook() { local out; out=$(jq -cn --arg c "devenv tasks run coord:brief" --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:$c}}' | COORDINATOR_CHECKOUT="$ITMP" ROLE=coordinator "$ITMP/hooks/validate-role.sh" 2>/dev/null); [ -n "$out" ] && jq -r '.hookSpecificOutput.permissionDecision // "block"' <<<"$out" || echo block; }
-[ "$(ihook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): pristine copy must allow"; }
-echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"
-[ "$(ihook)" = block ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): modified task file must block"; }
-( cd "$ITMP" && git -C "$ROOT" show HEAD:agents/coordinator/tasks.nix > agents/coordinator/tasks.nix )   # restore
-[ "$(ihook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): restored copy must allow again"; }
-pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1)
-# managed session: a missing manifest blocks; a rewritten manifest fails the pin; an unlisted devenv.local.nix blocks
-mhook() { jq -cn --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | COORDINATOR_CHECKOUT="$ITMP" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin" ROLE=coordinator "$ITMP/hooks/validate-role.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty'; }
-[ "$(mhook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): managed pristine copy must allow"; }
-mv "$ITMP/.integrity" "$ITMP/.integrity.bak"; [ -z "$(mhook)" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): missing manifest in a managed session must block"; }; mv "$ITMP/.integrity.bak" "$ITMP/.integrity"
-echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; ( cd "$ITMP" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
-[ -z "$(mhook)" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): a rewritten manifest must fail the pinned hash"; }
-( cd "$ITMP" && git -C "$ROOT" show HEAD:agents/coordinator/tasks.nix > agents/coordinator/tasks.nix && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
-echo '{ ... }: { coordinator.devenvCommand = "/tmp/evil"; }' > "$ITMP/devenv.local.nix"
-[ -z "$(mhook)" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): an unlisted devenv.local.nix must block"; }
-( cd "$ITMP" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock devenv.local.nix -type f -print0 | sort -z | xargs -0 sha256sum > .integrity ); pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1)
-[ "$(mhook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): a listed devenv.local.nix is fine"; }
+mkdir -p "$ITMP/.claude" && echo '{}' > "$ITMP/.claude/settings.json"
+# shellcheck disable=SC2046  # the roots file is a space-free word list
+manifest() { ( cd "$ITMP" && find -L $(cat hooks/lib/integrity-paths) -type f -print0 2>/dev/null | sort -z | xargs -0 sha256sum > .integrity ); }
+manifest; pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1)
+# ghook <want: allow|<stderr substring>> [env...]: run the coordinator guard in the copy
+ghook() { local want="$1"; shift; local out err code dec
+  out=$(jq -cn --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | env "$@" COORDINATOR_CHECKOUT="$ITMP" ROLE=coordinator "$ITMP/hooks/validate-role.sh" 2>"$TMP_HOME_MISSING/g.err"); code=$?; err=$(cat "$TMP_HOME_MISSING/g.err")
+  dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null)
+  if [ "$want" = allow ]; then [ "$code" -eq 0 ] && [ "$dec" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): expected allow, got $code/$dec $err"; }
+  else [ "$code" -eq 2 ] && [[ "$err" == *"$want"* ]] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): expected block '$want', got $code/$dec '$err'"; }; fi; }
+ghook allow
+ghook allow COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
+echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; ghook "integrity check failed"
+git -C "$ROOT" show HEAD:agents/coordinator/tasks.nix > "$ITMP/agents/coordinator/tasks.nix"; ghook allow
+ghook "without a valid integrity pin" COORDINATOR_REQUIRE_INTEGRITY=1
+mv "$ITMP/.integrity" "$ITMP/.integrity.bak"; ghook "no .integrity manifest" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; ghook "no .integrity manifest" COORDINATOR_INTEGRITY_SHA256="$pin"; mv "$ITMP/.integrity.bak" "$ITMP/.integrity"
+echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; manifest; ghook "does not match the pinned hash" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
+git -C "$ROOT" show HEAD:agents/coordinator/tasks.nix > "$ITMP/agents/coordinator/tasks.nix"; manifest
+echo '{ ... }: { coordinator.devenvCommand = "/tmp/evil"; }' > "$ITMP/devenv.local.nix"; ghook "devenv.local.nix is present but not covered" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
+# shellcheck disable=SC2046
+( cd "$ITMP" && find -L $(cat hooks/lib/integrity-paths) devenv.local.nix -type f -print0 2>/dev/null | sort -z | xargs -0 sha256sum > .integrity ); pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1); ghook allow COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
+echo '{"disableAllHooks":true}' > "$ITMP/.claude/settings.local.json"; ghook "settings.local.json is present but not covered" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; rm -f "$ITMP/.claude/settings.local.json"
+echo '{"permissions":{"allow":["Bash"]}}' > "$ITMP/.claude/settings.json"; ghook "integrity check failed" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
+sed -i '/hooks\/lib\/role-list.awk/d' "$ITMP/.integrity"; pin2=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1); echo '{}' > "$ITMP/.claude/settings.json"; ( cd "$ITMP" && sha256sum --check --quiet .integrity >/dev/null 2>&1 ) && ghook "does not cover hooks/lib/role-list.awk" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin2"
 rm -rf "$ITMP"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]

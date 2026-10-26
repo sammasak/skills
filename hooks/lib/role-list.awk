@@ -5,7 +5,7 @@
 #   - only the four known sub-keys, each a block list of `- name` items
 #   - names must match ^[a-z0-9_-]+(:[a-z0-9_-]+)+$
 # Usage: awk -v key=read -f role-list.awk ROLE.md
-BEGIN { fm = 0; intasks = 0; cur = ""; seen_tasks = 0 }
+BEGIN { fm = 0; intasks = 0; cur = ""; seen_tasks = 0; closed = 0 }
 /\r$/ { print "role-list: CRLF line ending" > "/dev/stderr"; exit 3 }
 NR == 1 && !/^---$/ { print "role-list: frontmatter must start on line 1" > "/dev/stderr"; exit 3 }
 /^---$/ { fm++; if (fm == 2) { exit } ; next }
@@ -14,7 +14,8 @@ fm != 1 { next }
 /^tasks:[ \t]*$/ { if (seen_tasks) { print "role-list: duplicate tasks: key" > "/dev/stderr"; exit 3 }; seen_tasks = 1; intasks = 1; cur = ""; next }
 intasks && /^[^ \t]/ { intasks = 0; cur = "" }
 !intasks { next }
-/^  (read|run|act|inputless):[ \t]*(\[\])?[ \t]*$/ { cur = $1; sub(":", "", cur); if (seen[cur]++) { print "role-list: duplicate sub-key " cur > "/dev/stderr"; exit 3 }; next }
+/^  (read|run|act|inputless):[ \t]*(\[\])?[ \t]*$/ { cur = $1; sub(":", "", cur); if (seen[cur]++) { print "role-list: duplicate sub-key " cur > "/dev/stderr"; exit 3 }; closed = ($0 ~ /\[\]/); next }
+closed && /^    - / { print "role-list: items after an inline [] list" > "/dev/stderr"; exit 3 }
 /^  [A-Za-z_"'][^:]*:/ { print "role-list: unknown key under tasks: " $0 > "/dev/stderr"; exit 3 }
 /^    - / {
   if (cur == "") { print "role-list: list item outside a known sub-key" > "/dev/stderr"; exit 3 }

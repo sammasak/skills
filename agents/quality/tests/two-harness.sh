@@ -19,7 +19,8 @@ mkdir -p "$CK/.claude/agents" "$CK/.claude/skills"
 ln -sfn ../../agents/quality.md "$CK/.claude/agents/quality.md"
 for sk in sdlc-pipeline rust-engineering orchestrated-review; do ln -sfn "../../skills/$sk" "$CK/.claude/skills/$sk"; done
 # the copy carries the same .integrity manifest nixos-config writes, so the guard refuses once a contract/task/hook file changes
-( cd "$CK" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock devenv.local.nix -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
+mkdir -p "$CK/.claude" && echo '{}' > "$CK/.claude/settings.json"
+( cd "$CK" && find -L $(cat hooks/lib/integrity-paths) devenv.local.nix -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
 pin=$(sha256sum "$CK/.integrity" | cut -d' ' -f1)
 export COORDINATOR_CHECKOUT="$CK" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
 # nothing is planted in $HOME: the guard reaches Claude through the settings file below, not the frontmatter path
@@ -36,8 +37,11 @@ sid=$(jq -r .session_id "$OUT/claude.json" 2>/dev/null); f=$(ls ~/.claude/projec
 jq -c '{num_turns, total_cost_usd, is_error, denials: (.permission_denials|length), model: (.modelUsage|keys)}' "$OUT/claude.json" 2>/dev/null
 
 echo "== codex"; : > "$FAKE_LOG"
+# Codex gets its own CODEX_HOME with the same guard registered, so the run is guarded even if the host's ~/.codex is not
+mkdir -p "$OUT/codex-home"; jq -n --arg g "$CK/hooks/validate-quality.sh" '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g,timeout:10}]}]}}' > "$OUT/codex-home/hooks.json"
+[ -f "$HOME/.codex/auth.json" ] && cp "$HOME/.codex/auth.json" "$OUT/codex-home/" 2>/dev/null; [ -f "$HOME/.codex/config.toml" ] && grep -E '^(model|model_reasoning_effort)' "$HOME/.codex/config.toml" > "$OUT/codex-home/config.toml" 2>/dev/null
 if ! codex login status 2>/dev/null | grep -qi 'logged in'; then echo "codex: not logged in on this host (owner gate: OpenAI credentials); skipping the Codex run" | tee "$OUT/codex.txt"; else
-( cd "$CK" && timeout 600 codex exec --cd "$CK" --sandbox workspace-write --skip-git-repo-check -c model_reasoning_effort=low --color never "$(cat agents/quality/AGENTS.md)"$'\n\n'"$ASK" > "$OUT/codex.txt" 2> "$OUT/codex.err" ); echo "codex exit=$?"; fi
+( cd "$CK" && CODEX_HOME="$OUT/codex-home" timeout 600 codex exec --cd "$CK" --sandbox workspace-write --skip-git-repo-check -c model_reasoning_effort=low --color never "$(cat agents/quality/AGENTS.md)"$'\n\n'"$ASK" > "$OUT/codex.txt" 2> "$OUT/codex.err" ); echo "codex exit=$?"; fi
 cp "$FAKE_LOG" "$OUT/codex-fake-calls.log"
 
 echo "== compare"

@@ -9,6 +9,7 @@
 # call when this file is missing (fail closed).
 set -uo pipefail
 ROLE="${ROLE:-coordinator}"
+[[ "$ROLE" =~ ^[a-z][a-z-]*$ ]] || { echo "guard: ROLE must be a lowercase role name" >&2; exit 2; }
 
 input=$(cat)
 jq -e '(.tool_input.command // "") | explode | all(. >= 32 and . != 127)' <<<"$input" >/dev/null 2>&1 \
@@ -26,24 +27,31 @@ fi
 
 role_md="$want/agents/$ROLE/ROLE.md"
 [ -r "$role_md" ] || { echo "$ROLE: no role contract at $role_md" >&2; exit 2; }
-# An installed checkout carries .integrity (sha256 of contracts, tasks, hooks, devenv files). The launcher sets
-# COORDINATOR_REQUIRE_INTEGRITY=1 and pins the manifest's own hash in COORDINATOR_INTEGRITY_SHA256 (kept outside
-# the checkout), so deleting or rewriting the manifest, changing a listed file, or planting an unlisted
-# devenv.local.* all block every call. Without the launcher a present manifest is still checked.
-if [ "${COORDINATOR_REQUIRE_INTEGRITY:-0}" = 1 ] && [ ! -f "$want/.integrity" ]; then
-  echo "$ROLE: no .integrity manifest in $want; refusing (managed session)" >&2; exit 2
+# An installed checkout carries .integrity (sha256 of the roots in hooks/lib/integrity-paths). A managed session
+# (the launcher sets COORDINATOR_REQUIRE_INTEGRITY=1 and pins the manifest's own hash in COORDINATOR_INTEGRITY_SHA256,
+# kept outside the checkout) needs both: a missing manifest, a missing pin, a rewritten manifest, a changed listed
+# file, or an unlisted devenv.local.* / .claude/settings*.json all block every call. Without the launcher a present
+# manifest is still checked.
+here="$(dirname "$(readlink -f "$0")")"
+if [ "${COORDINATOR_REQUIRE_INTEGRITY:-0}" = 1 ] || [ -n "${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
+  [ -f "$want/.integrity" ] || { echo "$ROLE: no .integrity manifest in $want; refusing (managed session)" >&2; exit 2; }
+  [[ "${COORDINATOR_INTEGRITY_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || { echo "$ROLE: managed session without a valid integrity pin; refusing" >&2; exit 2; }
 fi
 if [ -f "$want/.integrity" ]; then
   if [ -n "${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
     [ "$(sha256sum "$want/.integrity" | cut -d' ' -f1)" = "$COORDINATOR_INTEGRITY_SHA256" ] || { echo "$ROLE: .integrity does not match the pinned hash; refusing" >&2; exit 2; }
   fi
   (cd "$want" && sha256sum --check --quiet --strict .integrity >/dev/null 2>&1) || { echo "$ROLE: checkout integrity check failed; refusing to run tasks from a modified checkout" >&2; exit 2; }
-  for extra in "$want"/devenv.local.nix "$want"/devenv.local.yaml; do
-    [ -e "$extra" ] || continue
-    grep -qF " $(basename "$extra")" "$want/.integrity" || { echo "$ROLE: $(basename "$extra") is present but not covered by .integrity; refusing" >&2; exit 2; }
+  listed() { grep -qE "^[0-9a-f]{64}  (\./)?${1//./\\.}\$" "$want/.integrity"; }
+  for must in hooks/validate-role.sh hooks/lib/role-list.awk "agents/$ROLE/ROLE.md" devenv.nix devenv.lock; do
+    listed "$must" || { echo "$ROLE: .integrity does not cover $must; refusing" >&2; exit 2; }
+  done
+  for extra in devenv.local.nix devenv.local.yaml .claude/settings.json .claude/settings.local.json; do
+    [ -e "$want/$extra" ] || continue
+    listed "$extra" || { echo "$ROLE: $extra is present but not covered by .integrity; refusing" >&2; exit 2; }
   done
 fi
-here="$(dirname "$(readlink -f "$0")")"
+
 role_list() { local out; out=$(awk -v key="$1" -f "$here/lib/role-list.awk" "$role_md") || return 3; paste -sd'|' - <<<"$out"; }
 READ=$(role_list read) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
 RUN=$(role_list run) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
