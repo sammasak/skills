@@ -1,6 +1,6 @@
 ---
 name: kubernetes-gitops
-description: "Use when changing or debugging anything in the homelab k3s cluster: manifests, Flux Kustomizations, HelmReleases, ingress, scaling, or node problems. Not for SOPS encryption (secrets-management) or confirming a finished deploy is live (verify-service)."
+description: "Use when changing or debugging anything in the homelab k3s cluster: manifests, Flux Kustomizations, HelmReleases, ingress, the native-OTLP telemetry collector and its privacy filters, scaling, or node problems. Not for SOPS encryption (secrets-management) or confirming a finished deploy is live (verify-service)."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
@@ -49,12 +49,12 @@ For deeper diagnosis dispatch the `k8s-debugger` agent.
 
 ## Telemetry privacy (native OTLP)
 
-Boundary: `docs/runbooks/native-otlp-ingestion.md`. Only allowlisted metrics and sanitized Claude `tool_result` events may leave the collector; raw output, arguments, identifiers, session/user IDs and unbounded label values never reach Loki or Prometheus, and Codex logs stay dropped. A collector change (`clusters/homelab/infra/observability.yaml`) needs both fixtures (added by PR #138, not on main or deployed until it merges):
+Boundary: `docs/runbooks/native-otlp-ingestion.md`. Only allowlisted metrics and sanitized Claude `tool_result` events may leave the collector; raw output, arguments, session/user IDs and unbounded label values must not reach Loki or Prometheus, and Codex logs stay dropped. On main, log scope/schema/trace/span metadata still reaches Loki; PR #138 (open) scrubs it. A collector change (`clusters/homelab/infra/observability.yaml`) needs:
 
-- `ALLOY_BIN=<alloy> bash scripts/test-native-otlp-sanitizer.sh`: auth, size, redaction and restart at a **debug exporter**; it never touches Loki.
-- `TMPDIR=<scratch> python3 scripts/test-native-otlp-log-loki.py <alloy> <loki>`: real isolated Alloy and Loki from the repo config, asserting the stored log schema. Synthetic local-backend proof only.
+- `ALLOY_BIN=<alloy> bash scripts/test-native-otlp-sanitizer.sh` (on main): auth, size, redaction and restart at a **debug exporter**; it never touches Loki.
+- `TMPDIR=<scratch> python3 scripts/test-native-otlp-log-loki.py <alloy> <loki>` (added by PR #138): real isolated Alloy and Loki from the repo config, asserting the stored log schema. Synthetic local-backend proof only.
 
-Live acceptance additionally needs explicit rollout approval, the applied revision, and an authorized synthetic check at the real receiver and Loki; Ready=True or green fixtures are not acceptance (system gate: homelab-gitops#120). A privacy rollback disables native logs; never restore a known-leaking parent config.
+Merging to main is the Flux rollout, so it needs explicit approval. Live acceptance additionally needs the applied revision and an authorized synthetic check at the real receiver and Loki; Ready=True or green fixtures are not acceptance (system gate: homelab-gitops#120). A privacy rollback disables native logs; never restore a known-leaking config.
 
 ## Destructive deletes (kyverno-enforced)
 

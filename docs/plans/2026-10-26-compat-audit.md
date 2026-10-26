@@ -42,7 +42,7 @@ Claude Code links **all** skills into `~/.claude/skills`; Codex (`~/.codex/skill
 | 18 | rust-engineering | no statement on `factum-worker` | mission: never present the experimental model worker as the supported CLI; README "Two products" | one clause |
 | 19 | kubernetes-gitops, verify-service | `./scripts/validate.sh` / `just validate` / `just unhealthy` | homelab-gitops `ec23984` has no Justfile or `scripts/validate.sh`; `devenv tasks run gitops:validate` (+ hooks), `gitops:status`/`gitops:unhealthy` | replace |
 | 20 | nix-flake-development | `just check`; "push `~/claude-code-skills`"; no `naked-pi`; no operator boundary | `devenv tasks run nixos:qa` (= `just check`, includes every-host build); input `skills` = `sammasak/skills`; `naked-pi` host; switching is operator-only | update |
-| 21 | kubernetes-gitops, nix-flake-development | — | homelab-gitops PR #138 (`77ede40`) and nixos-config PR #95 (`9b52965`), both open: OTLP fixture boundaries, exactly-once Fish dispatch | pending-PR wording |
+| 21 | kubernetes-gitops, nix-flake-development | — | homelab-gitops PR #138 (`77ede40`) and nixos-config PR #95 (`24ac2b3`), both open: OTLP fixture boundaries, exactly-once Fish dispatch | pending-PR wording |
 
 No discrepancy found in: verify-service levels, kubernetes-gitops topology (matches homelab-gitops `ec23984` CLAUDE.md), sdlc `machine-reference.md` (schemaVersion 1, `order`, matches `examples/consumer`), pi-offload exit codes and JSON fields otherwise.
 

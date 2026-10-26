@@ -60,12 +60,12 @@ Inventory-only, both store builds (`12d640a` = Lenovo pin, `bbd58d5` = rc1), scr
 
 ## 4. nixos-config Fish wrapper regression (nix-flake-development)
 
-PR #95 head `9b52965` in a disposable worktree; ~2 s under the host lock.
+PR #95 heads `9b52965` and (re-run) `24ac2b3` in a disposable worktree; ~2 s under the host lock.
 
 | Invocation | Exit | Result |
 |---|---|---|
-| `python3 scripts/test-native-otel-fish.py "$nixpkgs_source"` | 0 | three `PASS: … one dispatch, arguments and status preserved` |
-| same tests against main's `native-otel.nix` | 1 | `AssertionError: ('codex', True, True, 2)`: two dispatches, the defect |
+| `python3 scripts/test-native-otel-fish.py "$nixpkgs_source"` | 0 | `9b52965`: three `PASS:` lines; `24ac2b3`: four (adds `real Herdr non-TTY launcher executes each client stub once`) |
+| same tests against main's `native-otel.nix` (both heads) | 1 | `AssertionError: ('codex', True, True, 2)`: two dispatches, the defect |
 
 `devenv tasks run nixos:qa` was **not** run: it builds every x86 host; PR #95 reports it passed
 on MSI.
@@ -98,7 +98,7 @@ only `home-manager-files` and two settings derivations. The built `.claude/skill
   same command shows the branch descriptions. `sdlc-pipeline`, `pi-ticket`, `verify-service` are
   absent in both (nixos-config `portableSkillNames`). Codex has no credentials on acer
   (`codex doctor`: `no Codex credentials were found`), so a Codex task run was not possible.
-- **Claude Code 2.1.300:** headless `claude -p --output-format stream-json`, Skill tool only (plus
+- **Claude Code 2.1.300** (spot check: n=1 per prompt and arm, transcripts not committed): headless `claude -p --output-format stream-json`, Skill tool only (plus
   a recording `gh` stub where noted), `HOME` = real (installed) or a mirror whose only difference
   is `.claude/skills` + `CLAUDE.md` from the built tree:
 

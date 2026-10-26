@@ -8,6 +8,9 @@ done. Installed skills today: `2730201` (nixos-config `flake.lock` input `skills
    `just bump skills`, then `nix build --dry-run` of the host. Expected: only `home-manager-files`
    and the Claude settings derivations rebuild (measured: 3 derivations with the branch as an
    `--override-input`).
+   Commit the `flake.lock` bump on a branch and push; nixos-config's pre-push hook runs the full
+   `nixos:qa` (every-host build), so push from a host with free capacity, under
+   `flock /tmp/$(hostname)-heavy-work.lock`, not next to another session's build. Merge per owner.
 3. **Switch** (owner/operator, one host first): park running agent sessions first (a switch breaks
    their Bash tool), `just switch`, keep the previous generation for rollback.
 4. **Verify discovery on the switched host**, in a fresh shell:

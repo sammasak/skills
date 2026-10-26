@@ -34,8 +34,8 @@ nix-audit diff current.json candidate.json --policy "$P"   # --gate only when as
 On a json-only build (no `--json-out` in `--help`) redirect `--json` and act on the exit code; exit 1 is still a valid report, exit 3 is incomplete evidence, never a snapshot to gate:
 
 ```sh
-nix-audit scan /run/current-system --policy "$P" --json > current.json
-case $? in 0|1) ;; 3) mv current.json current.incomplete.json ;; *) rm -f current.json ;; esac
+rc=0; $L nix-audit scan /run/current-system --policy "$P" --json > current.json || rc=$?   # stdout only
+case $rc in 0|1) ;; 3) mv current.json current.incomplete.json ;; *) rm -f current.json ;; esac
 ```
 
 ## Interpret

@@ -135,7 +135,7 @@ Reports include per-case inputs, outputs, evaluator scores, and reasons. Use `--
 
 Latest measured comparison (tool skills, baseline vs branch): `docs/plans/2026-10-26-eval-results.md`.
 
-## Current baselines (2026-10-09)
+## Earlier baselines (2026-10-09, superseded by the comparison above)
 
 - Trigger dispatch: 135/152 (89±1% plateau across reruns). A real GEPA run
   (4 rollouts, local qwen2.5-coder-7b reflection via ollama; committed

@@ -1,4 +1,5 @@
 # Usage: python3 compare.py <baseline-results-dir> <branch-results-dir>  (2026-10-26 dogfood cycle)
+# "Changed suites" = skills/eval suites changed on this branch since main 2730201 (needs git).
 import json,sys,glob,collections
 def solving(d):
     r=collections.defaultdict(list)
@@ -23,7 +24,11 @@ print("trigger cases that changed outcome:")
 for k in sorted(set(b)|set(n)):
     if k in b and k in n and (b[k][0]==b[k][1])!=(n[k][0]==n[k][1]):
         print(f"  {'FIXED ' if n[k][0]==n[k][1] else 'BROKE '} {k[:75]}  base={b[k][0]} branch={n[k][0]} want={n[k][1]}")
-print("branch trigger failures in touched suites:")
+import os,subprocess
+_root=os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","..","..")
+_changed=subprocess.run(["git","-C",_root,"diff","--name-only","2730201..HEAD","--","skills","evals"],capture_output=True,text=True).stdout.split()
+TOUCHED={f.split("/")[1] for f in _changed if f.count("/")>=2 and f.split("/")[1] not in ("runner","tests","results")}
+print("branch trigger failures in suites this branch changed:")
 for k,(o,e) in sorted(n.items()):
-    if o!=e and k.split("::")[0] in ("nix-audit-operator","tooling-feedback","sdlc-pipeline","rust-engineering","pi-offload","pi-ticket"):
+    if o!=e and k.split("::")[0] in TOUCHED:
         print(f"  {k[:80]} got={o} want={e}")
