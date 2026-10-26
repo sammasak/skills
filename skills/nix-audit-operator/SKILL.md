@@ -31,7 +31,7 @@ $L nix-audit scan "$candidate"        --policy "$P" --json-out candidate.json
 nix-audit diff current.json candidate.json --policy "$P"   # --gate only when asked
 ```
 
-On a json-only build (no `--json-out` in `--help`) redirect `--json` and act on the exit code; exit 1 is still a valid report, exit 3 is incomplete evidence, never a snapshot to gate. Set aside only the side that failed; the other side's complete report stays evidence:
+On a json-only build (no `--json-out` in `--help`) redirect `--json` and act on the exit code; exit 1 is still a valid report, exit 3 is incomplete evidence, never a snapshot to gate. Set aside (rename, never delete) only the side that failed; the other side's complete report stays evidence, valid for a rescan of the failed side only with the same binary, policy and scanners. Exception: an exit 3 from `vulnix failed: no local derivation` stays usable for the grype-only route below:
 
 ```sh
 rc=0; $L nix-audit scan /run/current-system --policy "$P" --json > current.json || rc=$?   # stdout only
