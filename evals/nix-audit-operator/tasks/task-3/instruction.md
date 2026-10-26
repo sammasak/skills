@@ -16,7 +16,7 @@ C) kept:  producer.revision 7f3a9c1e2b4d…  policy.source.sha256 91be…04  sca
 
 Write `rescan.md` with exactly these lines first, then one short reason per case:
 `A: candidate-only` or `A: both`, the same for `B:` and `C:`, and finally
-`C complete assessment: yes` or `C complete assessment: no` (whether case C's kept snapshot,
-as it stands, is a complete assessment of the running system).
+`C full coverage: yes` or `C full coverage: no` (whether case C's kept snapshot, as it stands,
+can be reported as grype and vulnix coverage of the running system).
 
 Reply with only the file content as plain text, without code fences.

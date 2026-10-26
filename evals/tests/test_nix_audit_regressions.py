@@ -23,16 +23,25 @@ GRADER = REPO / "evals" / "nix-audit-operator" / "tasks" / "task-2" / "test.sh"
 pytestmark = pytest.mark.skipif(shutil.which("jq") is None, reason="jq not on PATH")
 
 
+NO_DRV = {"status": "failed", "exit": 1,
+          "detail": "vulnix failed: no local derivation for /nix/store/x (built on another host?)"}
+OUTCOMES = {
+    "vulnix": {"vulnix": NO_DRV},
+    "grype": {"grype": {"status": "failed", "exit": 1, "detail": "grype failed; stderr: database is too old"}},
+    "vulnix_network": {"vulnix": {"status": "failed", "exit": 1,
+                                  "detail": "vulnix failed; stderr: urlopen error [Errno -3]"}},
+    "vulnix_nodrv_grype_failed": {"vulnix": NO_DRV, "grype": {"status": "failed", "exit": 1, "detail": "grype failed"}},
+    "vulnix_nodrv_grype_skipped": {"vulnix": NO_DRV, "grype": {"status": "skipped", "reason": "not selected"}},
+}
+
+
 def _report(rc: int, kind: str) -> dict:
     ran = {"status": "ran", "tool_version": "x", "db_built": None, "observations": []}
-    grype = {"scanner": "grype", "command": "grype", "outcome": dict(ran)}
-    vulnix = {"scanner": "vulnix", "command": "vulnix", "outcome": dict(ran)}
-    if rc == 3 and kind == "vulnix":
-        vulnix["outcome"] = {"status": "failed", "exit": 1,
-                             "detail": "vulnix failed: no local derivation for /nix/store/x (built on another host?)"}
-    if rc == 3 and kind == "grype":
-        grype["outcome"] = {"status": "failed", "exit": 1, "detail": "grype failed; stderr: database is too old"}
-    return {"schema": "nix-audit-report/v0", "scan": {"scanners": [grype, vulnix]},
+    outcome = {"grype": dict(ran), "vulnix": dict(ran)}
+    if rc == 3:
+        outcome.update(OUTCOMES.get(kind, {}))
+    return {"schema": "nix-audit-report/v0",
+            "scan": {"scanners": [{"scanner": n, "command": n, "outcome": o} for n, o in outcome.items()]},
             "policy": {"source": {"path": "p.toml"}}}
 
 
@@ -61,6 +70,9 @@ def _snippet() -> str:
         (1, "none", "current.json"),
         (3, "vulnix", "current.grype-only.json"),
         (3, "grype", "current.incomplete.json"),
+        (3, "vulnix_network", "current.incomplete.json"),
+        (3, "vulnix_nodrv_grype_failed", "current.incomplete.json"),
+        (3, "vulnix_nodrv_grype_skipped", "current.incomplete.json"),
         (2, "none", "current.failed.json"),
     ],
 )
@@ -120,3 +132,24 @@ def test_grader_accepts_correct_script(tmp_path):
 def test_grader_rejects_known_failures(tmp_path, name):
     result = _grade(tmp_path, BAD[name])
     assert result.returncode != 0, f"{name} passed: {result.stdout}"
+
+
+TASK3 = REPO / "evals" / "nix-audit-operator" / "tasks" / "task-3" / "test.sh"
+
+
+@pytest.mark.parametrize(
+    ("answer", "ok"),
+    [
+        ("A: candidate-only\nB: both\nC: both\nC full coverage: no\n", True),
+        ("**A:** `candidate-only`\n- B: both\n## C: both\nC full coverage: **no**\n", True),
+        ("A: both\nB: both\nC: both\nC full coverage: no\n", False),
+        ("A: candidate-only\nB: candidate-only\nC: both\nC full coverage: no\n", False),
+        ("A: candidate-only\nB: both\nC: candidate-only\nC full coverage: no\n", False),
+        ("A: candidate-only\nB: both\nC: both\nC full coverage: yes\n", False),
+    ],
+)
+def test_task3_grader(tmp_path, answer, ok):
+    (tmp_path / "rescan.md").write_text(answer)
+    result = subprocess.run(["bash", str(TASK3)], env={**os.environ, "EVAL_OUTPUT_DIR": str(tmp_path)},
+                            capture_output=True, text=True)
+    assert (result.returncode == 0) == ok, result.stdout

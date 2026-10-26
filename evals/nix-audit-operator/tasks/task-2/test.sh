@@ -92,5 +92,6 @@ if valid "$d/gen-now.json" "$d"; then echo "FAIL: exit 3 (incomplete) left gen-n
 preserved "$d" now || { echo "FAIL: the incomplete report must be kept as evidence, not deleted"; exit 1; }
 d=$(run 0 3v)
 preserved "$d" next || { echo "FAIL: a vulnix 'no local derivation' exit 3 still holds usable grype evidence and must be kept"; exit 1; }
+if valid "$d/gen-next.json" "$d"; then echo "FAIL: the vulnix-failed report was left as gen-next.json, looking complete"; exit 1; fi
 valid "$d/gen-now.json" "$d" || { echo "FAIL: a complete current snapshot must survive the candidate's vulnix failure"; exit 1; }
 echo PASS
