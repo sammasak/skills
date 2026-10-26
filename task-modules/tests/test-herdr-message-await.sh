@@ -95,6 +95,23 @@ FAKE_HERDR_PROMPT=timeout run herdr:message "{\"handoff_id\":\"$idc\",\"confirm\
 FAKE_HERDR_PROMPT=blocked run herdr:message "{\"handoff_id\":\"$idc\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$aidc1\"}"; aidc2=$(jqr .audit_id); [ "$(jqr .outcome)" = agent_blocked ] && ok || bad "chain: second attempt blocked ($(jqr .outcome))"
 FAKE_HERDR_SEQ=30 run herdr:message "{\"handoff_id\":\"$idc\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$aidc2\"}"
 [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = probably_received ] && ok || bad "chain: seq advanced after an unconfirmed first attempt must refuse ($(jqr .error.kind))"
+# ordering of the resend guard: delivered -> unknown -> resend must REFUSE once the seq moved; unknown -> delivered -> resend must ALLOW
+run coord:handoff "$(jq -c '.scope = "order1"' <<<"$draft")"; ido=$(jqr .handoff_id)
+run herdr:message "{\"handoff_id\":\"$ido\",\"confirm\":\"lenovo/wA:p2\"}"; a1=$(jqr .audit_id); [ "$(jqr .outcome)" = delivered ] && ok || bad "order1: first delivered"
+FAKE_HERDR_PROMPT=timeout run herdr:message "{\"handoff_id\":\"$ido\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$a1\"}"; a2=$(jqr .audit_id); [ "$(jqr .outcome)" = unknown_delivery ] && ok || bad "order1: second unknown"
+FAKE_HERDR_SEQ=40 run herdr:message "{\"handoff_id\":\"$ido\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$a2\"}"
+[ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = probably_received ] && ok || bad "order1: delivered->unknown->seq moved must refuse ($(jqr .error.kind))"
+run coord:handoff "$(jq -c '.scope = "order2"' <<<"$draft")"; ido2=$(jqr .handoff_id)
+FAKE_HERDR_PROMPT=timeout run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\"}"; b1=$(jqr .audit_id)
+run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$b1\"}"; b2=$(jqr .audit_id); [ "$(jqr .outcome)" = delivered ] && ok || bad "order2: second delivered"
+FAKE_HERDR_SEQ=41 run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$b2\"}"
+[ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "order2: unknown->delivered->resend must be allowed ($(jqr .error.kind))"
+FAKE_HERDR_SEQ=2 run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$(jqr .audit_id)\"}"
+# (the last attempt was delivered, so a seq going backwards is not checked against it; a session-less draft relies on await for restarts)
+# a bad object in the MIDDLE of the audit is corruption
+tmpa=$(mktemp); { head -1 "$TMP/state/audit.jsonl"; echo '{"audit_id":5,"phase":"attempt"}'; tail -n +2 "$TMP/state/audit.jsonl"; } > "$tmpa"; cp "$TMP/state/audit.jsonl" "$TMP/audit.bak"; mv "$tmpa" "$TMP/state/audit.jsonl"
+run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\"}"; [ "$(jqr .error.kind)" = audit_corrupt ] && ok || bad "bad object mid-file: $(jqr .error.kind)"
+mv "$TMP/audit.bak" "$TMP/state/audit.jsonl"
 # an attempt line without an outcome (killed mid-send) is delivery-unknown for await, not "nothing delivered"
 printf '%s\n' '{"audit_id":"abcdefabcdef","handoff_id":"'"$idc"'","phase":"attempt","host":"lenovo","agent_id":"wA:p2","session_id":"sess-1","at":"2026-10-26T00:00:00Z","confirm":"lenovo/wA:p2","state_before":"idle","seq_before":7}' >> "$TMP/state/audit.jsonl"
 rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="idle,working,idle" run herdr:await '{"audit_id":"abcdefabcdef","timeout_s":5}'

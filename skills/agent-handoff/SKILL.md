@@ -26,17 +26,19 @@ fixed; skipping a step is a boundary violation.
    `agent_busy` (mid-turn: wait, then send), `agent_changed` (session differs
    from the draft), an edited draft, and a second send of the same
    `handoff_id`. A refusal before sending has no `outcome`, only `error.kind`
-   (`agent_busy`, `agent_blocked`, `agent_changed`, `agent_state_unknown`,
-   `duplicate`, `probably_received`, `audit_corrupt`, `busy`, `timeout`,
-   `unreachable`): report it verbatim and stop. Otherwise read `outcome`:
+   (`invalid_input`, `not_confirmed`, `agent_busy`, `agent_blocked`,
+   `agent_not_found`, `agent_changed`, `agent_restarted`,
+   `agent_state_unknown`, `duplicate`, `probably_received`, `audit_corrupt`,
+   `busy`, `timeout`, `unreachable`): nothing was sent; report it verbatim and
+   stop. For `agent_busy`, check with `herdr:inventory` until the agent is
+   idle, then send. Otherwise read `outcome`:
    - `delivered` → continue with step 5.
    - `unknown_delivery` or `agent_prompt_stalled` → the text may already sit in
      the agent's input box. Run `herdr:inspect`, report what you see, stop.
      Only the owner can ask for `resend`, and the task refuses one when the
      agent's state advanced in between (`probably_received`).
    - `agent_blocked`, `agent_not_found` → nothing was delivered; report and
-     stop. For `agent_busy` wait for the agent to go idle (check with
-     `herdr:inventory`), then send; nothing has been sent yet.
+     stop.
 5. **Await** with `herdr:await`, passing the message's audit id so host,
    agent, session, `since_seq` and the delivery outcome come from the record
    (it refuses an undelivered attempt with `not_delivered`):

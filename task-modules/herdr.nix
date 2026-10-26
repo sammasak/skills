@@ -116,7 +116,7 @@ in
         ${cfg.hostCase}
         audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
         exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another herdr:message holds the audit lock" "$ctx"
-        [ ! -s "$audit" ] || jq -e 'type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string"' "$audit" >/dev/null 2>&1 \
+        [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 \
           || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"
         attempts=$(jq -c --arg i "$id" 'select(.handoff_id == $i and .phase == "attempt")' "$audit") || fail 2 audit_corrupt "audit lookup failed" "$ctx"
         prior=$(tail -1 <<<"$attempts")
@@ -125,7 +125,7 @@ in
         [ "$rc" -eq 0 ] || fail 2 "''${code:-$(rc_kind $rc)}" "herdr agent get failed for $host/$agent: ''${code:-$(rc_kind $rc)} (exit $rc)" "$ctx"
         state=$(jq -r '.result.agent.agent_status // empty' <<<"$st" 2>/dev/null || true); seq=$(jq -r '.result.agent.state_change_seq // empty' <<<"$st" 2>/dev/null || true); session=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
         case "$state" in idle|done) ;; blocked) fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx" ;;
-          working) fail 2 agent_busy "agent $host/$agent is mid-turn; a queued prompt would blur which turn answered it. Wait for idle (herdr:await without audit_id) and send then" "$ctx" ;;
+          working) fail 2 agent_busy "agent $host/$agent is mid-turn; a queued prompt would blur which turn answered it. Check herdr:inventory until it is idle, then send" "$ctx" ;;
           *) fail 2 agent_state_unknown "herdr agent get returned no usable state for $host/$agent; not sending" "$ctx" ;; esac
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then
@@ -135,20 +135,22 @@ in
           pid=$(jq -r .audit_id <<<"$prior")
           poutcome=$(jq -r --arg a "$pid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)
           [ "$resend" = "$pid" ] || fail 3 duplicate "handoff $id was already sent (audit $pid, outcome ''${poutcome:-interrupted}); inspect the pane first (herdr:inspect); only the owner can decide to send it again (resend=\"$pid\")" "$ctx"
-          # any earlier attempt whose delivery is unconfirmed (and not superseded by a delivered one) still counts:
-          # if the agent's state advanced since it, the text probably arrived
-          delivered_after=false
+          # any earlier attempt whose delivery is unconfirmed, and not superseded by a LATER delivered one, still counts:
+          # if the agent's state advanced since it, the text probably arrived. Newest first, so the flag means "a later attempt was delivered".
+          delivered_later=false
           while IFS= read -r att; do
             [ -n "$att" ] || continue
             a_id=$(jq -r .audit_id <<<"$att"); a_seq=$(jq -r '.seq_before // 0' <<<"$att")
             a_out=$(jq -r --arg a "$a_id" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)
             case "''${a_out:-interrupted}" in
-              delivered) delivered_after=true ;;
+              delivered) delivered_later=true ;;
               unknown_delivery|interrupted|agent_prompt_stalled)
-                [ "$delivered_after" = true ] || [ "$seq" -le "$a_seq" ] \
-                  || fail 2 probably_received "agent state advanced ($a_seq -> $seq) after attempt $a_id with outcome ''${a_out:-interrupted}; it probably received the message. Inspect with herdr:inspect instead of resending" "$ctx" ;;
+                if [ "$delivered_later" != true ]; then
+                  [ "$seq" -ge "$a_seq" ] || fail 2 agent_restarted "state_change_seq went backwards ($a_seq -> $seq) since attempt $a_id; the agent or Herdr restarted, inspect before resending" "$ctx"
+                  [ "$seq" -eq "$a_seq" ] || fail 2 probably_received "agent state advanced ($a_seq -> $seq) after attempt $a_id with outcome ''${a_out:-interrupted}; it probably received the message. Inspect with herdr:inspect instead of resending" "$ctx"
+                fi ;;
             esac
-          done <<<"$attempts"
+          done < <(tac <<<"$attempts")
         fi
         aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
         jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" \
@@ -183,7 +185,7 @@ in
         delivery=live
         if [ -n "$aid" ]; then
           [[ "$aid" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "audit_id must be 12 hex" '{"task":"herdr:await"}'
-          [ ! -s "$audit" ] || jq -e 'type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string"' "$audit" >/dev/null 2>&1 || fail 2 audit_corrupt "audit log is not valid JSON lines" '{"task":"herdr:await"}'
+          [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 || fail 2 audit_corrupt "audit log is not valid JSON lines" '{"task":"herdr:await"}'
           att=$(jq -c --arg a "$aid" 'select(.audit_id == $a and .phase == "attempt")' "$audit" | tail -1) || fail 2 audit_corrupt "audit lookup failed" '{"task":"herdr:await"}'
           [ -n "$att" ] || fail 3 invalid_input "no herdr:message attempt with audit_id $aid" '{"task":"herdr:await"}'
           delivery=$(jq -r --arg a "$aid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1); delivery=''${delivery:-interrupted}
@@ -224,7 +226,8 @@ in
             # a fast turn may have started and ended between the first get and this wait: one more look at the seq
             st2=$(herdr_on ${t} "$target" agent get "$agent" 2>/dev/null) || st2=""
             seq2=$(jq -r '.result.agent.state_change_seq // empty' <<<"$st2" 2>/dev/null || true); state2=$(jq -r '.result.agent.agent_status // empty' <<<"$st2" 2>/dev/null || true)
-            if [ -n "$since" ] && [[ "$seq2" =~ ^[0-9]+$ ]] && [ "$seq2" -gt "$since" ]; then turn_seen=true; seq=$seq2; state=''${state2:-$state}
+            session2=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st2" 2>/dev/null || true)
+            if [ -n "$since" ] && [[ "$seq2" =~ ^[0-9]+$ ]] && [ "$seq2" -gt "$since" ] && { [ -z "$want_session" ] || [ "$session2" = "$want_session" ]; }; then turn_seen=true; seq=$seq2; state=''${state2:-$state}
             else
             fail 2 no_turn_observed "agent $host/$agent stayed $state for ''${start_t}s after the prompt. Do not resend: inspect the pane with herdr:inspect first" \
               "$(jq -cn --argjson c "$ctx" --arg s "$state" --argjson q "$seq" '$c + {herdr_state:$s, state_change_seq:$q, turn_observed:false, reached:false, accepted:false}')"
