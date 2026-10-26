@@ -16,6 +16,10 @@ SOLVING_SKILLS = [
     "kubernetes-gitops",
     "rust-engineering",
     "nix-flake-development",
+    "nix-audit-operator",
+    "tooling-feedback",
+    "sdlc-pipeline",
+    "pi-offload",
 ]
 
 # Explicit output filename mapping per task (avoids fragile parsing)
@@ -36,6 +40,13 @@ OUTPUT_FILENAMES: dict[tuple[str, str], str] = {
     ("nix-flake-development", "task-3"): "fix.md",
     ("nix-flake-development", "task-4"): "flake.nix",
     ("nix-flake-development", "task-5"): "fix.md",
+    ("rust-engineering", "task-6"): "assessment.md",
+    ("nix-audit-operator", "task-1"): "verdict.md",
+    ("nix-audit-operator", "task-2"): "snapshot.sh",
+    ("tooling-feedback", "task-1"): "routing.md",
+    ("tooling-feedback", "task-2"): "issue.md",
+    ("sdlc-pipeline", "task-1"): "status.md",
+    ("pi-offload", "task-1"): "decision.md",
 }
 
 
