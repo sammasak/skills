@@ -1,6 +1,6 @@
 ---
 name: sdlc-pipeline
-description: "Use when driving the sdlc:* stage machine in a repo whose devenv defines platform.sdlc (rust preset stages: sketch -> model -> test -> review -> perf -> security; sdlc:done is the aggregate task)."
+description: "Use when a repo's devenv defines platform.sdlc: checking sdlc-status, driving the sdlc:* stage machine until sdlc:done is green, or writing a review-stage verdict. Stages are per repo (the rust preset is sketch -> model -> test -> review -> perf -> security)."
 allowed-tools: Bash, Read, Edit, Write, Agent
 ---
 
@@ -23,6 +23,10 @@ If the session is not already inside the devenv shell (no direnv, or a non-inter
 invocation), fall back to `devenv shell -q -- sdlc-status --context` (and likewise prefix any
 other `sdlc-status`/`devenv tasks run` call with `devenv shell -q --`) rather than assuming
 the tools are on PATH.
+
+## Discover the machine first
+
+`sdlc-status --context` exits 0 even when every stage is `unverified`, 1 when there is no machine (`$SDLC_MACHINE not set`), 2 for a bad mode; it never runs guards, so its exit code is not a pass. Read the real graph before acting: `jq '{schemaVersion, order, stages}' "$SDLC_MACHINE"` and `devenv tasks list | grep sdlc:` (e.g. a non-Rust repo may have only `database -> integration`). Only the exit code of `devenv tasks run sdlc:done` is a verdict, and it is a local advisory, not re-checked at merge.
 
 ## The Loop
 
@@ -66,6 +70,7 @@ not proof that there are no committed changes to review.
 - **Single pipeline at a time, per checkout.** State derives from the working tree, so two pipelines running concurrently in the same checkout will stamp over each other's fingerprints. Don't parallelize this loop.
 - Any working-tree change invalidates every stamp by design. That's re-verification, not a bug. Don't be surprised when a fix to stage N causes stage N-1's guard to re-run too.
 - Stage order and which stages exist are per-repo config (`platform.sdlc.stages`, preset-dependent). Read `$SDLC_MACHINE`, don't assume the rust preset applies to a non-rust repo.
+- A guard fails for a non-code reason (missing executable, eval error such as `references missing guard task`, stale pre-push hook after a platform re-pin): match the message against the [troubleshooting table](https://github.com/sammasak/devenv-platform/blob/main/docs/ADOPTING-SDLC.md#troubleshooting), fix the environment, never write a verdict or skip the stage. A platform defect goes to `tooling-feedback` (`sammasak/devenv-platform`, its `docs/FEEDBACK.md` template).
 - `sdlc-status` is read-only (never writes stamps, never runs guards) and already accounts for staleness: it only reports a stage red when `last-red.json`'s fingerprint matches the current tree, otherwise a stale red demotes to unverified. Trust its state, don't recompute freshness by hand.
 
 ## Verdict Stages
