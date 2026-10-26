@@ -8,6 +8,7 @@ mission: >-
   messages. Coordinate only.
 skills:
   - herdr-operations
+  - agent-handoff
 tasks:
   read:
     - herdr:inventory

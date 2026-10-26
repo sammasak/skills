@@ -145,15 +145,15 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 **Files:** `skills/herdr-operations/SKILL.md` (≤80 lines: when to run which task, how to read records, never infer completion), `evals/herdr-operations/trigger.yaml` (positives/hard_negatives/true_negatives), update `agents/coordinator/ROLE.md` skills list, `tests/test-plugin-manifests.sh` passes.
 
-- [ ] Write skill + trigger eval; run `uv run python -m runner.trigger --skill herdr-operations` (token from `/run/secrets/claude_oauth_token`); record result.
-- [ ] Start Claude as `claude --agent coordinator --permission-mode default` in a pane; ask "what are my agents doing"; capture that it ran only allowlisted tasks (check session JSONL tool_use names). Record evidence on #16.
+- [x] Write skill + trigger eval; run `uv run python -m runner.trigger --skill herdr-operations` (token from `/run/secrets/claude_oauth_token`); record result. *(herdr-operations 5/5 positives, hard negatives routed to agent-handoff/agent-orchestration/pi-offload; one true negative about a Rust lifetime error routed to rust-engineering, not a herdr-operations fault)*
+- [x] Start Claude as `claude --agent coordinator --permission-mode default` in a pane; ask "what are my agents doing"; capture that it ran only allowlisted tasks (check session JSONL tool_use names). Record evidence on #16. *(2026-10-26 `claude -p --agent coordinator` session 62135646: 5 turns, 18s, $0.11; tool calls = Read ROLE.md, `devenv tasks run coord:brief --show-output`, one `grep` blocked by the guard (1 permission denial), Read of the tool-result file; answer kept herdr=working separate from work=unverified, cited PR #17, declined to merge. Dev-host setup: symlinks for adapter/guard/skill + COORDINATOR_CHECKOUT; the M3 launcher replaces that)*
 - [ ] Open PR "epic-16 M1: read-only coordinator"; subagent review; fix; owner merge gate.
 
 ## Slice 3 — M2: explicit handoffs and idempotent communication
 
 ### Task 3.1: `coord:handoff` (draft only)
-- Files: `task-modules/bin/coord-handoff`, task in `agents/coordinator/tasks.nix`, `skills/agent-handoff/SKILL.md`, tests.
-- [ ] Input `{host, agent_id, task_ref, scope, expected_evidence, acceptance}` → brief Markdown + JSON with `handoff_id = sha256(host|agent_id|task_ref|text)[:12]`, saved to `$state_dir/handoffs/<id>.json`, `approval_required:true`. Tests: missing fields exit 3; id stable; nothing sent (fake ssh log empty).
+- Files: task in `agents/coordinator/tasks.nix`, `skills/agent-handoff/SKILL.md`, `agents/coordinator/tests/test-coord-handoff.sh`.
+- [x] Input `{host, agent_id, task_ref, scope, expected_evidence, acceptance}` → brief Markdown + JSON with `handoff_id = sha256(host|agent_id|task_ref|text)[:12]`, saved to `$state_dir/handoffs/<id>.json`, `approval_required:true`. Tests: missing fields exit 3; id stable; nothing sent (fake ssh log empty).
 
 ### Task 3.2: `herdr:message` + audit + duplicate detection
 - Files: `task-modules/bin/herdr-message`, `herdr.nix`, tests with fake herdr that can simulate `agent_blocked`, `timeout`, success.
@@ -197,5 +197,6 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 | 2026-10-26 17:30 | Slice 1 M0 (PR #17) | 8475e31, a35f049, 67e278a, f61a592 | skills:test (0): policy, manifests, contract, negative, hooks | Review 1: 5/10 (prefix-glob allows, pi-ticket stand-in, ssh fallback) → fixed with agent-scoped grammar hook + exact rules; re-review pending; owner gate: merge |
 | 2026-10-26 18:30 | Slice 2 Task 2.1 first pass | bac4c5c (reworked) | task test 42/42, live inventory on acer-swift | **Owner redirect:** no standalone scripts; tasks + DAG only. Probe confirmed eval-time fleet → per-host tasks, `@completed` aggregation, `--option :path` override, cache invalidation |
 | 2026-10-26 19:30 | M0 reviews 2–4 | f61a592, 22aa856, 8be175f, acdb376 | skills:test (0) each round | 6/10 → 7/10 → **9/10**; guard fails closed, exact-only rules, Read scoped; PR #17 comment carries the trail; #16 M0 boxes ticked (4/5; "minimum runtime permissions" waits for M3 measurements) |
-| 2026-10-26 20:30 | Slice 2 Tasks 2.2–2.5 | a241253 + next | tasks suite: inspect 24/24, session-summary 18/18, evidence 24/24, coord:brief 20/20; live inspect + session summary on acer-swift | Full DAG runs 4 leaf tasks in parallel → aggregates → work:status → coord:brief; a `done` agent with only an open PR stays `unverified`; gh outage → `partial` + `unknown` verdicts |
+| 2026-10-26 21:00 | Slice 2 Task 2.6 + Slice 3 Task 3.1 | e039500 + next | trigger evals (herdr-operations 5/5; agent-handoff recall 50%→ description sharpened, rerun pending); live `claude -p --agent coordinator` smoke; handoff 16/16, brief 21/21 | Guard blocked the agent's `grep` live; brief now prints Markdown and saves JSON to `$stateDir/brief/latest.json` so the agent reads instead of grepping |
+| 2026-10-26 20:30 | Slice 2 Tasks 2.2–2.5 | a241253, e039500 | tasks suite: inspect 24/24, session-summary 18/18, evidence 24/24, coord:brief 20/20; live inspect + session summary on acer-swift | Full DAG runs 4 leaf tasks in parallel → aggregates → work:status → coord:brief; a `done` agent with only an open PR stays `unverified`; gh outage → `partial` + `unknown` verdicts |
 | 2026-10-26 20:00 | Slice 2 Task 2.1 DAG-first | c64d896 | skills:test incl. tasks suite (0): inventory 41/41 | `herdr:list:<host>` per fleet host → `herdr:inventory@completed`; devenv drops failed tasks' outputs, so list tasks always complete and carry `error` as data |

@@ -13,7 +13,9 @@ run() { # <task> <fleet> [args]
   devenv tasks run "$task" --option coordinator.fleetFile:path "$fleet" --option coordinator.ghCommand:string "$FX/bin/gh" \
     --option coordinator.sshCommand:string "$FX/bin/ssh" --option coordinator.herdrCommand:string "$FX/bin/herdr" \
     --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 1 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
-  OUT=$(grep -E "^\s*\{\"schema_version\":1,\"task\":\"$task\"" "$TMP/run.log" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+  if [ "$task" = coord:brief ] && [ -r "$TMP/state/brief/latest.json" ] && [ "$CODE" -eq 0 ]; then OUT=$(cat "$TMP/state/brief/latest.json")
+  else OUT=$(grep -E "^\s*\{\"schema_version\":1,\"task\":\"$task\"" "$TMP/run.log" | tail -1 | sed -E 's/^\s+//'); fi
+  [ -n "$OUT" ] || OUT='{}'
 }
 jqr() { jq -r "$1" <<<"$OUT"; }
 
@@ -48,6 +50,7 @@ FAKE_GH_EXIT=1 FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$FX/herdr/rem
 jqr '.failed_sources[].source' | grep -q 'gh:work' && ok || bad "gh down: failed source named"
 [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unknown ] && ok || bad "gh down: verdict unknown, not verified"
 grep -q 'Partial:' "$TMP/run.log" && ok || bad "gh down: markdown says Partial"
+grep -q 'Full JSON: ' "$TMP/run.log" && ok || bad "brief points at the saved JSON"
 
 # herdr down everywhere: no items, inventory failed, work:status exits 2, brief fails honestly
 printf '{"schema_version":1,"hosts":[{"name":"gone","ssh":"lukas@down.lan"}],"repos":[]}' > "$TMP/down.json"

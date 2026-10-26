@@ -1,6 +1,6 @@
 ---
 name: herdr-operations
-description: Use when asked what coding agents are doing, whether an agent is idle, working, blocked or done, how fresh that status is, or to read a bounded excerpt of one agent's terminal through Herdr. Not for sending prompts to agents (agent-orchestration until the agent-handoff skill lands in M2) or for running Claude on another machine (agent-orchestration).
+description: Use when asked what coding agents are doing, whether an agent is idle, working, blocked or done, how fresh that status is, or to read a bounded excerpt of one agent's terminal through Herdr. Not for sending prompts to agents (agent-handoff) or for running Claude on another machine (agent-orchestration).
 ---
 
 # Herdr operations (read-only)

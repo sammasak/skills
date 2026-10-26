@@ -64,18 +64,50 @@ in
         . ${cfg.lib}
         ws=$(upstream "work:status")
         [ "$ws" != null ] || fail 2 missing "work:status produced no output" '{"task":"coord:brief"}'
-        emit "$(jq -c '. + {task:"coord:brief"}' <<<"$ws")"
-        jq -r '
+        dir="${cfg.stateDir}/brief"; mkdir -p "$dir"
+        brief=$(jq -c '. + {task:"coord:brief"}' <<<"$ws")
+        printf '%s\n' "$brief" > "$dir/latest.json"
+        printf '%s\n' "$brief" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
+        jq -r --arg f "$dir/latest.json" '
           "# Fleet brief (\(.observed_at))",
           (if .partial then "", "**Partial:** " + ([.failed_sources[] | "\(.source): \(.error.kind) — \(.error.message)"] | join("; ")) else empty end),
           "", "## Needs you",
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))") end)[]),
           "", "## Agents",
-          (if (.items|length) == 0 then "- none observed" else (.items[] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) (\(.state_age_s)s\(if .stale then ", stale" else "" end)) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end)
-        ' <<<"$ws" >&2
+          (if (.items|length) == 0 then "- none observed" else (.items[] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) (\(.state_age_s)s\(if .stale then ", stale" else "" end)) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
+          "", "Full JSON: \($f)"
+        ' <<<"$brief"
       '';
     };
 
-    "coord:handoff" = import ../../task-modules/pending.nix "coord:handoff";
+    "coord:handoff" = {
+      description = "Draft (never send) a bounded assignment brief for one agent; saves it under the state dir with a handoff_id.";
+      input = { host = null; agent_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; owner_input = ""; };
+      exec = ''
+        set -uo pipefail
+        . ${cfg.lib}
+        host=$(input .host); agent=$(input .agent_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input)
+        ctx() { jq -cn --arg h "$host" --arg a "$agent" '{task:"coord:handoff",host:$h,agent_id:$a}'; }
+        [ -n "$host" ] && [ -n "$agent" ] && [ -n "$ref" ] && [ -n "$scope" ] && [ -n "$ev" ] && [ -n "$acc" ] \
+          || fail 3 invalid_input "host, agent_id, task_ref, scope, expected_evidence and acceptance are required" "$(ctx)"
+        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$(ctx)"
+        [[ "$ref" =~ ^#[0-9]+$ ]] || fail 3 invalid_input "task_ref must look like #N" "$(ctx)"
+        case "$host" in
+          ${lib.concatMapStringsSep "\n          " (h: ''${h.name}) ;;'') cfg.hosts}
+          *) fail 3 invalid_input "host not in fleet: $host" "$(ctx)" ;;
+        esac
+        for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 2000 ] || fail 3 invalid_input "a field exceeds 2000 characters" "$(ctx)"; done
+        at=$(now_iso)
+        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n%s\nReply in this pane when done, naming the commit or PR. Do not merge, deploy or delete anything.\n' \
+          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
+        id=$(printf '%s|%s|%s|%s' "$host" "$agent" "$ref" "$text" | sha256sum | cut -c1-12)
+        dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
+        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg a "$agent" --arg r "$ref" --arg t "$text" --arg need "$need" \
+          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, agent_id:$a, task_ref:$r, text:$t,
+            owner_input: (if $need == "" then null else $need end), approval_required:true, sent:false, error:null}')
+        [ -f "$dir/$id.json" ] || printf '%s\n' "$rec" > "$dir/$id.json"
+        emit "$(jq -c '.' "$dir/$id.json")"
+      '';
+    };
   };
 }

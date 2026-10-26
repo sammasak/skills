@@ -1,0 +1,13 @@
+skill: agent-handoff
+positives:
+  - "Hand the settlement rounding task to the claude agent on lenovo and tell it what evidence I expect."
+  - "Send the worker in pane wA:p2 a message asking it to rebase its branch."
+  - "Wait for the herman agent to answer and tell me what it said."
+  - "Draft an assignment brief for the codex agent running on acer to fix the clippy warnings in crates/web."
+hard_negatives:
+  - "What are my coding agents doing right now?"  # → herdr-operations
+  - "Start a Claude session on acer-swift for the herman repo."  # → agent-orchestration
+  - "Delegate these clippy fixes to the Pi worker."  # → pi-offload
+true_negatives:
+  - "Explain how iroh relays work."
+  - "Write a commit message for this diff."
