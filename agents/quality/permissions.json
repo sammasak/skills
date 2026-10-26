@@ -7,8 +7,7 @@
     "Bash(devenv tasks run gh:work --show-output)",
     "Bash(devenv tasks run git:recent)",
     "Bash(devenv tasks run git:recent --show-output)",
-    "Read(./**)",
-    "Read(~/.local/state/quality/**)"
+    "Read(./**)"
   ],
   "ask": [],
   "deny": [

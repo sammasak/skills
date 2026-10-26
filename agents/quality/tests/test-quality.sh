@@ -23,18 +23,21 @@ run quality:report "{\"checkout\":\"$TMP/repo\"}"
 [ "$(jqr '.stages[] | select(.stage=="perf") | .state')" = unverified ] && ok || bad "report: perf unverified"
 [ "$(jqr '.stages[] | select(.stage=="sketch") | .state')" = green ] && ok || bad "report: sketch green"
 [ "$(jqr '.stages[] | select(.stage=="review") | .verdict')" = true ] && ok || bad "report: review is a verdict stage"
-[ "$(jqr '.red[0].guard')" = "rust:test" ] && ok || bad "report: red record parsed"
-[ "$(jqr '.verdicts[0].grade')" = 9 ] && ok || bad "report: verdict parsed"
+[ "$(jqr '.red[0].guard')" = "rust:test" ] && [ "$(jqr '.red[0].current')" = true ] && ok || bad "report: red record parsed, current against fp1"
+[ "$(jqr '.verdicts[0].grade')" = 9 ] && [ "$(jqr '.verdicts[0].current')" = false ] && ok || bad "report: verdict parsed, stale against fp1"
+[ "$(jqr .fingerprint)" = fp1 ] && ok || bad "report: fingerprint"
+[ -s "$FAKE_LOG.leak" ] && bad "report: DEVENV_/SDLC_ environment leaked into the consumer devenv ($(head -3 "$FAKE_LOG.leak"))" || ok
 [ "$(jqr .all_green)" = false ] && ok || bad "report: not all green"
 [ "$(jqr .dirty_files)" = 0 ] && ok || bad "report: clean tree"
-grep -q "devenv($TMP/repo) shell -q -- sdlc-status$" "$FAKE_LOG" && ok || bad "report: sdlc-status (digest) run inside the checkout"
+grep -q "devenv($TMP/repo) shell -q -- sh -c .*sdlc-status > " "$FAKE_LOG" && ok || bad "report: one consumer shell run inside the checkout collecting machine, digest and fingerprint"
 grep -q 'tasks run' "$FAKE_LOG" && bad "report: must not run any stage" || ok
 
 # a checkout with no stamps or verdicts at all still reports (unmatched globs)
 rm -f "$TMP/repo/.devenv/state/sdlc/"*; run quality:report "{\"checkout\":\"$TMP/repo\"}"
 [ "$CODE" -eq 0 ] && [ "$(jqr '.red|length')" = 0 ] && [ "$(jqr '.verdicts|length')" = 0 ] && ok || bad "report: empty state dir ($(tail -2 "$TMP/run.log"))"
 run quality:report '{"checkout":"/tmp/not-in-fleet"}'; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "report: non-fleet checkout refused ($(jqr .error.kind))"
-FAKE_SDLC_DIR="$TMP/empty" run quality:report "{\"checkout\":\"$TMP/repo\"}"; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = no_sdlc ] && ok || bad "report: repo without sdlc machine ($(jqr .error.kind))"
+mkdir -p "$TMP/empty"; FAKE_SDLC_DIR="$TMP/empty" run quality:report "{\"checkout\":\"$TMP/repo\"}"; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = no_sdlc ] && ok || bad "report: repo without sdlc machine ($(jqr .error.kind))"
+rm -f "$FAKE_LOG.leak"
 
 : > "$FAKE_LOG"
 run quality:gate "{\"checkout\":\"$TMP/repo\",\"stage\":\"test\"}"
@@ -44,5 +47,6 @@ FAKE_GATE_EXIT=1 run quality:gate "{\"checkout\":\"$TMP/repo\",\"stage\":\"test\
 [ "$CODE" -ne 0 ] && [ "$(jqr .green)" = false ] && [ "$(jqr .error.kind)" = stage_red ] && ok || bad "gate red: $OUT"
 jqr .output_tail | grep -q 'fake tail line' && ok || bad "gate: output tail kept"
 run quality:gate "{\"checkout\":\"$TMP/repo\",\"stage\":\"test; id\"}"; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "gate: stage validation"
+[ -s "$FAKE_LOG.leak" ] && bad "gate: DEVENV_/SDLC_ environment leaked into the consumer devenv" || ok
 run quality:gate "{\"checkout\":\"$TMP/repo\"}"; [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "gate: stage required"
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]

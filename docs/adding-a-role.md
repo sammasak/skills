@@ -7,7 +7,8 @@ other roles may share. Nothing here needs a new script runner.
    `mission`, `skills` (existing `skills/*`), `tasks.read` / `tasks.run` /
    `tasks.act` / `tasks.inputless`, `forbidden`, `evidence`, `adapters`.
    `read` = no side effects beyond local state, `run` = runs something local
-   (builds, gates), `act` = remote side effect (always prompts). Every listed
+   (builds, gates), `act` = remote side effect (prompts in Claude; Codex has
+   no prompt, so a role with act tasks is Claude-only until that changes). Every listed
    task must exist in `devenv tasks list`.
 2. **Tasks** — reuse first (`gh:work`, `git:recent`, `herdr:*`,
    `quality:report` …). New ones go in `task-modules/<family>.nix` or

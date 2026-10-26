@@ -26,6 +26,18 @@ for permission every time), awaits (`herdr:await`), and verifies with
 `work:status`. "delivered" is not "done"; only a merged PR for the agent's
 `#N` in its own repo makes `work_verdict: verified`.
 
+## Running the quality role
+
+Claude: from the checkout, `claude --agent quality --permission-mode default
+--setting-sources project,local --settings <file with the guard hook and the
+role's permissions.json rules>` (the same shape the coordinator launcher
+uses). Codex: `codex exec --cd "$COORDINATOR_CHECKOUT" "$(cat
+agents/quality/AGENTS.md)"$'\n\n'"<request>"` with the guard in a dedicated
+`CODEX_HOME/hooks.json`; see `agents/quality/AGENTS.md` for what Codex cannot
+enforce. The checkout must carry `.integrity` for either harness to be
+considered guarded. `quality:gate` is bounded to 540 s so a harness tool
+timeout cannot swallow its record.
+
 ## Reading failures
 
 - `partial: true` + `failed_sources`: a host or repo did not answer; the rest
@@ -39,7 +51,9 @@ for permission every time), awaits (`herdr:await`), and verifies with
   `agent_not_found` (nothing sent).
 - A guard refusal shows up in Claude as a blocked Bash call with the guard's
   reason on stderr; in `-p` mode a permission prompt is denied, so make sure
-  the settings-level guard is in place (the launcher does this).
+  the settings-level guard is in place (the launcher does this). A refusal
+  "checkout integrity check failed" means a guarded file in the copy changed:
+  rebuild the copy (re-run the activation) rather than editing it back.
 
 ## Operating the guard
 

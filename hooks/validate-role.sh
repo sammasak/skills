@@ -26,18 +26,16 @@ fi
 
 role_md="$want/agents/$ROLE/ROLE.md"
 [ -r "$role_md" ] || { echo "$ROLE: no role contract at $role_md" >&2; exit 2; }
-# frontmatter lists under tasks: (read|run|act), one `- name` per line
-role_list() { # <key> -> a|b|c
-  awk -v key="$1" '
-    /^---$/ { fm++; next } fm != 1 { next }
-    /^tasks:/ { intasks=1; next }
-    intasks && /^[A-Za-z]/ { intasks=0 }
-    intasks && $1 ~ /^(read|run|act|inputless):$/ { cur=$1; sub(":","",cur); next }
-    intasks && cur == key && $1 == "-" { print $2 }
-  ' "$role_md" | paste -sd'|' -
-}
-READ=$(role_list read); RUN=$(role_list run); ACT=$(role_list act)
-allow_re="${READ}${RUN:+|$RUN}"
+# an installed checkout carries .integrity (sha256 of contracts, tasks, hooks, devenv files); a changed file blocks every call
+if [ -f "$want/.integrity" ]; then
+  (cd "$want" && sha256sum --check --quiet --strict .integrity >/dev/null 2>&1) || { echo "$ROLE: checkout integrity check failed; refusing to run tasks from a modified checkout" >&2; exit 2; }
+fi
+here="$(dirname "$(readlink -f "$0")")"
+role_list() { local out; out=$(awk -v key="$1" -f "$here/lib/role-list.awk" "$role_md") || return 3; paste -sd'|' - <<<"$out"; }
+READ=$(role_list read) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
+RUN=$(role_list run) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
+ACT=$(role_list act) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
+allow_re="${READ}${RUN:+${READ:+|}$RUN}"
 [ -n "$allow_re" ] || { echo "$ROLE: role contract lists no tasks" >&2; exit 2; }
 
 re="^devenv tasks run (${allow_re}${ACT:+|$ACT})( --input-json '([^']*)')?( --show-output)?\$"

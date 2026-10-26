@@ -142,11 +142,28 @@ else PASS=$((PASS+1)); fi
 
 # allow rules carry no wildcard at all: a wildcard after the task name admits -O overrides and extra task names
 if jq -r '.allow[] | select(startswith("Bash("))' "$P" | grep -q '\*'; then FAIL=$((FAIL+1)); echo "FAIL: a Bash allow rule contains a wildcard"; else PASS=$((PASS+1)); fi
-# the guard honours the role contract behaviourally: every read/run task allows, every act task asks (lists are parsed from ROLE.md at runtime)
-rtasks=$(yq --front-matter=extract -o=json '.' "$ROOT/agents/coordinator/ROLE.md" 2>/dev/null)
-if [ -n "$rtasks" ]; then
-  for t in $(jq -r '.tasks.read[], (.tasks.run // [])[]' <<<"$rtasks"); do hook allow "devenv tasks run $t --input-json '{}'"; done
-  for t in $(jq -r '.tasks.act[]' <<<"$rtasks"); do hook ask "devenv tasks run $t --input-json '{}'"; done
+# the guard honours every role contract behaviourally: read/run tasks allow, act tasks ask, another role's tasks block
+if command -v yq >/dev/null; then
+  for role_md in "$ROOT"/agents/*/ROLE.md; do
+    role=$(basename "$(dirname "$role_md")"); fm=$(yq --front-matter=extract -o=json '.' "$role_md")
+    rhook() { local out code dec; out=$(jq -cn --arg c "$2" --arg d "$ROOT" '{session_id:"t",cwd:$d,tool_name:"Bash",tool_input:{command:$c}}' | ROLE="$role" "$ROOT/hooks/validate-role.sh" 2>/dev/null); code=$?
+      dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null)
+      if [ "$1" = block ]; then [ "$code" -eq 2 ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL($role): '$2' -> $code/$dec (want block)"; }
+      else [ "$code" -eq 0 ] && [ "$dec" = "$1" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL($role): '$2' -> $code/$dec (want $1)"; }; fi; }
+    for t in $(jq -r '.tasks.read[], (.tasks.run // [])[]' <<<"$fm"); do rhook allow "devenv tasks run $t --input-json '{}'"; done
+    for t in $(jq -r '.tasks.act[]' <<<"$fm"); do rhook ask "devenv tasks run $t --input-json '{}'"; done
+    for other in "$ROOT"/agents/*/ROLE.md; do [ "$other" = "$role_md" ] && continue
+      for t in $(yq --front-matter=extract -o=json '.' "$other" | jq -r --argjson mine "$(jq -c '[.tasks.read[], (.tasks.run // [])[], .tasks.act[]]' <<<"$fm")" '[.tasks.read[], (.tasks.run // [])[], .tasks.act[]] | map(select(. as $t | ($mine | index($t)) == null))[]'); do rhook block "devenv tasks run $t"; done
+    done
+  done
 else echo "note: yq missing, role-list behaviour cases skipped"; fi
+# integrity: a checkout with an .integrity manifest refuses every call once a guarded file changes
+ITMP=$(mktemp -d); git -C "$ROOT" archive --format=tar HEAD | tar -x -C "$ITMP"; cp -r "$ROOT/hooks/." "$ITMP/hooks/"   # the guard under test is the working tree's
+( cd "$ITMP" && find agents task-modules hooks devenv.nix devenv.yaml devenv.lock -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
+ihook() { jq -cn --arg c "devenv tasks run coord:brief" --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:$c}}' | COORDINATOR_CHECKOUT="$ITMP" ROLE=coordinator "$ITMP/hooks/validate-role.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // "block"'; }
+[ "$(ihook)" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): pristine copy must allow"; }
+echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"
+[ "$(ihook)" = block ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): modified task file must block"; }
+rm -rf "$ITMP"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]

@@ -29,10 +29,24 @@ with `<task>` one of `quality:report`, `quality:gate`, `gh:work`,
 chaining. A blocked command means the guard refused it; report that, do not
 retry with a variation.
 
-## Differences from the Claude adapter
+## Differences from the Claude adapter (recorded, not hidden)
 
-- No permission prompt exists in `codex exec`; the guard either allows or
-  blocks. This role has no act-class task, so nothing needs a prompt.
-- Skills are not preloaded; read them with your file-reading tool as above.
-- The guard reads `tool_input.command` and `cwd` from the hook input; the
-  nixos-config launcher sets `COORDINATOR_CHECKOUT` so the cwd check holds.
+- **No permission prompt** in `codex exec`: the guard either allows or blocks.
+  This role has no act-class task, so nothing needs a prompt; a role with act
+  tasks cannot run under Codex until Codex can ask.
+- **No edit denial.** Claude denies Edit/Write; Codex's patch tool is not
+  covered by a Bash hook. Codex must therefore run against a checkout whose
+  `.integrity` manifest the guard verifies on every call (nixos-config writes
+  it at materialisation; the parity test writes it in its copy): editing a
+  contract, task, hook or devenv file makes the guard refuse everything.
+  Running Codex with `--sandbox workspace-write` on an unmanaged clone is
+  **not enforced** and must not be described as such.
+- **Global hooks file.** `~/.codex/hooks.json` is per user, so a guard
+  registered there applies to every Codex session on the host; the launcher
+  has to use a dedicated `CODEX_HOME` for role sessions. Unverified until the
+  Codex half of the parity run happens: the exact PreToolUse payload shape
+  (`tool_input.command` as a string) and how Codex treats
+  `permissionDecision`.
+- **Skills are not preloaded**; read them as above.
+- **Not yet run** on this fleet: Codex has no credentials on the test host, so
+  the parity script skips it and says so.
