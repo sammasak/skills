@@ -7,6 +7,7 @@ let
     { name = "policy"; script = "bash tests/test-policy.sh"; }
     { name = "contract"; script = "bash tests/test-role-contract.sh"; }
     { name = "negative"; script = "bash tests/test-coordinator-negative.sh"; }
+    { name = "tasks"; script = "for t in task-modules/tests/test-*.sh; do echo \"== $t\"; bash \"$t\" || exit 1; done"; }
   ];
 in
 {
