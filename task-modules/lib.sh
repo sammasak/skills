@@ -22,8 +22,8 @@ observe_error() { emit "$(jq -cn --arg k "$1" --arg m "$2" --argjson x "$3" --ar
 REMOTE_RUNNER='mapfile -d "" a < <(printf %s "$1" | base64 -d); exec "${a[@]}"'
 # COORDINATOR_SSH_IDENTITY (set by the nixos launcher) makes the dedicated key the only one offered: -F none
 # reads no ssh_config at all (a user `Host *` IdentityFile would otherwise be appended as a fallback and could
-# log in past the worker's herdr-shim), IdentitiesOnly keeps agent keys out. Fleet targets are explicit
-# user@host, so no alias or ProxyJump from a config file is needed.
+# log in past the worker's herdr-shim), IdentitiesOnly keeps other agent keys out. Fleet targets must resolve
+# without ssh_config: a Host alias, User or ProxyJump defined only there is not honoured (shows as unreachable).
 run_on() {
   local t="$1" target="$2"; shift 2
   if [ -z "$target" ]; then timeout -k 1 "$t" "$@"
