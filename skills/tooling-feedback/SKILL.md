@@ -22,6 +22,8 @@ Choose the repo responsible for the broken behavior, **not** necessarily the rep
 | Cluster deployment, ingress, NetworkPolicy, Flux, gateway Kubernetes Service | `sammasak/homelab-gitops` |
 | Incorrect skill advice, wrong skill trigger, broken instructions or skill packaging | `sammasak/skills` |
 
+`sammasak/nixos-config` and `sammasak/skills` are **public**; the tool repos are private. Anything filed publicly must not name private hosts' secrets, internal URLs beyond `*.sammasak.dev`, or private-repo content. Prefer the owner's own template when it exists: devenv-platform `docs/FEEDBACK.md`, nix-audit `docs/FEEDBACK.md` (PR #46). A skill whose commands no longer match the installed tool is a `sammasak/skills` regression, separate from any tool bug.
+
 When uncertain, state the evidence for ownership, open a **single primary issue**, and cross-link other repos rather than cloning the issue everywhere. Never blame the upstream tool for an error introduced by a downstream wrapper without checking the boundary.
 
 ## Collect evidence before drafting
