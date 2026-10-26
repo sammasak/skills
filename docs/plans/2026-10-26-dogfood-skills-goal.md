@@ -72,7 +72,7 @@ documented as unmet).
 
 ## Accepted blockers (2026-10-26)
 
-Owner acceptance, received verbatim through the session's stop-hook feedback channel:
+Acceptance text received verbatim through the session's stop-hook feedback channel. **Unconfirmed:** it may have been evaluator text rather than the owner; it counts only once the owner confirms directly:
 
 > "I accept the Codex-login and branch-history blockers"
 
