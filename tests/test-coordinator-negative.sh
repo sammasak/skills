@@ -9,6 +9,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/claude-permission-match.sh
 . "$ROOT/tests/lib/claude-permission-match.sh"
 P="$ROOT/agents/coordinator/permissions.json"
+TMP_HOME_MISSING=$(mktemp -d); trap 'rm -rf "$TMP_HOME_MISSING"' EXIT
 PASS=0; FAIL=0
 
 expect() { # <want> <tool> <command>
@@ -21,7 +22,6 @@ expect allow Bash "devenv tasks run coord:brief"
 expect allow Bash "devenv tasks run coord:brief --show-output"
 expect allow Bash "timeout 60 devenv tasks run work:status"
 expect allow Bash "timeout 60s devenv tasks run work:status"
-expect allow Read
 # calls that carry input are allowed only by the guard hook, so the settings rules prompt
 expect none Bash "devenv tasks run herdr:inspect --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
 expect none Bash "devenv tasks run herdr:await --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
@@ -63,6 +63,10 @@ expect none Bash "cargo build --release"
 expect none Bash "devenv tasks run skills:test"
 expect none Bash "devenv tasks run coordinate"
 expect none Bash "devenv tasks run coord:brief &&"
+expect none Bash "DEVENV_ROOT=/tmp/x devenv tasks run coord:brief"
+expect deny Read "~/.netrc"
+expect deny Read "~/.claude.json"
+expect allow Read "./agents/coordinator/ROLE.md"
 
 # the agent-scoped PreToolUse hook: strict grammar, allow for read tasks, ask for act tasks, block otherwise
 HOOK="$ROOT/hooks/validate-coordinator.sh"
@@ -101,7 +105,17 @@ hook block "devenv tasks run coord:brief --input-json '{} {}'"
 hook block "devenv tasks run coord:brief" "/tmp"
 hook block "devenv tasks run coord:handoff --input-json '{\"scope\":\"don'\"'\"'t\"}'"  # apostrophes need \u0027 in the body
 hook allow "devenv tasks run coord:handoff --input-json '{\"scope\":\"A & B | \$HOME; <x>\"}'"
-( unset COORDINATOR_CHECKOUT; out=$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" 2>/dev/null); [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): unset COORDINATOR_CHECKOUT must block"; }
+( unset COORDINATOR_CHECKOUT; jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): unset COORDINATOR_CHECKOUT must block"; }
+( jq -cn '{tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): missing cwd must block"; }
+( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\u0000; ssh x"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): NUL byte must block"; }
+# the adapter's hook command refuses when the guard file is absent (fail closed)
+if command -v yq >/dev/null; then
+  cmd=$(yq --front-matter=extract -r '.hooks.PreToolUse[0].hooks[0].command' "$ROOT/agents/coordinator.md")
+  ( HOME="$TMP_HOME_MISSING" bash -c "$cmd" </dev/null >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): hook command must exit 2 when guard is missing ($cmd)"; }
+  mkdir -p "$TMP_HOME_MISSING/.claude/hooks" && ln -sf "$HOOK" "$TMP_HOME_MISSING/.claude/hooks/validate-coordinator.sh"
+  dec=$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | HOME="$TMP_HOME_MISSING" bash -c "$cmd" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty')
+  [ "$dec" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): installed guard must exec through (got '$dec')"; }
+else echo "note: yq missing, adapter hook command cases skipped"; fi
 
 # the Claude adapter must not carry editing tools
 if grep -qE '^\s*-\s*(Edit|Write|NotebookEdit)\s*$' <(awk '/^tools:/{f=1;next} /^[a-zA-Z]+:/{f=0} f' "$ROOT/agents/coordinator.md"); then
@@ -109,7 +123,7 @@ if grep -qE '^\s*-\s*(Edit|Write|NotebookEdit)\s*$' <(awk '/^tools:/{f=1;next} /
 else PASS=$((PASS+1)); fi
 
 # allow rules carry no wildcard at all: a wildcard after the task name admits -O overrides and extra task names
-if jq -r '.allow[]' "$P" | grep -q '\*'; then FAIL=$((FAIL+1)); echo "FAIL: an allow rule contains a wildcard"; else PASS=$((PASS+1)); fi
+if jq -r '.allow[] | select(startswith("Bash("))' "$P" | grep -q '\*'; then FAIL=$((FAIL+1)); echo "FAIL: a Bash allow rule contains a wildcard"; else PASS=$((PASS+1)); fi
 # the hook's task lists equal the role contract
 rtasks=$(yq --front-matter=extract -o=json '.' "$ROOT/agents/coordinator/ROLE.md" 2>/dev/null)
 if [ -n "$rtasks" ]; then
