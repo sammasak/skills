@@ -18,8 +18,7 @@ run() {
   devenv tasks run herdr:inventory --option coordinator.fleetFile:path "$f" \
     --option coordinator.sshCommand:string "$FX/bin/ssh" --option coordinator.herdrCommand:string "$FX/bin/herdr" \
     --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 1 --show-output "$@" > "$log" 2>&1; CODE=$?
-  OUT=$(grep -oE '\{"schema_version":1,"task":"herdr:inventory".*' "$log" | tail -1)
-  [ -n "$OUT" ] || OUT='{}'
+  OUT=$(grep -E '^\s*\{"schema_version":1' "$log" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
 }
 jqr() { jq -r "$1" <<<"$OUT"; }
 

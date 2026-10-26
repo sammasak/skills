@@ -41,8 +41,8 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 **Files:** none in repo except this plan.
 
-- [ ] **Step 1:** Post a kickoff comment on #16: verified tool versions, Herdr CLI realities, lenovo-first reinterpretation, acer SSH gap as owner gate, stale skill commands found (agent-orchestration has no herdr subcommands; pi-ticket uses `ssh acer-swift herdr pane read` which is the right cross-host pattern), link to this plan once pushed.
-- [ ] **Step 2:** Record in the effort log.
+- [x] **Step 1:** Post a kickoff comment on #16: verified tool versions, Herdr CLI realities, lenovo-first reinterpretation, acer SSH gap as owner gate, stale skill commands found (agent-orchestration has no herdr subcommands; pi-ticket uses `ssh acer-swift herdr pane read` which is the right cross-host pattern), link to this plan once pushed.
+- [x] **Step 2:** Record in the effort log.
 
 ## Slice 1 — M0: contract and authority boundaries
 
@@ -52,10 +52,10 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 - Modify: `global-context.md:14-18`
 - Test: `tests/test-policy.sh` (new)
 
-- [ ] Write `tests/test-policy.sh`: greps `global-context.md` and `docs/agentic-lifecycle.md`; FAIL if any line matches `stand in|to stand in|merge and keep going`; PASS requires a line matching `may not approve|cannot approve|AI review is evidence`.
-- [ ] Run it → expect FAIL.
-- [ ] Rewrite the section as "Keep Moving Without Impersonating the Owner": agents draft, review, and continue with unblocked work; owner-only decisions (merge, deploy/switch, tag, secrets/permissions, new privileged remote actions, destructive ops) are recorded as open gates with the exact proposed action; a subagent may review but may not approve. Keep the hardware-blocker terminal-state paragraph.
-- [ ] Run test → PASS. Commit.
+- [x] Write `tests/test-policy.sh`: greps `global-context.md` and `docs/agentic-lifecycle.md`; FAIL if any line matches `stand in|to stand in|merge and keep going`; PASS requires a line matching `may not approve|cannot approve|AI review is evidence`.
+- [x] Run it → expect FAIL.
+- [x] Rewrite the section as "Keep Moving Without Impersonating the Owner": agents draft, review, and continue with unblocked work; owner-only decisions (merge, deploy/switch, tag, secrets/permissions, new privileged remote actions, destructive ops) are recorded as open gates with the exact proposed action; a subagent may review but may not approve. Keep the hardware-blocker terminal-state paragraph.
+- [x] Run test → PASS. Commit.
 
 ### Task 1.2: Root devenv graph for the skills repo
 
@@ -63,8 +63,8 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 - Create: `devenv.yaml` (nixpkgs input only), `devenv.nix` (imports `./task-modules/*.nix`, `./agents/coordinator/tasks.nix`; defines `skills:test:hooks`, `skills:test:policy`, `skills:test:manifests`, `skills:test:tasks`, `skills:test:contract`, umbrella `skills:test` with `after` on all), `.gitignore` entry `.devenv/`
 - Test: `devenv tasks run skills:test` green; existing `tests/test-hooks.sh` and `tests/test-plugin-manifests.sh` unchanged.
 
-- [ ] Write `devenv.yaml`/`devenv.nix` with `skills:test:hooks` and `skills:test:policy` wired to the existing scripts.
-- [ ] `devenv tasks run skills:test` → PASS; `tests/test-plugin-manifests.sh` still passes (no plugin manifest references devenv files). Commit.
+- [x] Write `devenv.yaml`/`devenv.nix` with `skills:test:hooks` and `skills:test:policy` wired to the existing scripts.
+- [x] `devenv tasks run skills:test` → PASS; `tests/test-plugin-manifests.sh` still passes (no plugin manifest references devenv files). Commit.
 
 ### Task 1.3: ROLE.md schema + Coordinator contract + Claude adapter + contract test
 
@@ -78,10 +78,10 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 - Record schema v1 (every task output): `{schema_version:1, task, observed_at, host, server, agent_id, harness, observed_state, state_age_s, stale, task_ref, evidence_ref, approval_required, error:{kind,message}|null}`.
 - Claude adapter frontmatter: `name: coordinator`, `description`, `model`, `tools: [Bash, Read]`, `permissions` expressed as a documented allowlist `Bash(devenv tasks run coord:*)`, `Bash(devenv tasks run herdr:inventory*)`, `Bash(devenv tasks run herdr:inspect*)`, `Bash(devenv tasks run work:status*)` and body = "read ROLE.md; invoke only listed tasks".
 
-- [ ] Write `tests/test-role-contract.sh`: parses ROLE.md frontmatter with `yq`/awk; asserts every skill listed exists under `skills/<name>/SKILL.md`; every `tasks.read`/`tasks.act` name exists in `devenv tasks list`; adapter `agents/coordinator.md` mentions each `tasks.read` entry and no `tasks.act` entry in its allowlist; adapter `tools` ⊆ `[Bash, Read]`.
-- [ ] Run → FAIL (files missing).
-- [ ] Write ROLE.md, RFC, Claude adapter; placeholder tasks exist from Task 1.4 so names resolve.
-- [ ] Run → PASS. Commit.
+- [x] Write `tests/test-role-contract.sh`: parses ROLE.md frontmatter with `yq`/awk; asserts every skill listed exists under `skills/<name>/SKILL.md`; every `tasks.read`/`tasks.act` name exists in `devenv tasks list`; adapter `agents/coordinator.md` mentions each `tasks.read` entry and no `tasks.act` entry in its allowlist; adapter `tools` ⊆ `[Bash, Read]`.
+- [x] Run → FAIL (files missing).
+- [x] Write ROLE.md, RFC, Claude adapter; placeholder tasks exist from Task 1.4 so names resolve.
+- [x] Run → PASS. Commit.
 
 ### Task 1.4: Negative tests for the coordinator surface
 
@@ -89,9 +89,9 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 - Create: `tests/test-coordinator-negative.sh`, `tests/lib/claude-permission-match.sh` (reimplements Claude Code `Bash(prefix:*)` prefix semantics for allowlist strings)
 - Modify: `devenv.nix` (`skills:test:negative`)
 
-- [ ] Write tests: for each forbidden command in `ssh lenovo rm -rf /`, `git push`, `gh pr merge 1`, `nixos-rebuild switch`, `kubectl delete ns x`, `devenv tasks run herdr:message ...`, `cargo build`, assert the adapter allowlist does NOT match; for `devenv tasks run coord:brief` assert it DOES match. Also assert `agents/coordinator.md` contains no `Edit`/`Write` tool.
-- [ ] Run → FAIL until allowlist file exists; implement; PASS. Commit.
-- [ ] Open PR "epic-16 M0: contracts, policy fix, root devenv graph"; request independent subagent review; fix findings; record owner merge gate on #16.
+- [x] Write tests: for each forbidden command in `ssh lenovo rm -rf /`, `git push`, `gh pr merge 1`, `nixos-rebuild switch`, `kubectl delete ns x`, `devenv tasks run herdr:message ...`, `cargo build`, assert the adapter allowlist does NOT match; for `devenv tasks run coord:brief` assert it DOES match. Also assert `agents/coordinator.md` contains no `Edit`/`Write` tool.
+- [x] Run → FAIL until allowlist file exists; implement; PASS. Commit.
+- [x] Open PR "epic-16 M0: contracts, policy fix, root devenv graph"; request independent subagent review; fix findings; record owner merge gate on #16. *(PR #17, 4 review rounds 5→6→7→9/10, HEAD acdb376; owner gate: merge)*
 
 ## Slice 2 — M1: read-only coordinator, working locally
 
@@ -104,15 +104,15 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 **Interfaces (produced):** module `task-modules/fleet.nix` (options `coordinator.fleetFile` (path, default `$XDG_CONFIG_HOME/coordinator/fleet.json`), `coordinator.sshCommand`, `coordinator.herdrCommand`, `coordinator.stateDir`, `coordinator.timeoutSeconds`; eval-time validation of names/targets). Per host: `herdr:list:<host>` → output `{host, ssh, observed_at, raw}` or exits non-zero with `{host, error:{kind: timeout|unreachable|malformed|command_failed}}` on stdout. Aggregate `herdr:inventory` (after every `herdr:list:<host>@completed`) → `{schema_version:1, task, observed_at, partial, hosts:[{host, reachable, error, agents:[record]}]}`, exit 0 if ≥1 host answered, 2 if none. Snapshots in `$stateDir/herdr/<host>.json` give `state_age_s`; unreachable hosts fall back to their snapshot with `stale:true`, dropped when older than `max_age_s`.
 
-- [ ] Tests: local list parsed to records; remote host via `ssh <host> herdr agent list` (fake ssh) parsed; timeout host → `error.kind=timeout`, others present, exit 0; all unreachable → exit 2; host not in fleet → exit 3; id with `;` → exit 3 and no fake-ssh invocation recorded; `state_age_s` grows between two runs with unchanged `state_change_seq`; `stale:true` when snapshot older than `max_age_s`.
-- [ ] Run → FAIL; implement; PASS; `devenv tasks run herdr:inventory --show-output` against the real local Herdr → records for live panes. Commit.
+- [x] Tests: local list parsed to records; remote host via `ssh <host> herdr agent list` (fake ssh) parsed; timeout host → `error.kind=timeout`, others present, exit 0; all unreachable → exit 2; host not in fleet → exit 3; id with `;` → exit 3 and no fake-ssh invocation recorded; `state_age_s` grows between two runs with unchanged `state_change_seq`; `stale:true` when snapshot older than `max_age_s`.
+- [x] Run → FAIL; implement; PASS; `devenv tasks run herdr:inventory --show-output` against the real local Herdr → records for live panes. Commit.
 
 ### Task 2.2: `herdr:inspect` (bounded read)
 
 **Files:** `task-modules/bin/herdr-inspect`, `herdr.nix` task (`input={host, agent_id, lines=40, source="visible"}`), fixtures, `task-modules/tests/test-herdr-inspect.sh`
 
-- [ ] Tests: `lines` capped at 200 (request 1000 → 200), invalid id rejected (exit 3), unknown host rejected, output record has `excerpt` (text), `lines_returned`, never exceeds cap; remote path uses `ssh <host> herdr agent read <id> --lines N --format text`.
-- [ ] Implement; PASS; live run against own pane. Commit.
+- [x] Tests: `lines` capped at 200 (request 1000 → 200), invalid id rejected (exit 3), unknown host rejected, output record has `excerpt` (text), `lines_returned`, never exceeds cap; remote path uses `ssh <host> herdr agent read <id> --lines N --format text`.
+- [x] Implement; PASS; live run against own pane. Commit.
 
 ### Task 2.3: `harness:session-summary`
 
@@ -120,8 +120,8 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 **Interfaces:** input `{harness, session_id, cwd, tail=50}` → record with `last_event_at`, `last_role`, `last_user_prompt_excerpt` (≤200 chars), `last_assistant_excerpt` (≤400 chars), `awaiting_input` (bool: last line is assistant text ending in `?` or a permission/`AskUserQuestion` tool use), `event_count`. Remote via `ssh <host> tail -n`.
 
-- [ ] Tests: Claude fixture → correct fields; missing session → `error.kind=not_found`, exit 2; unsupported harness → exit 3; excerpt lengths bounded; Pi fixture parsed; Codex → `error.kind=unsupported` recorded honestly until a real store exists.
-- [ ] Implement; PASS; live run with this session id from `herdr agent list`. Commit.
+- [x] Tests: Claude fixture → correct fields; missing session → `error.kind=not_found`, exit 2; unsupported harness → exit 3; excerpt lengths bounded; Pi fixture parsed; Codex → `error.kind=unsupported` recorded honestly until a real store exists.
+- [x] Implement; PASS; live run with this session id from `herdr agent list`. Commit.
 
 ### Task 2.4: `gh:work` and `git:recent`
 
@@ -195,4 +195,6 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 | 2026-10-26 15:00 | Survey (pre-plan) | — | manual probes | Versions, herdr CLI facts, devenv 2.4.0 task IO verified; acer→lenovo/black-pi SSH denied; `~/skills` in use by another session → `~/skills-epic16` |
 | 2026-10-26 16:00 | Slice 0 kickoff | #16 comment | — | lenovo-first reinterpretation recorded; stale skill commands listed |
 | 2026-10-26 17:30 | Slice 1 M0 (PR #17) | 8475e31, a35f049, 67e278a, f61a592 | skills:test (0): policy, manifests, contract, negative, hooks | Review 1: 5/10 (prefix-glob allows, pi-ticket stand-in, ssh fallback) → fixed with agent-scoped grammar hook + exact rules; re-review pending; owner gate: merge |
-| 2026-10-26 18:30 | Slice 2 Task 2.1 first pass | bac4c5c (to be reworked) | task test 42/42, live inventory on acer-swift | **Owner redirect:** no standalone scripts; tasks + DAG only. Probe confirmed eval-time fleet → per-host tasks, `@completed` aggregation, `--option :path` override, cache invalidation. Rewriting 2.1 DAG-first |
+| 2026-10-26 18:30 | Slice 2 Task 2.1 first pass | bac4c5c (reworked) | task test 42/42, live inventory on acer-swift | **Owner redirect:** no standalone scripts; tasks + DAG only. Probe confirmed eval-time fleet → per-host tasks, `@completed` aggregation, `--option :path` override, cache invalidation |
+| 2026-10-26 19:30 | M0 reviews 2–4 | f61a592, 22aa856, 8be175f, acdb376 | skills:test (0) each round | 6/10 → 7/10 → **9/10**; guard fails closed, exact-only rules, Read scoped; PR #17 comment carries the trail; #16 M0 boxes ticked (4/5; "minimum runtime permissions" waits for M3 measurements) |
+| 2026-10-26 20:00 | Slice 2 Task 2.1 DAG-first | c64d896 | skills:test incl. tasks suite (0): inventory 41/41 | `herdr:list:<host>` per fleet host → `herdr:inventory@completed`; devenv drops failed tasks' outputs, so list tasks always complete and carry `error` as data |

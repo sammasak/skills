@@ -75,5 +75,42 @@ in
         [ "$answered" -gt 0 ] || exit 2
       '';
     };
-  } // lib.genAttrs [ "herdr:inspect" "herdr:message" "herdr:await" ] (import ./pending.nix);
+    "herdr:inspect" = {
+      description = "Bounded terminal excerpt of one agent (<= 200 lines) on a fleet host.";
+      input = { host = null; agent_id = null; lines = 40; source = "visible"; };
+      exec = ''
+        set -uo pipefail
+        . ${cfg.lib}
+        host=$(input .host); agent=$(input .agent_id); lines=$(input .lines); source=$(input .source)
+        [ -n "$host" ] && [ -n "$agent" ] || fail 3 invalid_input "host and agent_id are required"
+        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters"
+        [[ "$lines" =~ ^[0-9]+$ ]] || fail 3 invalid_input "lines must be an integer"
+        case "$source" in visible|recent|recent-unwrapped) ;; *) fail 3 invalid_input "source must be visible, recent or recent-unwrapped" ;; esac
+        [ "$lines" -gt 200 ] && lines=200
+        [ "$lines" -gt 0 ] || lines=1
+        target=""
+        case "$host" in
+          ${lib.concatMapStringsSep "
+          " (h: ''${h.name}) target="${sshTarget h}" ;;'') cfg.hosts}
+          *) fail 3 invalid_input "host not in fleet: $host" ;;
+        esac
+        at=$(now_iso); rc=0
+        if [ -z "$target" ]; then
+          text=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.herdrCommand} agent read "$agent" --lines "$lines" --source "$source" --format text 2>/dev/null) || rc=$?
+        else
+          text=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.sshCommand} -o BatchMode=yes -o ConnectTimeout=${toString cfg.timeoutSeconds} -o StrictHostKeyChecking=accept-new "$target" herdr agent read "$agent" --lines "$lines" --source "$source" --format text 2>/dev/null) || rc=$?
+        fi
+        case "$rc" in
+          0) ;;
+          124) fail 2 timeout "no answer within ${toString cfg.timeoutSeconds}s" "$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:inspect",host:$h,agent_id:$a}')" ;;
+          255) fail 2 unreachable "ssh could not connect" "$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:inspect",host:$h,agent_id:$a}')" ;;
+          *) fail 2 command_failed "herdr agent read exited $rc (unknown agent?)" "$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:inspect",host:$h,agent_id:$a}')" ;;
+        esac
+        text=$(head -n 200 <<<"$text")
+        n=$(printf '%s
+' "$text" | grep -c . || true)
+        emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg t "$text" --argjson n "$n" --argjson req "$(input .lines)" --arg src "$source"           '{schema_version:1, task:"herdr:inspect", host:$h, agent_id:$a, observed_at:$at, source:$src, lines_returned:$n, truncated:($req > 200), excerpt:$t, error:null}')"
+      '';
+    };
+  } // lib.genAttrs [ "herdr:message" "herdr:await" ] (import ./pending.nix);
 }

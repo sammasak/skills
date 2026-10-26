@@ -1,0 +1,3 @@
+{"type":"session","version":1,"id":"pi-sess-1","timestamp":"2026-10-26T13:00:00.000Z","cwd":"/home/lukas/karta"}
+{"type":"message","timestamp":"2026-10-26T13:00:01.000Z","message":{"role":"user","content":"fix clippy warnings in crates/web"}}
+{"type":"message","timestamp":"2026-10-26T13:05:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Fixed 3 warnings; cargo clippy is clean. Done."}]}}
