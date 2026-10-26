@@ -1,5 +1,5 @@
 {
-  "name": "solving-sdlc-pipeline-20261026-114103",
+  "name": "solving-sdlc-pipeline-20261026-121724",
   "cases": [
     {
       "name": "sdlc-pipeline::task-1",
@@ -10,16 +10,16 @@
         "output_filename": "status.md"
       },
       "metadata": {
-        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/sdlc-pipeline/tasks/task-1/test.sh",
+        "test_script": "/home/lukas/skills/evals/sdlc-pipeline/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
       "output": {
-        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe pipeline is not yet green because the current stage (migrate) is in an \"unverified\" state, meaning its guard has not yet been executed or passed. `sdlc-status --context` reports stage state and context; exit code 0 only means the status command itself succeeded, not that the pipeline guards have passed.\n\n**Stages that must pass for this repo:**\n1. migrate\n2. contract\n3. e2e\n\n**Command that decides if the pipeline is green:**\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nThis command runs the full task graph and exits 0 only when every configured stage guard passes (all three stages above exit 0 against the current fingerprint). Exit 0 from `sdlc:done` is the only reliable signal that the pipeline is green.",
+        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe exit code of `sdlc-status --context` (0) does not determine pipeline status; it only reports stage state without running guards. The configured stages `migrate`, `contract`, and `e2e` are all currently unverified, meaning none have passed. The single command whose exit code actually decides is `devenv shell -q -- devenv tasks run sdlc:done`, which must exit 0 for the pipeline to be green.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-dezsn1cq",
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-h6aegvg2",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 2.8639887319877744,
-      "total_duration": 2.8897950649261475,
+      "task_duration": 1.9449786189943552,
+      "total_duration": 1.9618656635284424,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

@@ -1,5 +1,5 @@
 {
-  "name": "solving-pi-offload-20261026-113936",
+  "name": "solving-pi-offload-20261026-121259",
   "cases": [
     {
       "name": "pi-offload::task-1",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "Apply patch: no\nOffload JWT task: no\nOffload README task: no\n\n(a) `dirty_source: true` means the source checkout was modified during execution—Pi did not see the committed state it expected. The result is unreliable. The `invalid` status and \"Tests already pass\" summary suggest Pi either saw uncommitted test files or encountered a stale worktree. Do not apply this patch; commit any prerequisite test additions locally first, verify they pass, then re-offload or do the work manually.\n\n(b) Rotating JWT signing-key handling and updating token validation is a security-sensitive, design-heavy task involving credential rotation logic. This is not mechanical or small, and requires judgement about correctness and backwards compatibility. It should not be offloaded. Do this work locally with full review and testing.\n\n(c) README wording is a style and judgement decision with no objective check command. Pi has no oracle to decide success. Offloading requires `a crisp check command` that decides success; subjective prose has none. Do this work directly.",
+        "content": "Apply patch: no\nOffload JWT task: no\nOffload README task: no\n\n(a) `dirty_source: true` means the source checkout had uncommitted or untracked changes that Pi did not see. The summary \"Tests already pass\" suggests Pi may have misunderstood the task or the check passed without implementing the requested tests. The `invalid` status means the output is not trustworthy. Do the work yourself: verify what Pi saw, commit any prerequisites, and either implement locally or re-delegate with a clean working tree.\n\n(b) JWT signing-key handling and token validation are security-sensitive. Even though `cargo test -p auth` is a crisp check, this belongs to the \"do not offload\" category: security-critical code should not be sent to free-tier inference (Gemini, Cloudflare) through the homelab gateway. Implement locally and have teammates review.\n\n(c) README wording has no check command that can decide success. \"Reads better\" is subjective judgment. Pi requires a deterministic check (lint, test, compilation). Offloading without one will fail or produce output you cannot trust. Edit the README yourself and ask teammates for feedback.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-pi-offload-task-1-frhj4ro6",
+        "tmpdir": "/tmp/eval-pi-offload-task-1-kmyyrauv",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 3.9608806330361404,
-      "total_duration": 3.982748508453369,
+      "task_duration": 4.129933440010063,
+      "total_duration": 4.175470590591431,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

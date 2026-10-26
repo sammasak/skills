@@ -1,0 +1,54 @@
+{
+  "name": "solving-rust-engineering-20261026-121307",
+  "cases": [
+    {
+      "name": "rust-engineering::task-6",
+      "inputs": {
+        "instruction": "# Task: Can we skip tests because Factum found nothing?\n\nA teammate ran the deterministic Factum CLI on a Rust change and pasted the tail of\n`factum review --diff change.patch --format json`:\n\n```json\n{\"schema\":\"facts-review/v3\",\n \"candidates\":{\"referencing\":[],\"unresolved\":[],\"dependent_only\":[\n   {\"package\":\"ledger-sync\"},{\"package\":\"ledger-cli\"},{\"package\":\"ledger-web\"}]},\n \"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"],\n \"verification\":{\"status\":\"not_run\"}}\n```\n\nThey propose: \"No package references the changed items, so we can skip the test suite and merge.\"\nThe repo uses the homelab devenv Rust gates.\n\nWrite `assessment.md`. Include a line `Skip tests: yes` or `Skip tests: no`, a short explanation\ngrounded in the fields above, and the exact command(s) that decide whether to merge.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "rust-engineering",
+        "task_id": "task-6",
+        "output_filename": "assessment.md"
+      },
+      "metadata": {
+        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/rust-engineering/tasks/task-6/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Assessment: Test Skipping Decision\n\n## Summary\n**Skip tests: no**\n\n## Analysis\n\nThe Factum evidence is **incomplete and inconclusive** for merge safety:\n\n1. **Unavailable evidence** (`\"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"]`):\n   - `test_inventory` is not available, so Factum cannot enumerate which tests actually exercise the change.\n   - `compiler_semantics` is missing, preventing Factum from detecting indirect type/trait impacts.\n   - `feature_target_cfg` is unavailable, so conditional compilation paths are unknown.\n\n2. **Empty referencing list does not mean no impact**:\n   - `\"referencing\":[]` means no direct cross-package symbol references were found—not that the change is safe.\n   - Trait implementations, blanket impls, and macro expansions often appear as indirect dependencies invisible to a surface scan.\n   - The three dependent packages (`ledger-sync`, `ledger-cli`, `ledger-web`) are listed under `dependent_only`, not `referencing`, meaning they depend on the package but Factum has no visibility into whether they exercise the changed code.\n\n3. **Per homelab policy** (ADR-026, ADR-027):\n   - Factum evidence is \"advisory\" and not a correctness claim.\n   - An empty report or missing evidence is explicitly not a success signal.\n   - The deterministic gates (`rust:ci` pre-push, `rust:verify` pre-merge) are the required decision mechanism.\n\n## Decision\n\nDo **not** skip the test suite. Run the required homelab gates before merge:\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nOnly merge after both gates pass. Factum's incomplete findings should trigger closer inspection of the patch, not earlier gates.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-84rextl1",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 5.339445787016302,
+      "total_duration": 5.362116813659668,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

@@ -1,5 +1,5 @@
 {
-  "name": "trigger-20261026-114124",
+  "name": "trigger-20261026-121818",
   "cases": [
     {
       "name": "agent-orchestration::positive::dispatch-three-subagents-in-parallel-to-research-these-libra",
@@ -13,7 +13,7 @@
       "expected_output": "agent-orchestration",
       "output": "agent-orchestration",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 7
       },
       "attributes": {},
@@ -30,8 +30,8 @@
           }
         }
       },
-      "task_duration": 3.4374936490203254,
-      "total_duration": 3.4408836364746094,
+      "task_duration": 1.1551806660136208,
+      "total_duration": 1.156015396118164,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -49,7 +49,7 @@
       "expected_output": "agent-orchestration",
       "output": "agent-orchestration",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 7
       },
       "attributes": {},
@@ -66,8 +66,8 @@
           }
         }
       },
-      "task_duration": 1.171613825019449,
-      "total_duration": 1.2077221870422363,
+      "task_duration": 1.382939396018628,
+      "total_duration": 1.3835365772247314,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -85,7 +85,7 @@
       "expected_output": "agent-orchestration",
       "output": "assigning-subagent-models",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 11
       },
       "attributes": {},
@@ -102,8 +102,8 @@
           }
         }
       },
-      "task_duration": 1.1012509320280515,
-      "total_duration": 1.1373646259307861,
+      "task_duration": 0.8989811660139821,
+      "total_duration": 0.8996214866638184,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -121,7 +121,7 @@
       "expected_output": "agent-orchestration",
       "output": "agent-orchestration",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 7
       },
       "attributes": {},
@@ -138,8 +138,8 @@
           }
         }
       },
-      "task_duration": 1.033816259005107,
-      "total_duration": 1.0393633842468262,
+      "task_duration": 0.7296889619901776,
+      "total_duration": 0.7302653789520264,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -157,7 +157,7 @@
       "expected_output": "assigning-subagent-models",
       "output": "assigning-subagent-models",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 11
       },
       "attributes": {},
@@ -174,8 +174,8 @@
           }
         }
       },
-      "task_duration": 0.9548098249942996,
-      "total_duration": 0.9566729068756104,
+      "task_duration": 0.790957951976452,
+      "total_duration": 0.7916688919067383,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -193,7 +193,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 8
       },
       "attributes": {},
@@ -210,8 +210,8 @@
           }
         }
       },
-      "task_duration": 0.8622793029644527,
-      "total_duration": 0.8642275333404541,
+      "task_duration": 0.6807353029726073,
+      "total_duration": 0.6821870803833008,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -229,7 +229,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -246,8 +246,8 @@
           }
         }
       },
-      "task_duration": 0.7435835390351713,
-      "total_duration": 0.7472126483917236,
+      "task_duration": 0.6732641300186515,
+      "total_duration": 0.674713134765625,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -265,7 +265,7 @@
       "expected_output": "assigning-subagent-models",
       "output": "assigning-subagent-models",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 11
       },
       "attributes": {},
@@ -282,8 +282,8 @@
           }
         }
       },
-      "task_duration": 1.4280572679708712,
-      "total_duration": 1.4454309940338135,
+      "task_duration": 0.8040971939917654,
+      "total_duration": 0.8056080341339111,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -301,7 +301,7 @@
       "expected_output": "assigning-subagent-models",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -318,8 +318,8 @@
           }
         }
       },
-      "task_duration": 0.7302591130137444,
-      "total_duration": 0.7350554466247559,
+      "task_duration": 0.6816502930014394,
+      "total_duration": 0.6824584007263184,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -337,7 +337,7 @@
       "expected_output": "assigning-subagent-models",
       "output": "assigning-subagent-models",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 11
       },
       "attributes": {},
@@ -354,8 +354,8 @@
           }
         }
       },
-      "task_duration": 0.8763586129643954,
-      "total_duration": 0.8782131671905518,
+      "task_duration": 0.7698227050132118,
+      "total_duration": 0.7713799476623535,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -373,7 +373,7 @@
       "expected_output": "assigning-subagent-models",
       "output": "assigning-subagent-models",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 11
       },
       "attributes": {},
@@ -390,8 +390,8 @@
           }
         }
       },
-      "task_duration": 0.9581616810173728,
-      "total_duration": 0.9637033939361572,
+      "task_duration": 0.8636883909930475,
+      "total_duration": 0.8648703098297119,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -409,7 +409,7 @@
       "expected_output": "agent-orchestration",
       "output": "agent-orchestration",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 7
       },
       "attributes": {},
@@ -426,8 +426,8 @@
           }
         }
       },
-      "task_duration": 0.8026909290347248,
-      "total_duration": 0.8072717189788818,
+      "task_duration": 0.6880440349923447,
+      "total_duration": 0.6895847320556641,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -445,7 +445,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 4
       },
       "attributes": {},
@@ -462,8 +462,8 @@
           }
         }
       },
-      "task_duration": 0.8671095189638436,
-      "total_duration": 0.8744499683380127,
+      "task_duration": 0.7133622949477285,
+      "total_duration": 0.7142226696014404,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -481,7 +481,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -498,8 +498,8 @@
           }
         }
       },
-      "task_duration": 0.8596752729499713,
-      "total_duration": 0.8644065856933594,
+      "task_duration": 0.6441360739991069,
+      "total_duration": 0.6449055671691895,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -517,7 +517,7 @@
       "expected_output": "credentials",
       "output": "credentials",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 4
       },
       "attributes": {},
@@ -534,8 +534,8 @@
           }
         }
       },
-      "task_duration": 0.8974096430465579,
-      "total_duration": 0.9097087383270264,
+      "task_duration": 0.6557658929959871,
+      "total_duration": 0.6563103199005127,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -553,7 +553,7 @@
       "expected_output": "credentials",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 6
       },
       "attributes": {},
@@ -570,8 +570,8 @@
           }
         }
       },
-      "task_duration": 0.7276847250177525,
-      "total_duration": 0.7334442138671875,
+      "task_duration": 0.691775772953406,
+      "total_duration": 0.692380428314209,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -589,7 +589,7 @@
       "expected_output": "credentials",
       "output": "credentials",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -606,8 +606,8 @@
           }
         }
       },
-      "task_duration": 0.9686004549730569,
-      "total_duration": 0.974144697189331,
+      "task_duration": 0.6521523640258238,
+      "total_duration": 0.6537148952484131,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -625,7 +625,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 6
       },
       "attributes": {},
@@ -642,8 +642,8 @@
           }
         }
       },
-      "task_duration": 1.0433656030218117,
-      "total_duration": 1.0645506381988525,
+      "task_duration": 1.2834285119897686,
+      "total_duration": 1.2846829891204834,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -661,7 +661,7 @@
       "expected_output": "secrets-management",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 7
       },
       "attributes": {},
@@ -678,8 +678,8 @@
           }
         }
       },
-      "task_duration": 0.7889004219905473,
-      "total_duration": 0.7945716381072998,
+      "task_duration": 1.2163444850011729,
+      "total_duration": 1.2178823947906494,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -697,7 +697,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -714,8 +714,8 @@
           }
         }
       },
-      "task_duration": 1.9285473210038617,
-      "total_duration": 1.9317357540130615,
+      "task_duration": 0.6272847770014778,
+      "total_duration": 0.6280410289764404,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -733,7 +733,7 @@
       "expected_output": "deep-modules",
       "output": "deep-modules",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 6
       },
       "attributes": {},
@@ -750,8 +750,8 @@
           }
         }
       },
-      "task_duration": 0.9686025460250676,
-      "total_duration": 0.9758989810943604,
+      "task_duration": 0.7098997039720416,
+      "total_duration": 0.7107033729553223,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -769,7 +769,7 @@
       "expected_output": "deep-modules",
       "output": "deep-modules",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 6
       },
       "attributes": {},
@@ -786,8 +786,8 @@
           }
         }
       },
-      "task_duration": 0.9701846090028994,
-      "total_duration": 0.9726982116699219,
+      "task_duration": 0.6702655180124566,
+      "total_duration": 0.6714441776275635,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -803,9 +803,9 @@
         "source_skill": "deep-modules"
       },
       "expected_output": "deep-modules",
-      "output": "deep-modules",
+      "output": "lean-code",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -814,7 +814,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": true,
+          "value": false,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -822,8 +822,8 @@
           }
         }
       },
-      "task_duration": 0.9170029649976641,
-      "total_duration": 0.9250307083129883,
+      "task_duration": 0.7235045879497193,
+      "total_duration": 0.724050760269165,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -841,7 +841,7 @@
       "expected_output": "deep-modules",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -858,8 +858,8 @@
           }
         }
       },
-      "task_duration": 0.8995070360251702,
-      "total_duration": 0.904205322265625,
+      "task_duration": 0.7055643990170211,
+      "total_duration": 0.7063069343566895,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -877,7 +877,7 @@
       "expected_output": "deep-modules",
       "output": "none",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 4
       },
       "attributes": {},
@@ -894,8 +894,8 @@
           }
         }
       },
-      "task_duration": 0.7649054600042291,
-      "total_duration": 0.7697651386260986,
+      "task_duration": 0.6667128829867579,
+      "total_duration": 0.6673195362091064,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -913,7 +913,7 @@
       "expected_output": "deep-modules",
       "output": "deep-modules",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 6
       },
       "attributes": {},
@@ -930,8 +930,8 @@
           }
         }
       },
-      "task_duration": 1.2780168920289725,
-      "total_duration": 1.2829136848449707,
+      "task_duration": 0.7233439000556245,
+      "total_duration": 0.7238786220550537,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -949,7 +949,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 6
       },
       "attributes": {},
@@ -966,8 +966,8 @@
           }
         }
       },
-      "task_duration": 0.7450401610112749,
-      "total_duration": 0.7500705718994141,
+      "task_duration": 0.8357147350325249,
+      "total_duration": 0.8363375663757324,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -985,7 +985,7 @@
       "expected_output": "none",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -1002,8 +1002,8 @@
           }
         }
       },
-      "task_duration": 0.9589631099952385,
-      "total_duration": 0.9674420356750488,
+      "task_duration": 0.652291166014038,
+      "total_duration": 0.6534926891326904,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1021,7 +1021,7 @@
       "expected_output": "agent-orchestration",
       "output": "agent-orchestration",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1038,8 +1038,8 @@
           }
         }
       },
-      "task_duration": 0.8228085739538074,
-      "total_duration": 0.8275845050811768,
+      "task_duration": 1.148568507982418,
+      "total_duration": 1.149156093597412,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1057,7 +1057,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 4
       },
       "attributes": {},
@@ -1074,8 +1074,8 @@
           }
         }
       },
-      "task_duration": 1.2729611840331927,
-      "total_duration": 1.276601791381836,
+      "task_duration": 0.6256794490036555,
+      "total_duration": 0.6262238025665283,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1093,7 +1093,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -1110,8 +1110,8 @@
           }
         }
       },
-      "task_duration": 0.725829882954713,
-      "total_duration": 0.7315859794616699,
+      "task_duration": 0.6409680729848333,
+      "total_duration": 0.641777753829956,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1129,7 +1129,7 @@
       "expected_output": "e2e-testing",
       "output": "e2e-testing",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 8
       },
       "attributes": {},
@@ -1146,8 +1146,8 @@
           }
         }
       },
-      "task_duration": 0.8013933540205471,
-      "total_duration": 0.8030376434326172,
+      "task_duration": 0.7162457770318724,
+      "total_duration": 0.7175719738006592,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1165,7 +1165,7 @@
       "expected_output": "e2e-testing",
       "output": "e2e-testing",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 8
       },
       "attributes": {},
@@ -1182,8 +1182,8 @@
           }
         }
       },
-      "task_duration": 0.892419102950953,
-      "total_duration": 0.8975286483764648,
+      "task_duration": 0.7227764669805765,
+      "total_duration": 0.72409987449646,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1201,7 +1201,7 @@
       "expected_output": "e2e-testing",
       "output": "e2e-testing",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 8
       },
       "attributes": {},
@@ -1218,8 +1218,8 @@
           }
         }
       },
-      "task_duration": 0.7986629779916257,
-      "total_duration": 0.8002691268920898,
+      "task_duration": 0.7713688680087216,
+      "total_duration": 0.7728207111358643,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1237,7 +1237,7 @@
       "expected_output": "verify-service",
       "output": "verify-service",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 6
       },
       "attributes": {},
@@ -1254,8 +1254,8 @@
           }
         }
       },
-      "task_duration": 0.8952430509962142,
-      "total_duration": 0.8972995281219482,
+      "task_duration": 0.8326208159560338,
+      "total_duration": 0.8334143161773682,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1273,7 +1273,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 4
       },
       "attributes": {},
@@ -1290,8 +1290,8 @@
           }
         }
       },
-      "task_duration": 1.2541807899833657,
-      "total_duration": 1.2579598426818848,
+      "task_duration": 0.6427591349929571,
+      "total_duration": 0.6441450119018555,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1309,7 +1309,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -1326,8 +1326,8 @@
           }
         }
       },
-      "task_duration": 0.7867596469586715,
-      "total_duration": 0.7885572910308838,
+      "task_duration": 0.6807175450376235,
+      "total_duration": 0.6819868087768555,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1345,7 +1345,7 @@
       "expected_output": "knowledge-vault",
       "output": "knowledge-vault",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 6
       },
       "attributes": {},
@@ -1362,8 +1362,8 @@
           }
         }
       },
-      "task_duration": 1.2144963100436144,
-      "total_duration": 1.2161717414855957,
+      "task_duration": 1.158656355983112,
+      "total_duration": 1.1600487232208252,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1381,7 +1381,7 @@
       "expected_output": "knowledge-vault",
       "output": "knowledge-vault",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 6
       },
       "attributes": {},
@@ -1398,8 +1398,8 @@
           }
         }
       },
-      "task_duration": 0.9063133799936622,
-      "total_duration": 0.9188930988311768,
+      "task_duration": 0.7942210400360636,
+      "total_duration": 0.7957930564880371,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1417,7 +1417,7 @@
       "expected_output": "knowledge-vault",
       "output": "knowledge-vault",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 6
       },
       "attributes": {},
@@ -1434,8 +1434,8 @@
           }
         }
       },
-      "task_duration": 0.8465948050143197,
-      "total_duration": 0.8518927097320557,
+      "task_duration": 0.8199366650078446,
+      "total_duration": 0.8207206726074219,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1451,10 +1451,10 @@
         "source_skill": "knowledge-vault"
       },
       "expected_output": "none",
-      "output": "none",
+      "output": "lean-code",
       "metrics": {
-        "input_tokens": 1454,
-        "output_tokens": 4
+        "input_tokens": 1511,
+        "output_tokens": 6
       },
       "attributes": {},
       "scores": {},
@@ -1462,7 +1462,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": true,
+          "value": false,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -1470,8 +1470,8 @@
           }
         }
       },
-      "task_duration": 1.2546410459908657,
-      "total_duration": 1.2563652992248535,
+      "task_duration": 0.6869551860145293,
+      "total_duration": 0.6880886554718018,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1489,7 +1489,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 4
       },
       "attributes": {},
@@ -1506,8 +1506,8 @@
           }
         }
       },
-      "task_duration": 0.6588194950018078,
-      "total_duration": 0.6634705066680908,
+      "task_duration": 0.7179964830284007,
+      "total_duration": 0.7187106609344482,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1525,7 +1525,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 4
       },
       "attributes": {},
@@ -1542,8 +1542,8 @@
           }
         }
       },
-      "task_duration": 0.89801810804056,
-      "total_duration": 0.9001510143280029,
+      "task_duration": 0.6417677929857746,
+      "total_duration": 0.6422836780548096,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1561,7 +1561,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1578,8 +1578,8 @@
           }
         }
       },
-      "task_duration": 0.7546561050112359,
-      "total_duration": 0.7597038745880127,
+      "task_duration": 0.6370664679561742,
+      "total_duration": 0.6375946998596191,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1597,7 +1597,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1614,8 +1614,8 @@
           }
         }
       },
-      "task_duration": 0.7435625540092587,
-      "total_duration": 0.7453298568725586,
+      "task_duration": 0.6586883940035477,
+      "total_duration": 0.6592514514923096,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1633,7 +1633,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1650,8 +1650,8 @@
           }
         }
       },
-      "task_duration": 0.8143672759761102,
-      "total_duration": 0.8163635730743408,
+      "task_duration": 0.6543382100062445,
+      "total_duration": 0.654869794845581,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1669,7 +1669,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1462,
+        "input_tokens": 1519,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1686,8 +1686,8 @@
           }
         }
       },
-      "task_duration": 0.8595682150335051,
-      "total_duration": 0.8707418441772461,
+      "task_duration": 0.7195951709873043,
+      "total_duration": 0.7208292484283447,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1705,7 +1705,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1722,8 +1722,8 @@
           }
         }
       },
-      "task_duration": 0.8731801109970547,
-      "total_duration": 0.8779423236846924,
+      "task_duration": 0.7991916339960881,
+      "total_duration": 0.7997124195098877,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1741,7 +1741,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1758,8 +1758,8 @@
           }
         }
       },
-      "task_duration": 0.7064926279708743,
-      "total_duration": 0.7083103656768799,
+      "task_duration": 0.6850939990254119,
+      "total_duration": 0.6866226196289062,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1777,7 +1777,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1794,8 +1794,8 @@
           }
         }
       },
-      "task_duration": 0.9986347009544261,
-      "total_duration": 1.006497859954834,
+      "task_duration": 0.6999030909501016,
+      "total_duration": 0.7006657123565674,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1813,7 +1813,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1830,8 +1830,8 @@
           }
         }
       },
-      "task_duration": 1.4811349789961241,
-      "total_duration": 1.4858226776123047,
+      "task_duration": 0.6443324809661135,
+      "total_duration": 0.6448397636413574,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1849,7 +1849,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1463,
+        "input_tokens": 1520,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1866,8 +1866,8 @@
           }
         }
       },
-      "task_duration": 0.7257160429726355,
-      "total_duration": 0.7274644374847412,
+      "task_duration": 0.7188226339640096,
+      "total_duration": 0.719353437423706,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1885,7 +1885,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1902,8 +1902,8 @@
           }
         }
       },
-      "task_duration": 0.8532679899944924,
-      "total_duration": 0.8581795692443848,
+      "task_duration": 0.6566430550301448,
+      "total_duration": 0.6579244136810303,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1919,9 +1919,9 @@
         "source_skill": "kubernetes-gitops"
       },
       "expected_output": "kubernetes-gitops",
-      "output": "observability-patterns",
+      "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1470,
+        "input_tokens": 1527,
         "output_tokens": 7
       },
       "attributes": {},
@@ -1930,7 +1930,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -1938,8 +1938,8 @@
           }
         }
       },
-      "task_duration": 1.5230996849713847,
-      "total_duration": 1.5268874168395996,
+      "task_duration": 0.6800362440408207,
+      "total_duration": 0.6808924674987793,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1957,7 +1957,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -1974,8 +1974,8 @@
           }
         }
       },
-      "task_duration": 0.7663340999861248,
-      "total_duration": 0.7692253589630127,
+      "task_duration": 0.6810304910177365,
+      "total_duration": 0.6815609931945801,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -1993,7 +1993,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2010,8 +2010,8 @@
           }
         }
       },
-      "task_duration": 1.854903266998008,
-      "total_duration": 1.8566968441009521,
+      "task_duration": 0.670850733993575,
+      "total_duration": 0.6723809242248535,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2029,7 +2029,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 10
       },
       "attributes": {},
@@ -2046,8 +2046,8 @@
           }
         }
       },
-      "task_duration": 0.9239902870031074,
-      "total_duration": 0.9356064796447754,
+      "task_duration": 0.7289436989813112,
+      "total_duration": 0.7303180694580078,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2065,7 +2065,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 10
       },
       "attributes": {},
@@ -2082,8 +2082,8 @@
           }
         }
       },
-      "task_duration": 0.8375208620564081,
-      "total_duration": 0.8501310348510742,
+      "task_duration": 0.7085890010348521,
+      "total_duration": 0.710036039352417,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2099,10 +2099,10 @@
         "source_skill": "kubernetes-gitops"
       },
       "expected_output": "rust-engineering",
-      "output": "none",
+      "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1459,
-        "output_tokens": 4
+        "input_tokens": 1516,
+        "output_tokens": 6
       },
       "attributes": {},
       "scores": {},
@@ -2110,7 +2110,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -2118,8 +2118,8 @@
           }
         }
       },
-      "task_duration": 1.030934972979594,
-      "total_duration": 1.0365774631500244,
+      "task_duration": 0.6557775249821134,
+      "total_duration": 0.6574232578277588,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2137,7 +2137,7 @@
       "expected_output": "none",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2154,8 +2154,8 @@
           }
         }
       },
-      "task_duration": 0.9355791650013998,
-      "total_duration": 0.9411656856536865,
+      "task_duration": 0.7850048479740508,
+      "total_duration": 0.7857933044433594,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2173,7 +2173,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2190,8 +2190,8 @@
           }
         }
       },
-      "task_duration": 0.748871700023301,
-      "total_duration": 0.7505249977111816,
+      "task_duration": 0.7430847539799288,
+      "total_duration": 0.7444477081298828,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2209,7 +2209,7 @@
       "expected_output": "none",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2226,8 +2226,8 @@
           }
         }
       },
-      "task_duration": 0.770146539027337,
-      "total_duration": 0.7719392776489258,
+      "task_duration": 0.7497060369933024,
+      "total_duration": 0.7504682540893555,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2245,7 +2245,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -2262,8 +2262,8 @@
           }
         }
       },
-      "task_duration": 0.9276356739574112,
-      "total_duration": 0.9352054595947266,
+      "task_duration": 0.6857598609640263,
+      "total_duration": 0.6862857341766357,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2281,7 +2281,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 4
       },
       "attributes": {},
@@ -2298,8 +2298,8 @@
           }
         }
       },
-      "task_duration": 0.9452090029953979,
-      "total_duration": 0.9512670040130615,
+      "task_duration": 1.2740813390119001,
+      "total_duration": 1.2758293151855469,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2317,7 +2317,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -2334,8 +2334,8 @@
           }
         }
       },
-      "task_duration": 0.9032397990231402,
-      "total_duration": 0.9093301296234131,
+      "task_duration": 0.5479912859736942,
+      "total_duration": 0.5485410690307617,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2353,7 +2353,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2370,8 +2370,8 @@
           }
         }
       },
-      "task_duration": 0.7863107559969649,
-      "total_duration": 0.7960984706878662,
+      "task_duration": 0.6825330450083129,
+      "total_duration": 0.6978850364685059,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2389,7 +2389,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2406,8 +2406,8 @@
           }
         }
       },
-      "task_duration": 1.7259737430140376,
-      "total_duration": 1.7289574146270752,
+      "task_duration": 2.1112504830234684,
+      "total_duration": 2.1125998497009277,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2425,7 +2425,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2442,8 +2442,8 @@
           }
         }
       },
-      "task_duration": 0.9153778820182197,
-      "total_duration": 0.9172980785369873,
+      "task_duration": 0.7081997400382534,
+      "total_duration": 0.7093949317932129,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2461,7 +2461,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2478,8 +2478,8 @@
           }
         }
       },
-      "task_duration": 0.9588897119974717,
-      "total_duration": 0.9695858955383301,
+      "task_duration": 0.7461670279735699,
+      "total_duration": 0.7469801902770996,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2497,7 +2497,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2514,8 +2514,8 @@
           }
         }
       },
-      "task_duration": 0.7887209210311994,
-      "total_duration": 0.8086192607879639,
+      "task_duration": 0.6949658669764176,
+      "total_duration": 0.6960675716400146,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2533,7 +2533,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2550,8 +2550,8 @@
           }
         }
       },
-      "task_duration": 0.9170260420069098,
-      "total_duration": 0.9209034442901611,
+      "task_duration": 0.8033197509939782,
+      "total_duration": 0.8040862083435059,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2569,7 +2569,7 @@
       "expected_output": "deep-modules",
       "output": "deep-modules",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2586,8 +2586,8 @@
           }
         }
       },
-      "task_duration": 0.9757900640252046,
-      "total_duration": 0.9828274250030518,
+      "task_duration": 2.1553838920081034,
+      "total_duration": 2.156054973602295,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2605,7 +2605,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 6
       },
       "attributes": {},
@@ -2622,8 +2622,8 @@
           }
         }
       },
-      "task_duration": 0.7632966950186528,
-      "total_duration": 0.8351171016693115,
+      "task_duration": 0.6839556430350058,
+      "total_duration": 0.6845221519470215,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2641,7 +2641,7 @@
       "expected_output": "orchestrated-review",
       "output": "orchestrated-review",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 7
       },
       "attributes": {},
@@ -2658,8 +2658,8 @@
           }
         }
       },
-      "task_duration": 0.8795022019767202,
-      "total_duration": 0.8832662105560303,
+      "task_duration": 1.2067883589770645,
+      "total_duration": 1.2080743312835693,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2677,7 +2677,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -2694,8 +2694,8 @@
           }
         }
       },
-      "task_duration": 1.0166068180114962,
-      "total_duration": 1.0225956439971924,
+      "task_duration": 0.7324770459672436,
+      "total_duration": 0.733046293258667,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2713,7 +2713,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 4
       },
       "attributes": {},
@@ -2730,8 +2730,8 @@
           }
         }
       },
-      "task_duration": 0.7925862020347267,
-      "total_duration": 0.7944080829620361,
+      "task_duration": 0.6692751980153844,
+      "total_duration": 0.6701221466064453,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2749,7 +2749,7 @@
       "expected_output": "nix-audit-operator",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 9
       },
       "attributes": {},
@@ -2766,8 +2766,8 @@
           }
         }
       },
-      "task_duration": 0.7901337170042098,
-      "total_duration": 0.8047506809234619,
+      "task_duration": 0.688797787996009,
+      "total_duration": 0.6894717216491699,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2785,7 +2785,7 @@
       "expected_output": "nix-audit-operator",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1465,
+        "input_tokens": 1522,
         "output_tokens": 9
       },
       "attributes": {},
@@ -2802,8 +2802,8 @@
           }
         }
       },
-      "task_duration": 0.7477053860202432,
-      "total_duration": 0.7524158954620361,
+      "task_duration": 0.6974331800010987,
+      "total_duration": 0.6987643241882324,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2821,7 +2821,7 @@
       "expected_output": "nix-audit-operator",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 9
       },
       "attributes": {},
@@ -2838,8 +2838,8 @@
           }
         }
       },
-      "task_duration": 6.421291395032313,
-      "total_duration": 6.445065498352051,
+      "task_duration": 0.7122237249859609,
+      "total_duration": 0.7134039402008057,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2857,7 +2857,7 @@
       "expected_output": "nix-audit-operator",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1472,
+        "input_tokens": 1529,
         "output_tokens": 9
       },
       "attributes": {},
@@ -2874,8 +2874,8 @@
           }
         }
       },
-      "task_duration": 7.042858120985329,
-      "total_duration": 7.044738292694092,
+      "task_duration": 0.6827772280084901,
+      "total_duration": 0.6835832595825195,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2893,7 +2893,7 @@
       "expected_output": "nix-audit-operator",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 9
       },
       "attributes": {},
@@ -2910,8 +2910,8 @@
           }
         }
       },
-      "task_duration": 6.163887301983777,
-      "total_duration": 6.167768716812134,
+      "task_duration": 0.7760056780534796,
+      "total_duration": 0.7772731781005859,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2929,7 +2929,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 10
       },
       "attributes": {},
@@ -2946,8 +2946,8 @@
           }
         }
       },
-      "task_duration": 1.444615732994862,
-      "total_duration": 1.4495809078216553,
+      "task_duration": 0.8531976650119759,
+      "total_duration": 0.8548331260681152,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -2965,7 +2965,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 7
       },
       "attributes": {},
@@ -2982,8 +2982,8 @@
           }
         }
       },
-      "task_duration": 0.7614303620066494,
-      "total_duration": 0.763056755065918,
+      "task_duration": 0.6861395370215178,
+      "total_duration": 0.6876018047332764,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3001,7 +3001,7 @@
       "expected_output": "pi-offload",
       "output": "pi-offload",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 7
       },
       "attributes": {},
@@ -3018,8 +3018,8 @@
           }
         }
       },
-      "task_duration": 0.780493172002025,
-      "total_duration": 0.7843701839447021,
+      "task_duration": 0.7238408700213768,
+      "total_duration": 0.7246742248535156,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3037,7 +3037,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3054,8 +3054,8 @@
           }
         }
       },
-      "task_duration": 0.8202462380286306,
-      "total_duration": 0.8260314464569092,
+      "task_duration": 0.7152363209752366,
+      "total_duration": 0.716829776763916,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3073,7 +3073,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1470,
+        "input_tokens": 1527,
         "output_tokens": 7
       },
       "attributes": {},
@@ -3090,8 +3090,8 @@
           }
         }
       },
-      "task_duration": 0.7572349209804088,
-      "total_duration": 0.7584354877471924,
+      "task_duration": 0.7741321549983695,
+      "total_duration": 0.7755234241485596,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3109,7 +3109,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1449,
+        "input_tokens": 1506,
         "output_tokens": 4
       },
       "attributes": {},
@@ -3126,8 +3126,8 @@
           }
         }
       },
-      "task_duration": 0.6931845110375434,
-      "total_duration": 0.6960914134979248,
+      "task_duration": 0.6446974789723754,
+      "total_duration": 0.6461706161499023,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3145,7 +3145,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 4
       },
       "attributes": {},
@@ -3162,8 +3162,8 @@
           }
         }
       },
-      "task_duration": 0.7944471820374019,
-      "total_duration": 0.7987959384918213,
+      "task_duration": 0.6239767539664172,
+      "total_duration": 0.6247141361236572,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3181,7 +3181,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3198,8 +3198,8 @@
           }
         }
       },
-      "task_duration": 0.9179026470519602,
-      "total_duration": 0.9225742816925049,
+      "task_duration": 1.272947404999286,
+      "total_duration": 1.2743172645568848,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3217,7 +3217,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3234,8 +3234,8 @@
           }
         }
       },
-      "task_duration": 0.8580065140267834,
-      "total_duration": 0.8598411083221436,
+      "task_duration": 0.6644347879919223,
+      "total_duration": 0.6649794578552246,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3253,7 +3253,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3270,8 +3270,8 @@
           }
         }
       },
-      "task_duration": 1.521512693958357,
-      "total_duration": 1.5262000560760498,
+      "task_duration": 0.754661695973482,
+      "total_duration": 0.7551901340484619,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3289,7 +3289,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3306,8 +3306,8 @@
           }
         }
       },
-      "task_duration": 0.8134202149813063,
-      "total_duration": 0.8190324306488037,
+      "task_duration": 0.736807630979456,
+      "total_duration": 0.737499475479126,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3325,7 +3325,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3342,8 +3342,8 @@
           }
         }
       },
-      "task_duration": 0.826476031972561,
-      "total_duration": 0.8289065361022949,
+      "task_duration": 0.7725875800242648,
+      "total_duration": 0.7735507488250732,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3361,7 +3361,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3378,8 +3378,8 @@
           }
         }
       },
-      "task_duration": 0.9638493699603714,
-      "total_duration": 0.9745187759399414,
+      "task_duration": 0.8083419569884427,
+      "total_duration": 0.8094918727874756,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3397,7 +3397,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3414,8 +3414,8 @@
           }
         }
       },
-      "task_duration": 0.8059038580395281,
-      "total_duration": 0.813758134841919,
+      "task_duration": 0.7091568849864416,
+      "total_duration": 0.7105655670166016,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3433,7 +3433,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3450,8 +3450,8 @@
           }
         }
       },
-      "task_duration": 1.6490835180156864,
-      "total_duration": 1.653632402420044,
+      "task_duration": 0.6946562170051038,
+      "total_duration": 0.696035623550415,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3469,7 +3469,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3486,8 +3486,8 @@
           }
         }
       },
-      "task_duration": 0.946922397997696,
-      "total_duration": 0.9487667083740234,
+      "task_duration": 1.2534303810098208,
+      "total_duration": 1.2549967765808105,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3505,7 +3505,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1470,
+        "input_tokens": 1527,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3522,8 +3522,8 @@
           }
         }
       },
-      "task_duration": 1.3027021960006095,
-      "total_duration": 1.3394966125488281,
+      "task_duration": 0.6974038259941153,
+      "total_duration": 0.6988489627838135,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3541,7 +3541,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 10
       },
       "attributes": {},
@@ -3558,8 +3558,8 @@
           }
         }
       },
-      "task_duration": 0.8136747759999707,
-      "total_duration": 0.8166241645812988,
+      "task_duration": 0.7320670899935067,
+      "total_duration": 0.7335429191589355,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3577,7 +3577,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -3594,8 +3594,8 @@
           }
         }
       },
-      "task_duration": 0.861732313001994,
-      "total_duration": 0.8629159927368164,
+      "task_duration": 0.8730789079563692,
+      "total_duration": 0.8739492893218994,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3613,7 +3613,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 6
       },
       "attributes": {},
@@ -3630,8 +3630,8 @@
           }
         }
       },
-      "task_duration": 0.9448913050000556,
-      "total_duration": 0.9469835758209229,
+      "task_duration": 0.6593155620503239,
+      "total_duration": 0.6601564884185791,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3647,10 +3647,10 @@
         "source_skill": "nix-flake-development"
       },
       "expected_output": "none",
-      "output": "rust-engineering",
+      "output": "none",
       "metrics": {
-        "input_tokens": 1458,
-        "output_tokens": 6
+        "input_tokens": 1515,
+        "output_tokens": 4
       },
       "attributes": {},
       "scores": {},
@@ -3658,7 +3658,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -3666,8 +3666,8 @@
           }
         }
       },
-      "task_duration": 0.729043037048541,
-      "total_duration": 0.7307801246643066,
+      "task_duration": 0.6424359960365109,
+      "total_duration": 0.6436257362365723,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3685,7 +3685,7 @@
       "expected_output": "secrets-management",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 7
       },
       "attributes": {},
@@ -3702,17 +3702,17 @@
           }
         }
       },
-      "task_duration": 0.7063403030042537,
-      "total_duration": 0.716832160949707,
+      "task_duration": 0.668296901974827,
+      "total_duration": 0.6691868305206299,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
       "evaluator_failures": []
     },
     {
-      "name": "nix-flake-development::hard_neg::confirm-the-new-karta-deploy-is-actually-live-behind-authent",
+      "name": "nix-flake-development::hard_neg::confirm-the-new-app-deploy-is-actually-live-behind-authentik",
       "inputs": {
-        "query": "Confirm the new karta deploy is actually live behind Authentik"
+        "query": "Confirm the new app deploy is actually live behind Authentik"
       },
       "metadata": {
         "category": "hard_negative",
@@ -3721,7 +3721,7 @@
       "expected_output": "verify-service",
       "output": "verify-service",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1515,
         "output_tokens": 6
       },
       "attributes": {},
@@ -3738,8 +3738,8 @@
           }
         }
       },
-      "task_duration": 0.7109609809704125,
-      "total_duration": 0.7159557342529297,
+      "task_duration": 0.7821557229617611,
+      "total_duration": 0.7830462455749512,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3757,7 +3757,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 4
       },
       "attributes": {},
@@ -3774,8 +3774,8 @@
           }
         }
       },
-      "task_duration": 1.0021208500256762,
-      "total_duration": 1.0098364353179932,
+      "task_duration": 0.764679801010061,
+      "total_duration": 0.7652120590209961,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3793,7 +3793,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 4
       },
       "attributes": {},
@@ -3810,8 +3810,8 @@
           }
         }
       },
-      "task_duration": 0.9908088920055889,
-      "total_duration": 1.0062506198883057,
+      "task_duration": 0.6348941989708692,
+      "total_duration": 0.6354939937591553,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3829,7 +3829,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 4
       },
       "attributes": {},
@@ -3846,8 +3846,8 @@
           }
         }
       },
-      "task_duration": 1.2081775960396044,
-      "total_duration": 1.2100882530212402,
+      "task_duration": 0.7807775010005571,
+      "total_duration": 0.7819480895996094,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3865,7 +3865,7 @@
       "expected_output": "ntfy-notifications",
       "output": "ntfy-notifications",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 7
       },
       "attributes": {},
@@ -3882,8 +3882,8 @@
           }
         }
       },
-      "task_duration": 0.8342550690285861,
-      "total_duration": 0.8376801013946533,
+      "task_duration": 1.817771898000501,
+      "total_duration": 1.8189482688903809,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3901,7 +3901,7 @@
       "expected_output": "ntfy-notifications",
       "output": "ntfy-notifications",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 7
       },
       "attributes": {},
@@ -3918,8 +3918,8 @@
           }
         }
       },
-      "task_duration": 1.0818093940033577,
-      "total_duration": 1.0868749618530273,
+      "task_duration": 0.7954103149822913,
+      "total_duration": 0.796907901763916,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3937,7 +3937,7 @@
       "expected_output": "ntfy-notifications",
       "output": "ntfy-notifications",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 7
       },
       "attributes": {},
@@ -3954,8 +3954,8 @@
           }
         }
       },
-      "task_duration": 1.0603127519716509,
-      "total_duration": 1.0732390880584717,
+      "task_duration": 0.6968215520028025,
+      "total_duration": 0.6985230445861816,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -3973,7 +3973,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 7
       },
       "attributes": {},
@@ -3990,8 +3990,8 @@
           }
         }
       },
-      "task_duration": 1.2201563480193727,
-      "total_duration": 1.2282464504241943,
+      "task_duration": 0.7591545199975371,
+      "total_duration": 0.7600524425506592,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4009,7 +4009,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1449,
+        "input_tokens": 1506,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4026,8 +4026,8 @@
           }
         }
       },
-      "task_duration": 1.2684928830130957,
-      "total_duration": 1.273334264755249,
+      "task_duration": 1.8402540819952264,
+      "total_duration": 1.8417105674743652,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4045,7 +4045,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4062,8 +4062,8 @@
           }
         }
       },
-      "task_duration": 0.9302667540032417,
-      "total_duration": 0.9351959228515625,
+      "task_duration": 0.6679740639519878,
+      "total_duration": 0.668515682220459,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4081,7 +4081,7 @@
       "expected_output": "orchestrated-review",
       "output": "orchestrated-review",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 7
       },
       "attributes": {},
@@ -4098,8 +4098,8 @@
           }
         }
       },
-      "task_duration": 0.7565787299536169,
-      "total_duration": 0.7584831714630127,
+      "task_duration": 0.7035503840306774,
+      "total_duration": 0.7040956020355225,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4117,7 +4117,7 @@
       "expected_output": "orchestrated-review",
       "output": "agent-orchestration",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 7
       },
       "attributes": {},
@@ -4134,8 +4134,8 @@
           }
         }
       },
-      "task_duration": 0.7950980960158631,
-      "total_duration": 0.7985918521881104,
+      "task_duration": 0.7020714710233733,
+      "total_duration": 0.7028558254241943,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4151,10 +4151,10 @@
         "source_skill": "orchestrated-review"
       },
       "expected_output": "orchestrated-review",
-      "output": "orchestrated-review",
+      "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1458,
-        "output_tokens": 7
+        "input_tokens": 1515,
+        "output_tokens": 8
       },
       "attributes": {},
       "scores": {},
@@ -4162,7 +4162,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": true,
+          "value": false,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -4170,8 +4170,8 @@
           }
         }
       },
-      "task_duration": 0.754373308038339,
-      "total_duration": 0.7593715190887451,
+      "task_duration": 0.7032356639974751,
+      "total_duration": 0.7039170265197754,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4189,7 +4189,7 @@
       "expected_output": "orchestrated-review",
       "output": "none",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4206,8 +4206,8 @@
           }
         }
       },
-      "task_duration": 1.3611361380317248,
-      "total_duration": 1.3664193153381348,
+      "task_duration": 0.7515351730398834,
+      "total_duration": 0.7521812915802002,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4225,7 +4225,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 8
       },
       "attributes": {},
@@ -4242,8 +4242,8 @@
           }
         }
       },
-      "task_duration": 0.7313017880078405,
-      "total_duration": 0.7330951690673828,
+      "task_duration": 0.6968788459780626,
+      "total_duration": 0.6974267959594727,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4261,7 +4261,7 @@
       "expected_output": "assigning-subagent-models",
       "output": "assigning-subagent-models",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 11
       },
       "attributes": {},
@@ -4278,8 +4278,8 @@
           }
         }
       },
-      "task_duration": 1.0943737620254979,
-      "total_duration": 1.1632080078125,
+      "task_duration": 0.8898079269565642,
+      "total_duration": 0.8911733627319336,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4297,7 +4297,7 @@
       "expected_output": "lean-code",
       "output": "lean-code",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 6
       },
       "attributes": {},
@@ -4314,8 +4314,8 @@
           }
         }
       },
-      "task_duration": 0.7529709030059166,
-      "total_duration": 0.7567243576049805,
+      "task_duration": 0.7847664669970982,
+      "total_duration": 0.7859992980957031,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4333,7 +4333,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4350,8 +4350,8 @@
           }
         }
       },
-      "task_duration": 1.2337780160014518,
-      "total_duration": 1.244278907775879,
+      "task_duration": 0.6666607889928855,
+      "total_duration": 0.6675550937652588,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4369,7 +4369,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4386,8 +4386,8 @@
           }
         }
       },
-      "task_duration": 0.699841624009423,
-      "total_duration": 0.7069127559661865,
+      "task_duration": 0.6214903519721702,
+      "total_duration": 0.6226892471313477,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4405,7 +4405,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4422,8 +4422,8 @@
           }
         }
       },
-      "task_duration": 0.8604438820038922,
-      "total_duration": 0.8653140068054199,
+      "task_duration": 0.6897347469930537,
+      "total_duration": 0.6903371810913086,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4441,7 +4441,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4458,8 +4458,8 @@
           }
         }
       },
-      "task_duration": 0.9630644149729051,
-      "total_duration": 0.9642856121063232,
+      "task_duration": 1.2936271479702555,
+      "total_duration": 1.2948484420776367,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4477,7 +4477,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1466,
+        "input_tokens": 1523,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4494,8 +4494,8 @@
           }
         }
       },
-      "task_duration": 0.7340946639887989,
-      "total_duration": 0.7355546951293945,
+      "task_duration": 0.8192579650203697,
+      "total_duration": 0.8198099136352539,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4513,7 +4513,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4530,8 +4530,8 @@
           }
         }
       },
-      "task_duration": 0.8265963300364092,
-      "total_duration": 0.8275983333587646,
+      "task_duration": 0.7835012979921885,
+      "total_duration": 0.785036563873291,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4549,7 +4549,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4566,8 +4566,8 @@
           }
         }
       },
-      "task_duration": 1.9318658579722978,
-      "total_duration": 1.9334945678710938,
+      "task_duration": 0.6705368870170787,
+      "total_duration": 0.6716964244842529,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4585,7 +4585,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1465,
+        "input_tokens": 1522,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4602,8 +4602,8 @@
           }
         }
       },
-      "task_duration": 0.7267428270424716,
-      "total_duration": 0.7279610633850098,
+      "task_duration": 0.6964005939662457,
+      "total_duration": 0.6978638172149658,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4621,7 +4621,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4638,8 +4638,8 @@
           }
         }
       },
-      "task_duration": 0.6812511250027455,
-      "total_duration": 0.6822609901428223,
+      "task_duration": 0.7054432659642771,
+      "total_duration": 0.7061872482299805,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4657,7 +4657,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4674,8 +4674,8 @@
           }
         }
       },
-      "task_duration": 0.6472027590498328,
-      "total_duration": 0.6487529277801514,
+      "task_duration": 0.7013050820096396,
+      "total_duration": 0.7020912170410156,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4693,7 +4693,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4710,8 +4710,8 @@
           }
         }
       },
-      "task_duration": 0.6661087879911065,
-      "total_duration": 0.6696007251739502,
+      "task_duration": 1.2385124419815838,
+      "total_duration": 1.2390451431274414,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4729,7 +4729,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4746,8 +4746,8 @@
           }
         }
       },
-      "task_duration": 0.8472550099832006,
-      "total_duration": 0.8488152027130127,
+      "task_duration": 0.8000813990365714,
+      "total_duration": 0.8012981414794922,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4765,7 +4765,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 9
       },
       "attributes": {},
@@ -4782,8 +4782,8 @@
           }
         }
       },
-      "task_duration": 0.7675850720261224,
-      "total_duration": 0.7687397003173828,
+      "task_duration": 0.6434228320140392,
+      "total_duration": 0.6439754962921143,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4801,7 +4801,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 10
       },
       "attributes": {},
@@ -4818,8 +4818,8 @@
           }
         }
       },
-      "task_duration": 0.7617445209762082,
-      "total_duration": 0.76277756690979,
+      "task_duration": 0.7237952439463697,
+      "total_duration": 0.72568678855896,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4837,7 +4837,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 10
       },
       "attributes": {},
@@ -4854,8 +4854,8 @@
           }
         }
       },
-      "task_duration": 0.8613051840220578,
-      "total_duration": 0.8702569007873535,
+      "task_duration": 0.7418079660274088,
+      "total_duration": 0.7423553466796875,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4873,7 +4873,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 6
       },
       "attributes": {},
@@ -4890,8 +4890,8 @@
           }
         }
       },
-      "task_duration": 0.7284251340315677,
-      "total_duration": 0.7407450675964355,
+      "task_duration": 0.6713125120149925,
+      "total_duration": 0.6727097034454346,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4909,7 +4909,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4926,8 +4926,8 @@
           }
         }
       },
-      "task_duration": 1.469962770002894,
-      "total_duration": 1.4714164733886719,
+      "task_duration": 0.6453220479888842,
+      "total_duration": 0.6466255187988281,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4945,7 +4945,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1465,
+        "input_tokens": 1522,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4962,8 +4962,8 @@
           }
         }
       },
-      "task_duration": 0.6495873350067995,
-      "total_duration": 0.6510603427886963,
+      "task_duration": 0.6661518140463158,
+      "total_duration": 0.6675295829772949,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -4981,7 +4981,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -4998,8 +4998,8 @@
           }
         }
       },
-      "task_duration": 1.0309635400190018,
-      "total_duration": 1.032747507095337,
+      "task_duration": 0.656075412989594,
+      "total_duration": 0.6568448543548584,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5017,7 +5017,7 @@
       "expected_output": "pi-offload",
       "output": "pi-offload",
       "metrics": {
-        "input_tokens": 1476,
+        "input_tokens": 1533,
         "output_tokens": 7
       },
       "attributes": {},
@@ -5034,8 +5034,8 @@
           }
         }
       },
-      "task_duration": 0.8262994029792026,
-      "total_duration": 0.8317975997924805,
+      "task_duration": 0.7538720019510947,
+      "total_duration": 0.7552387714385986,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5053,7 +5053,7 @@
       "expected_output": "pi-offload",
       "output": "pi-offload",
       "metrics": {
-        "input_tokens": 1466,
+        "input_tokens": 1523,
         "output_tokens": 7
       },
       "attributes": {},
@@ -5070,8 +5070,8 @@
           }
         }
       },
-      "task_duration": 0.8691337750060484,
-      "total_duration": 0.8730475902557373,
+      "task_duration": 0.7911531450226903,
+      "total_duration": 0.7924106121063232,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5089,7 +5089,7 @@
       "expected_output": "pi-offload",
       "output": "pi-offload",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 7
       },
       "attributes": {},
@@ -5106,8 +5106,8 @@
           }
         }
       },
-      "task_duration": 0.8094521160237491,
-      "total_duration": 0.810551643371582,
+      "task_duration": 0.681173390999902,
+      "total_duration": 0.6829488277435303,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5125,7 +5125,7 @@
       "expected_output": "pi-ticket",
       "output": "pi-ticket",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 6
       },
       "attributes": {},
@@ -5142,8 +5142,8 @@
           }
         }
       },
-      "task_duration": 0.8251326550380327,
-      "total_duration": 0.8273570537567139,
+      "task_duration": 0.7474634299869649,
+      "total_duration": 0.7482490539550781,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5161,7 +5161,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 4
       },
       "attributes": {},
@@ -5178,8 +5178,8 @@
           }
         }
       },
-      "task_duration": 0.6931692470097914,
-      "total_duration": 0.6942780017852783,
+      "task_duration": 0.6573079420486465,
+      "total_duration": 0.6581387519836426,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5197,7 +5197,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 6
       },
       "attributes": {},
@@ -5214,8 +5214,8 @@
           }
         }
       },
-      "task_duration": 1.1073000259930268,
-      "total_duration": 1.1081912517547607,
+      "task_duration": 0.6820742800482549,
+      "total_duration": 0.6833517551422119,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5233,7 +5233,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 4
       },
       "attributes": {},
@@ -5250,8 +5250,8 @@
           }
         }
       },
-      "task_duration": 0.65613962901989,
-      "total_duration": 0.6569416522979736,
+      "task_duration": 0.6380319779855199,
+      "total_duration": 0.6387872695922852,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5269,7 +5269,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -5286,8 +5286,8 @@
           }
         }
       },
-      "task_duration": 0.7566383229568601,
-      "total_duration": 0.7574331760406494,
+      "task_duration": 0.6467965650372207,
+      "total_duration": 0.6473486423492432,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5305,7 +5305,7 @@
       "expected_output": "pi-ticket",
       "output": "pi-ticket",
       "metrics": {
-        "input_tokens": 1466,
+        "input_tokens": 1523,
         "output_tokens": 6
       },
       "attributes": {},
@@ -5322,8 +5322,8 @@
           }
         }
       },
-      "task_duration": 0.6559999529854394,
-      "total_duration": 0.6567990779876709,
+      "task_duration": 0.664699366025161,
+      "total_duration": 0.6658892631530762,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5341,7 +5341,7 @@
       "expected_output": "pi-ticket",
       "output": "pi-ticket",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 6
       },
       "attributes": {},
@@ -5358,8 +5358,8 @@
           }
         }
       },
-      "task_duration": 0.6632767909904942,
-      "total_duration": 0.6640777587890625,
+      "task_duration": 0.7238740189932287,
+      "total_duration": 0.7250502109527588,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5377,7 +5377,7 @@
       "expected_output": "pi-offload",
       "output": "pi-offload",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 7
       },
       "attributes": {},
@@ -5394,8 +5394,8 @@
           }
         }
       },
-      "task_duration": 0.6716292250202969,
-      "total_duration": 0.6724305152893066,
+      "task_duration": 0.665380724996794,
+      "total_duration": 0.6659524440765381,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5413,7 +5413,7 @@
       "expected_output": "orchestrated-review",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -5430,8 +5430,8 @@
           }
         }
       },
-      "task_duration": 0.6233409760170616,
-      "total_duration": 0.6241018772125244,
+      "task_duration": 0.7512540069874376,
+      "total_duration": 0.7521049976348877,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5449,7 +5449,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 4
       },
       "attributes": {},
@@ -5466,8 +5466,8 @@
           }
         }
       },
-      "task_duration": 0.7067004849668592,
-      "total_duration": 0.7076115608215332,
+      "task_duration": 0.7440285019692965,
+      "total_duration": 0.7445662021636963,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5485,7 +5485,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5502,8 +5502,8 @@
           }
         }
       },
-      "task_duration": 0.6772922939853743,
-      "total_duration": 0.6818220615386963,
+      "task_duration": 0.7022718749940395,
+      "total_duration": 0.7028520107269287,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5521,7 +5521,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5538,8 +5538,8 @@
           }
         }
       },
-      "task_duration": 1.2367122170398943,
-      "total_duration": 1.237675666809082,
+      "task_duration": 0.7197523590293713,
+      "total_duration": 0.7202591896057129,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5557,7 +5557,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5574,8 +5574,8 @@
           }
         }
       },
-      "task_duration": 0.7901270570000634,
-      "total_duration": 0.7909705638885498,
+      "task_duration": 0.7050682789995335,
+      "total_duration": 0.7063539028167725,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5593,7 +5593,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1463,
+        "input_tokens": 1520,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5610,8 +5610,8 @@
           }
         }
       },
-      "task_duration": 0.7405646440456621,
-      "total_duration": 0.7417850494384766,
+      "task_duration": 1.2582191370311193,
+      "total_duration": 1.259063482284546,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5629,7 +5629,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1466,
+        "input_tokens": 1523,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5646,8 +5646,8 @@
           }
         }
       },
-      "task_duration": 0.8549887170083821,
-      "total_duration": 0.8560519218444824,
+      "task_duration": 0.6964915689895861,
+      "total_duration": 0.6974666118621826,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5665,7 +5665,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1471,
+        "input_tokens": 1528,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5682,8 +5682,8 @@
           }
         }
       },
-      "task_duration": 0.7003833440248854,
-      "total_duration": 0.7012979984283447,
+      "task_duration": 0.7014658030238934,
+      "total_duration": 0.7021043300628662,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5701,7 +5701,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1465,
+        "input_tokens": 1522,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5718,8 +5718,8 @@
           }
         }
       },
-      "task_duration": 0.718871428980492,
-      "total_duration": 0.7198383808135986,
+      "task_duration": 0.7103006400284357,
+      "total_duration": 0.7108511924743652,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5737,7 +5737,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5754,8 +5754,8 @@
           }
         }
       },
-      "task_duration": 0.7489268929930404,
-      "total_duration": 0.7497727870941162,
+      "task_duration": 0.7323256710078567,
+      "total_duration": 0.7336070537567139,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5773,7 +5773,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 10
       },
       "attributes": {},
@@ -5790,8 +5790,8 @@
           }
         }
       },
-      "task_duration": 0.6701060720370151,
-      "total_duration": 0.6708629131317139,
+      "task_duration": 0.909523760958109,
+      "total_duration": 0.9100570678710938,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5809,7 +5809,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 9
       },
       "attributes": {},
@@ -5826,8 +5826,8 @@
           }
         }
       },
-      "task_duration": 0.7015413930057548,
-      "total_duration": 0.7022037506103516,
+      "task_duration": 0.7389939959975891,
+      "total_duration": 0.7397711277008057,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5845,7 +5845,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 9
       },
       "attributes": {},
@@ -5862,8 +5862,8 @@
           }
         }
       },
-      "task_duration": 0.811452966008801,
-      "total_duration": 0.8122198581695557,
+      "task_duration": 0.6783086840296164,
+      "total_duration": 0.6794512271881104,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5881,7 +5881,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 9
       },
       "attributes": {},
@@ -5898,8 +5898,8 @@
           }
         }
       },
-      "task_duration": 0.7062107939855196,
-      "total_duration": 0.7069222927093506,
+      "task_duration": 0.956885454012081,
+      "total_duration": 0.9574275016784668,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5917,7 +5917,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 9
       },
       "attributes": {},
@@ -5934,8 +5934,8 @@
           }
         }
       },
-      "task_duration": 1.3286096240044571,
-      "total_duration": 1.3294155597686768,
+      "task_duration": 0.7796510390471667,
+      "total_duration": 0.7804007530212402,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5953,7 +5953,7 @@
       "expected_output": "orchestrated-review",
       "output": "orchestrated-review",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 7
       },
       "attributes": {},
@@ -5970,8 +5970,8 @@
           }
         }
       },
-      "task_duration": 0.6503448899602517,
-      "total_duration": 0.6509835720062256,
+      "task_duration": 0.6853068409836851,
+      "total_duration": 0.6864712238311768,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -5989,7 +5989,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 7
       },
       "attributes": {},
@@ -6006,8 +6006,8 @@
           }
         }
       },
-      "task_duration": 0.7632208479917608,
-      "total_duration": 0.7639214992523193,
+      "task_duration": 0.9417315890314057,
+      "total_duration": 0.9431331157684326,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6025,7 +6025,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 4
       },
       "attributes": {},
@@ -6042,8 +6042,8 @@
           }
         }
       },
-      "task_duration": 1.3451499079819769,
-      "total_duration": 1.347127914428711,
+      "task_duration": 0.8013543160050176,
+      "total_duration": 0.8021047115325928,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6061,7 +6061,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -6078,8 +6078,8 @@
           }
         }
       },
-      "task_duration": 0.6231804330018349,
-      "total_duration": 0.6239993572235107,
+      "task_duration": 0.819263189972844,
+      "total_duration": 0.8200418949127197,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6097,7 +6097,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 4
       },
       "attributes": {},
@@ -6114,8 +6114,8 @@
           }
         }
       },
-      "task_duration": 0.7615325850201771,
-      "total_duration": 0.7622659206390381,
+      "task_duration": 0.6436979939462617,
+      "total_duration": 0.64453125,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6133,7 +6133,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6150,8 +6150,8 @@
           }
         }
       },
-      "task_duration": 1.240443092014175,
-      "total_duration": 1.246647596359253,
+      "task_duration": 0.7408196110045537,
+      "total_duration": 0.7426738739013672,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6169,7 +6169,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6186,8 +6186,8 @@
           }
         }
       },
-      "task_duration": 0.6509283820050769,
-      "total_duration": 0.6520798206329346,
+      "task_duration": 0.6804025940364227,
+      "total_duration": 0.6816706657409668,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6205,7 +6205,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6222,8 +6222,8 @@
           }
         }
       },
-      "task_duration": 0.7609444120316766,
-      "total_duration": 0.7649681568145752,
+      "task_duration": 0.8247674799640663,
+      "total_duration": 0.8257036209106445,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6241,7 +6241,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6258,8 +6258,8 @@
           }
         }
       },
-      "task_duration": 0.7860737009905279,
-      "total_duration": 0.7909708023071289,
+      "task_duration": 1.8335855700424872,
+      "total_duration": 1.8351373672485352,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6277,7 +6277,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6294,8 +6294,8 @@
           }
         }
       },
-      "task_duration": 0.8143247819971293,
-      "total_duration": 0.8237786293029785,
+      "task_duration": 0.6857764389715157,
+      "total_duration": 0.6869924068450928,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6313,7 +6313,7 @@
       "expected_output": "rust-engineering",
       "output": "deep-modules",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6330,8 +6330,8 @@
           }
         }
       },
-      "task_duration": 0.8951825090334751,
-      "total_duration": 0.8964142799377441,
+      "task_duration": 0.6739065219881013,
+      "total_duration": 0.6755907535552979,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6349,7 +6349,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6366,8 +6366,8 @@
           }
         }
       },
-      "task_duration": 0.7614865609793924,
-      "total_duration": 0.7628340721130371,
+      "task_duration": 0.8165320590487681,
+      "total_duration": 0.8182628154754639,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6385,7 +6385,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1463,
+        "input_tokens": 1520,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6402,8 +6402,8 @@
           }
         }
       },
-      "task_duration": 0.8450156730250455,
-      "total_duration": 0.8463921546936035,
+      "task_duration": 0.7086164149804972,
+      "total_duration": 0.7094686031341553,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6421,7 +6421,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6438,8 +6438,8 @@
           }
         }
       },
-      "task_duration": 0.8118177760043181,
-      "total_duration": 0.8130066394805908,
+      "task_duration": 0.8235970370005816,
+      "total_duration": 0.8250041007995605,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6457,7 +6457,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6474,8 +6474,8 @@
           }
         }
       },
-      "task_duration": 0.7235517090302892,
-      "total_duration": 0.7244524955749512,
+      "task_duration": 1.2134829639689997,
+      "total_duration": 1.214834213256836,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6491,10 +6491,10 @@
         "source_skill": "rust-engineering"
       },
       "expected_output": "rust-engineering",
-      "output": "tooling-feedback",
+      "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1467,
-        "output_tokens": 7
+        "input_tokens": 1524,
+        "output_tokens": 6
       },
       "attributes": {},
       "scores": {},
@@ -6502,7 +6502,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -6510,8 +6510,8 @@
           }
         }
       },
-      "task_duration": 0.7720345060224645,
-      "total_duration": 0.7728664875030518,
+      "task_duration": 1.9051031559938565,
+      "total_duration": 1.9058647155761719,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6527,10 +6527,10 @@
         "source_skill": "rust-engineering"
       },
       "expected_output": "rust-engineering",
-      "output": "pi-offload",
+      "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1464,
-        "output_tokens": 7
+        "input_tokens": 1521,
+        "output_tokens": 6
       },
       "attributes": {},
       "scores": {},
@@ -6538,7 +6538,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -6546,8 +6546,8 @@
           }
         }
       },
-      "task_duration": 0.7291413780185394,
-      "total_duration": 0.7300047874450684,
+      "task_duration": 0.7872806040104479,
+      "total_duration": 0.7880926132202148,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6565,7 +6565,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6582,8 +6582,8 @@
           }
         }
       },
-      "task_duration": 0.6755179070169106,
-      "total_duration": 0.6762881278991699,
+      "task_duration": 0.6702894319896586,
+      "total_duration": 0.671616792678833,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6601,7 +6601,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 7
       },
       "attributes": {},
@@ -6618,8 +6618,8 @@
           }
         }
       },
-      "task_duration": 0.6924952869885601,
-      "total_duration": 0.6932938098907471,
+      "task_duration": 0.6671576100052334,
+      "total_duration": 0.6686604022979736,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6637,7 +6637,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -6654,8 +6654,8 @@
           }
         }
       },
-      "task_duration": 0.7561413290095516,
-      "total_duration": 0.7568891048431396,
+      "task_duration": 0.725967125967145,
+      "total_duration": 0.7264750003814697,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6673,7 +6673,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1463,
+        "input_tokens": 1520,
         "output_tokens": 10
       },
       "attributes": {},
@@ -6690,8 +6690,8 @@
           }
         }
       },
-      "task_duration": 0.8023551090154797,
-      "total_duration": 0.8030951023101807,
+      "task_duration": 6.198880148993339,
+      "total_duration": 6.20057225227356,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6709,7 +6709,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1465,
+        "input_tokens": 1522,
         "output_tokens": 7
       },
       "attributes": {},
@@ -6726,8 +6726,8 @@
           }
         }
       },
-      "task_duration": 0.738260468991939,
-      "total_duration": 0.7390499114990234,
+      "task_duration": 1.3556754300370812,
+      "total_duration": 1.3569436073303223,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6745,7 +6745,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 4
       },
       "attributes": {},
@@ -6762,8 +6762,8 @@
           }
         }
       },
-      "task_duration": 1.9122051220037974,
-      "total_duration": 1.9132041931152344,
+      "task_duration": 0.7944123570341617,
+      "total_duration": 0.7958602905273438,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6781,7 +6781,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 4
       },
       "attributes": {},
@@ -6798,8 +6798,8 @@
           }
         }
       },
-      "task_duration": 0.7543218069477007,
-      "total_duration": 0.7551414966583252,
+      "task_duration": 0.6516856790403835,
+      "total_duration": 0.6524450778961182,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6817,7 +6817,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -6834,8 +6834,8 @@
           }
         }
       },
-      "task_duration": 0.6373414349509403,
-      "total_duration": 0.6383223533630371,
+      "task_duration": 0.6479451400227845,
+      "total_duration": 0.6492018699645996,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6853,7 +6853,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 8
       },
       "attributes": {},
@@ -6870,8 +6870,8 @@
           }
         }
       },
-      "task_duration": 0.9517807860393077,
-      "total_duration": 0.9529454708099365,
+      "task_duration": 1.283726249996107,
+      "total_duration": 1.2852745056152344,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6889,7 +6889,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 8
       },
       "attributes": {},
@@ -6906,8 +6906,8 @@
           }
         }
       },
-      "task_duration": 0.6611132629914209,
-      "total_duration": 0.6623847484588623,
+      "task_duration": 0.8293077260022983,
+      "total_duration": 0.8306989669799805,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6925,7 +6925,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 8
       },
       "attributes": {},
@@ -6942,8 +6942,8 @@
           }
         }
       },
-      "task_duration": 1.245110800024122,
-      "total_duration": 1.2458336353302002,
+      "task_duration": 0.741572972969152,
+      "total_duration": 0.7424778938293457,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6961,7 +6961,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 8
       },
       "attributes": {},
@@ -6978,8 +6978,8 @@
           }
         }
       },
-      "task_duration": 0.6894422569894232,
-      "total_duration": 0.6906647682189941,
+      "task_duration": 0.7070748099940829,
+      "total_duration": 0.708643913269043,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -6997,7 +6997,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 8
       },
       "attributes": {},
@@ -7014,8 +7014,8 @@
           }
         }
       },
-      "task_duration": 0.7049057569820434,
-      "total_duration": 0.7057995796203613,
+      "task_duration": 0.7311422820203006,
+      "total_duration": 0.7316949367523193,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7033,7 +7033,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1470,
+        "input_tokens": 1527,
         "output_tokens": 8
       },
       "attributes": {},
@@ -7050,8 +7050,8 @@
           }
         }
       },
-      "task_duration": 0.7193800500244834,
-      "total_duration": 0.7203104496002197,
+      "task_duration": 0.7017177779925987,
+      "total_duration": 0.702552318572998,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7069,7 +7069,7 @@
       "expected_output": "sdlc-pipeline",
       "output": "sdlc-pipeline",
       "metrics": {
-        "input_tokens": 1464,
+        "input_tokens": 1521,
         "output_tokens": 8
       },
       "attributes": {},
@@ -7086,8 +7086,8 @@
           }
         }
       },
-      "task_duration": 0.7279973800177686,
-      "total_duration": 0.7300252914428711,
+      "task_duration": 0.7333633790258318,
+      "total_duration": 0.7345409393310547,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7105,7 +7105,7 @@
       "expected_output": "orchestrated-review",
       "output": "orchestrated-review",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 7
       },
       "attributes": {},
@@ -7122,8 +7122,8 @@
           }
         }
       },
-      "task_duration": 0.6713602649979293,
-      "total_duration": 0.6722030639648438,
+      "task_duration": 0.776149887999054,
+      "total_duration": 0.7767040729522705,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7141,7 +7141,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 10
       },
       "attributes": {},
@@ -7158,8 +7158,8 @@
           }
         }
       },
-      "task_duration": 0.7122708130045794,
-      "total_duration": 0.713442325592041,
+      "task_duration": 0.6956544310087338,
+      "total_duration": 0.69651198387146,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7175,10 +7175,10 @@
         "source_skill": "sdlc-pipeline"
       },
       "expected_output": "none",
-      "output": "none",
+      "output": "pi-offload",
       "metrics": {
-        "input_tokens": 1452,
-        "output_tokens": 4
+        "input_tokens": 1509,
+        "output_tokens": 7
       },
       "attributes": {},
       "scores": {},
@@ -7186,7 +7186,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": true,
+          "value": false,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -7194,8 +7194,8 @@
           }
         }
       },
-      "task_duration": 0.677286466001533,
-      "total_duration": 0.6781556606292725,
+      "task_duration": 0.6338603009935468,
+      "total_duration": 0.6351048946380615,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7213,7 +7213,7 @@
       "expected_output": "rust-engineering",
       "output": "rust-engineering",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7230,8 +7230,8 @@
           }
         }
       },
-      "task_duration": 0.7459543489967473,
-      "total_duration": 0.7468178272247314,
+      "task_duration": 0.9435368039994501,
+      "total_duration": 0.9448339939117432,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7249,7 +7249,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1471,
+        "input_tokens": 1528,
         "output_tokens": 7
       },
       "attributes": {},
@@ -7266,8 +7266,8 @@
           }
         }
       },
-      "task_duration": 0.6514165580156259,
-      "total_duration": 0.6523678302764893,
+      "task_duration": 0.7214008189621381,
+      "total_duration": 0.722832441329956,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7285,7 +7285,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 4
       },
       "attributes": {},
@@ -7302,8 +7302,8 @@
           }
         }
       },
-      "task_duration": 0.7768042259849608,
-      "total_duration": 0.7779600620269775,
+      "task_duration": 1.1914766950067133,
+      "total_duration": 1.192380428314209,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7321,7 +7321,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -7338,8 +7338,8 @@
           }
         }
       },
-      "task_duration": 0.6212869369774126,
-      "total_duration": 0.6220500469207764,
+      "task_duration": 0.6282727500074543,
+      "total_duration": 0.6290247440338135,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7357,7 +7357,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7374,8 +7374,8 @@
           }
         }
       },
-      "task_duration": 1.16913381498307,
-      "total_duration": 1.1699020862579346,
+      "task_duration": 0.8171146239619702,
+      "total_duration": 0.8176774978637695,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7393,7 +7393,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7410,8 +7410,8 @@
           }
         }
       },
-      "task_duration": 0.6812042380333878,
-      "total_duration": 0.6822915077209473,
+      "task_duration": 0.6548939789645374,
+      "total_duration": 0.655510663986206,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7429,7 +7429,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7446,8 +7446,8 @@
           }
         }
       },
-      "task_duration": 0.7469247319968417,
-      "total_duration": 0.7479953765869141,
+      "task_duration": 0.7158426560345106,
+      "total_duration": 0.7164175510406494,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7465,7 +7465,7 @@
       "expected_output": "secrets-management",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 7
       },
       "attributes": {},
@@ -7482,8 +7482,8 @@
           }
         }
       },
-      "task_duration": 0.7062142899958417,
-      "total_duration": 0.7070512771606445,
+      "task_duration": 0.6491079819970764,
+      "total_duration": 0.6503052711486816,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7501,7 +7501,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1462,
+        "input_tokens": 1519,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7518,8 +7518,8 @@
           }
         }
       },
-      "task_duration": 0.7022959929890931,
-      "total_duration": 0.7030963897705078,
+      "task_duration": 0.6705031679593958,
+      "total_duration": 0.6719887256622314,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7535,10 +7535,10 @@
         "source_skill": "secrets-management"
       },
       "expected_output": "secrets-management",
-      "output": "secrets-management",
+      "output": "credentials",
       "metrics": {
-        "input_tokens": 1459,
-        "output_tokens": 6
+        "input_tokens": 1516,
+        "output_tokens": 4
       },
       "attributes": {},
       "scores": {},
@@ -7546,7 +7546,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": true,
+          "value": false,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -7554,8 +7554,8 @@
           }
         }
       },
-      "task_duration": 0.7368548819795251,
-      "total_duration": 0.7376649379730225,
+      "task_duration": 0.7756474080379121,
+      "total_duration": 0.7764041423797607,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7573,7 +7573,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7590,8 +7590,8 @@
           }
         }
       },
-      "task_duration": 0.9541677850065753,
-      "total_duration": 0.9550044536590576,
+      "task_duration": 0.7501183520071208,
+      "total_duration": 0.7509438991546631,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7609,7 +7609,7 @@
       "expected_output": "secrets-management",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7626,8 +7626,8 @@
           }
         }
       },
-      "task_duration": 0.7137299319729209,
-      "total_duration": 0.714404821395874,
+      "task_duration": 0.7977848669979721,
+      "total_duration": 0.798952579498291,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7645,7 +7645,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1462,
+        "input_tokens": 1519,
         "output_tokens": 7
       },
       "attributes": {},
@@ -7662,8 +7662,8 @@
           }
         }
       },
-      "task_duration": 0.7853569780127145,
-      "total_duration": 0.7862911224365234,
+      "task_duration": 0.7227265609544702,
+      "total_duration": 0.7232332229614258,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7681,7 +7681,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 10
       },
       "attributes": {},
@@ -7698,8 +7698,8 @@
           }
         }
       },
-      "task_duration": 0.8049949959968217,
-      "total_duration": 0.8063230514526367,
+      "task_duration": 1.273510557017289,
+      "total_duration": 1.2742462158203125,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7717,7 +7717,7 @@
       "expected_output": "none",
       "output": "secrets-management",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 6
       },
       "attributes": {},
@@ -7734,8 +7734,8 @@
           }
         }
       },
-      "task_duration": 0.7326921100029722,
-      "total_duration": 0.7392289638519287,
+      "task_duration": 0.6565069410135038,
+      "total_duration": 0.6570940017700195,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7753,7 +7753,7 @@
       "expected_output": "rust-engineering",
       "output": "credentials",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 4
       },
       "attributes": {},
@@ -7770,8 +7770,8 @@
           }
         }
       },
-      "task_duration": 0.6813761809607968,
-      "total_duration": 0.684326171875,
+      "task_duration": 0.6396104550221935,
+      "total_duration": 0.6401901245117188,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7789,7 +7789,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 4
       },
       "attributes": {},
@@ -7806,8 +7806,8 @@
           }
         }
       },
-      "task_duration": 0.7269276430015452,
-      "total_duration": 0.7283287048339844,
+      "task_duration": 1.891569476982113,
+      "total_duration": 1.8928358554840088,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7825,7 +7825,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 4
       },
       "attributes": {},
@@ -7842,8 +7842,8 @@
           }
         }
       },
-      "task_duration": 0.7628565229824744,
-      "total_duration": 0.7643618583679199,
+      "task_duration": 0.6031213740352541,
+      "total_duration": 0.6044497489929199,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7861,7 +7861,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 4
       },
       "attributes": {},
@@ -7878,8 +7878,8 @@
           }
         }
       },
-      "task_duration": 0.7918867730186321,
-      "total_duration": 0.7960753440856934,
+      "task_duration": 0.690322162990924,
+      "total_duration": 0.6917226314544678,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7897,7 +7897,7 @@
       "expected_output": "tooling-feedback",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1467,
+        "input_tokens": 1524,
         "output_tokens": 9
       },
       "attributes": {},
@@ -7914,8 +7914,8 @@
           }
         }
       },
-      "task_duration": 1.2710429850267246,
-      "total_duration": 1.2738440036773682,
+      "task_duration": 0.6528059339616448,
+      "total_duration": 0.6541173458099365,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7933,7 +7933,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1465,
+        "input_tokens": 1522,
         "output_tokens": 7
       },
       "attributes": {},
@@ -7950,8 +7950,8 @@
           }
         }
       },
-      "task_duration": 0.7839425989659503,
-      "total_duration": 0.7879054546356201,
+      "task_duration": 1.3027964740176685,
+      "total_duration": 1.3035809993743896,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -7969,7 +7969,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1469,
+        "input_tokens": 1526,
         "output_tokens": 7
       },
       "attributes": {},
@@ -7986,8 +7986,8 @@
           }
         }
       },
-      "task_duration": 0.8268666410003789,
-      "total_duration": 0.8540754318237305,
+      "task_duration": 0.9390576049918309,
+      "total_duration": 0.9398059844970703,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8005,7 +8005,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1462,
+        "input_tokens": 1519,
         "output_tokens": 7
       },
       "attributes": {},
@@ -8022,8 +8022,8 @@
           }
         }
       },
-      "task_duration": 0.8601300289737992,
-      "total_duration": 0.8633551597595215,
+      "task_duration": 0.6872787660104223,
+      "total_duration": 0.6878972053527832,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8041,7 +8041,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1469,
+        "input_tokens": 1526,
         "output_tokens": 7
       },
       "attributes": {},
@@ -8058,8 +8058,8 @@
           }
         }
       },
-      "task_duration": 0.809861984977033,
-      "total_duration": 0.8132030963897705,
+      "task_duration": 1.3464885410503484,
+      "total_duration": 1.3476243019104004,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8077,7 +8077,7 @@
       "expected_output": "tooling-feedback",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1475,
+        "input_tokens": 1532,
         "output_tokens": 7
       },
       "attributes": {},
@@ -8094,8 +8094,8 @@
           }
         }
       },
-      "task_duration": 1.5098349339677952,
-      "total_duration": 1.5122857093811035,
+      "task_duration": 0.6710767509648576,
+      "total_duration": 0.6722326278686523,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8113,7 +8113,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 10
       },
       "attributes": {},
@@ -8130,8 +8130,8 @@
           }
         }
       },
-      "task_duration": 0.8746013509808108,
-      "total_duration": 0.8776030540466309,
+      "task_duration": 0.707471224013716,
+      "total_duration": 0.7082211971282959,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8149,7 +8149,7 @@
       "expected_output": "pi-offload",
       "output": "pi-offload",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 7
       },
       "attributes": {},
@@ -8166,8 +8166,8 @@
           }
         }
       },
-      "task_duration": 0.8804550109780394,
-      "total_duration": 0.8839206695556641,
+      "task_duration": 1.3057261730427854,
+      "total_duration": 1.306640386581421,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8185,7 +8185,7 @@
       "expected_output": "pi-ticket",
       "output": "pi-ticket",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 6
       },
       "attributes": {},
@@ -8202,8 +8202,8 @@
           }
         }
       },
-      "task_duration": 0.7337033440126106,
-      "total_duration": 0.7380034923553467,
+      "task_duration": 0.7881926690461114,
+      "total_duration": 0.7887482643127441,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8221,7 +8221,7 @@
       "expected_output": "nix-audit-operator",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8238,8 +8238,8 @@
           }
         }
       },
-      "task_duration": 0.7545524509623647,
-      "total_duration": 0.7561361789703369,
+      "task_duration": 0.7370563300210051,
+      "total_duration": 0.7385125160217285,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8257,7 +8257,7 @@
       "expected_output": "rust-engineering",
       "output": "tooling-feedback",
       "metrics": {
-        "input_tokens": 1456,
+        "input_tokens": 1513,
         "output_tokens": 7
       },
       "attributes": {},
@@ -8274,8 +8274,8 @@
           }
         }
       },
-      "task_duration": 0.9341778109665029,
-      "total_duration": 0.9369709491729736,
+      "task_duration": 0.7767551800352521,
+      "total_duration": 0.7772934436798096,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8293,7 +8293,7 @@
       "expected_output": "nix-audit-operator",
       "output": "nix-audit-operator",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8310,8 +8310,8 @@
           }
         }
       },
-      "task_duration": 0.779147783992812,
-      "total_duration": 0.7829992771148682,
+      "task_duration": 0.6969490309711546,
+      "total_duration": 0.6977264881134033,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8329,7 +8329,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1452,
+        "input_tokens": 1509,
         "output_tokens": 4
       },
       "attributes": {},
@@ -8346,8 +8346,8 @@
           }
         }
       },
-      "task_duration": 1.4753525939886458,
-      "total_duration": 1.480116367340088,
+      "task_duration": 0.6480528989923187,
+      "total_duration": 0.6495256423950195,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8365,7 +8365,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1451,
+        "input_tokens": 1508,
         "output_tokens": 4
       },
       "attributes": {},
@@ -8382,8 +8382,8 @@
           }
         }
       },
-      "task_duration": 0.7603187740314752,
-      "total_duration": 0.7619357109069824,
+      "task_duration": 0.697432037035469,
+      "total_duration": 0.6979923248291016,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8401,7 +8401,7 @@
       "expected_output": "verify-service",
       "output": "verify-service",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 6
       },
       "attributes": {},
@@ -8418,8 +8418,8 @@
           }
         }
       },
-      "task_duration": 0.7546863229945302,
-      "total_duration": 0.7627694606781006,
+      "task_duration": 0.6224522920092568,
+      "total_duration": 0.6230709552764893,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8437,7 +8437,7 @@
       "expected_output": "verify-service",
       "output": "verify-service",
       "metrics": {
-        "input_tokens": 1454,
+        "input_tokens": 1511,
         "output_tokens": 6
       },
       "attributes": {},
@@ -8454,8 +8454,8 @@
           }
         }
       },
-      "task_duration": 0.8920367119717412,
-      "total_duration": 0.8968608379364014,
+      "task_duration": 0.7360035949968733,
+      "total_duration": 0.7365472316741943,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8471,10 +8471,10 @@
         "source_skill": "verify-service"
       },
       "expected_output": "verify-service",
-      "output": "kubernetes-gitops",
+      "output": "verify-service",
       "metrics": {
-        "input_tokens": 1456,
-        "output_tokens": 7
+        "input_tokens": 1513,
+        "output_tokens": 6
       },
       "attributes": {},
       "scores": {},
@@ -8482,7 +8482,7 @@
       "assertions": {
         "EqualsExpected": {
           "name": "EqualsExpected",
-          "value": false,
+          "value": true,
           "reason": null,
           "source": {
             "name": "EqualsExpected",
@@ -8490,8 +8490,8 @@
           }
         }
       },
-      "task_duration": 0.7217504300060682,
-      "total_duration": 0.7231972217559814,
+      "task_duration": 0.6928112059831619,
+      "total_duration": 0.6936163902282715,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8509,7 +8509,7 @@
       "expected_output": "e2e-testing",
       "output": "e2e-testing",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 8
       },
       "attributes": {},
@@ -8526,8 +8526,8 @@
           }
         }
       },
-      "task_duration": 0.9924074219889008,
-      "total_duration": 0.9937999248504639,
+      "task_duration": 1.3940988620161079,
+      "total_duration": 1.3946595191955566,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8545,7 +8545,7 @@
       "expected_output": "kubernetes-gitops",
       "output": "kubernetes-gitops",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 7
       },
       "attributes": {},
@@ -8562,8 +8562,8 @@
           }
         }
       },
-      "task_duration": 0.7325647249817848,
-      "total_duration": 0.7350091934204102,
+      "task_duration": 0.6737139360047877,
+      "total_duration": 0.6749570369720459,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8581,7 +8581,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 4
       },
       "attributes": {},
@@ -8598,8 +8598,8 @@
           }
         }
       },
-      "task_duration": 0.6909718129900284,
-      "total_duration": 0.6920790672302246,
+      "task_duration": 0.6673598420456983,
+      "total_duration": 0.6688034534454346,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8617,7 +8617,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8634,8 +8634,8 @@
           }
         }
       },
-      "task_duration": 0.6948868000181392,
-      "total_duration": 0.6958310604095459,
+      "task_duration": 0.6934827690129168,
+      "total_duration": 0.694293737411499,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8653,7 +8653,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8670,8 +8670,8 @@
           }
         }
       },
-      "task_duration": 0.8211706129950471,
-      "total_duration": 0.822293758392334,
+      "task_duration": 0.7978021220187657,
+      "total_duration": 0.7990298271179199,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8689,7 +8689,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8706,8 +8706,8 @@
           }
         }
       },
-      "task_duration": 0.7170107580022886,
-      "total_duration": 0.7177090644836426,
+      "task_duration": 0.9668317299801856,
+      "total_duration": 0.967365026473999,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8725,7 +8725,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1461,
+        "input_tokens": 1518,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8742,8 +8742,8 @@
           }
         }
       },
-      "task_duration": 1.2664700690074824,
-      "total_duration": 1.2697780132293701,
+      "task_duration": 0.7240573990275152,
+      "total_duration": 0.725597620010376,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8761,7 +8761,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1460,
+        "input_tokens": 1517,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8778,8 +8778,8 @@
           }
         }
       },
-      "task_duration": 0.6600001660408452,
-      "total_duration": 0.660855770111084,
+      "task_duration": 1.2774521169485524,
+      "total_duration": 1.2789759635925293,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8797,7 +8797,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1459,
+        "input_tokens": 1516,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8814,8 +8814,8 @@
           }
         }
       },
-      "task_duration": 0.7929500750033185,
-      "total_duration": 0.7941684722900391,
+      "task_duration": 0.6843244640040211,
+      "total_duration": 0.6856167316436768,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8833,7 +8833,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1462,
+        "input_tokens": 1519,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8850,8 +8850,8 @@
           }
         }
       },
-      "task_duration": 0.7828767269966193,
-      "total_duration": 0.7896585464477539,
+      "task_duration": 1.851037800021004,
+      "total_duration": 1.8516364097595215,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8869,7 +8869,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8886,8 +8886,8 @@
           }
         }
       },
-      "task_duration": 0.9656296670436859,
-      "total_duration": 0.9672248363494873,
+      "task_duration": 0.7155203759903088,
+      "total_duration": 0.7163050174713135,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8905,7 +8905,7 @@
       "expected_output": "wireless-lab-diagnostics",
       "output": "wireless-lab-diagnostics",
       "metrics": {
-        "input_tokens": 1466,
+        "input_tokens": 1523,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8922,8 +8922,8 @@
           }
         }
       },
-      "task_duration": 0.8512745070038363,
-      "total_duration": 0.8558907508850098,
+      "task_duration": 0.7774891749722883,
+      "total_duration": 0.77878737449646,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8941,7 +8941,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8958,8 +8958,8 @@
           }
         }
       },
-      "task_duration": 0.9974583789589815,
-      "total_duration": 0.999169111251831,
+      "task_duration": 0.7796944769797847,
+      "total_duration": 0.7801995277404785,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -8977,7 +8977,7 @@
       "expected_output": "pcap-evidence-analysis",
       "output": "pcap-evidence-analysis",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 9
       },
       "attributes": {},
@@ -8994,8 +8994,8 @@
           }
         }
       },
-      "task_duration": 0.8000447549857199,
-      "total_duration": 0.8016133308410645,
+      "task_duration": 0.6926484449650161,
+      "total_duration": 0.6933841705322266,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9013,7 +9013,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1458,
+        "input_tokens": 1515,
         "output_tokens": 10
       },
       "attributes": {},
@@ -9030,8 +9030,8 @@
           }
         }
       },
-      "task_duration": 0.8097224270459265,
-      "total_duration": 0.8135788440704346,
+      "task_duration": 0.7419111730414443,
+      "total_duration": 0.743250846862793,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9049,7 +9049,7 @@
       "expected_output": "rf-chaos-experiment-review",
       "output": "rf-chaos-experiment-review",
       "metrics": {
-        "input_tokens": 1462,
+        "input_tokens": 1519,
         "output_tokens": 10
       },
       "attributes": {},
@@ -9066,8 +9066,8 @@
           }
         }
       },
-      "task_duration": 0.7320537579944357,
-      "total_duration": 0.7365045547485352,
+      "task_duration": 0.9200798359815963,
+      "total_duration": 0.9213216304779053,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9085,7 +9085,7 @@
       "expected_output": "nix-flake-development",
       "output": "nix-flake-development",
       "metrics": {
-        "input_tokens": 1457,
+        "input_tokens": 1514,
         "output_tokens": 10
       },
       "attributes": {},
@@ -9102,8 +9102,8 @@
           }
         }
       },
-      "task_duration": 0.873900459962897,
-      "total_duration": 0.8788764476776123,
+      "task_duration": 0.8233645100262947,
+      "total_duration": 0.824134349822998,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9121,7 +9121,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1463,
+        "input_tokens": 1520,
         "output_tokens": 4
       },
       "attributes": {},
@@ -9138,8 +9138,8 @@
           }
         }
       },
-      "task_duration": 0.7197430820087902,
-      "total_duration": 0.7249021530151367,
+      "task_duration": 0.78772368299542,
+      "total_duration": 0.7891318798065186,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9157,7 +9157,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1455,
+        "input_tokens": 1512,
         "output_tokens": 4
       },
       "attributes": {},
@@ -9174,8 +9174,8 @@
           }
         }
       },
-      "task_duration": 0.7141787129803561,
-      "total_duration": 0.7187058925628662,
+      "task_duration": 0.7244184910086915,
+      "total_duration": 0.7250361442565918,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9193,7 +9193,7 @@
       "expected_output": "none",
       "output": "none",
       "metrics": {
-        "input_tokens": 1453,
+        "input_tokens": 1510,
         "output_tokens": 4
       },
       "attributes": {},
@@ -9210,8 +9210,8 @@
           }
         }
       },
-      "task_duration": 0.7110078319674358,
-      "total_duration": 0.7192752361297607,
+      "task_duration": 0.8199532099533826,
+      "total_duration": 0.820734977722168,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -9237,7 +9237,6 @@
         "nix-flake-development",
         "none",
         "ntfy-notifications",
-        "observability-patterns",
         "orchestrated-review",
         "pcap-evidence-analysis",
         "pi-offload",
@@ -9274,7 +9273,6 @@
           0,
           0,
           0,
-          0,
           0
         ],
         [
@@ -9289,7 +9287,6 @@
           0,
           0,
           1,
-          0,
           0,
           0,
           0,
@@ -9323,7 +9320,6 @@
           0,
           0,
           0,
-          0,
           1,
           0,
           0,
@@ -9333,15 +9329,14 @@
           0,
           0,
           0,
-          5,
+          4,
           0,
+          0,
+          0,
+          2,
           0,
           0,
           1,
-          0,
-          0,
-          1,
-          0,
           0,
           0,
           0,
@@ -9361,7 +9356,6 @@
           0,
           0,
           4,
-          0,
           0,
           0,
           0,
@@ -9404,7 +9398,6 @@
           0,
           0,
           0,
-          0,
           0
         ],
         [
@@ -9414,13 +9407,12 @@
           0,
           0,
           0,
-          15,
+          16,
           0,
           0,
           0,
           0,
           0,
-          1,
           0,
           0,
           0,
@@ -9442,7 +9434,6 @@
           0,
           0,
           8,
-          0,
           0,
           0,
           0,
@@ -9482,7 +9473,6 @@
           0,
           0,
           0,
-          0,
           0
         ],
         [
@@ -9508,7 +9498,6 @@
           0,
           0,
           0,
-          0,
           0
         ],
         [
@@ -9519,18 +9508,17 @@
           0,
           0,
           0,
+          1,
+          0,
+          0,
+          49,
           0,
           0,
           0,
-          50,
+          1,
           0,
           0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          4,
+          3,
           0,
           1,
           0,
@@ -9560,33 +9548,6 @@
           0,
           0,
           0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
           0
         ],
         [
@@ -9602,21 +9563,19 @@
           0,
           2,
           0,
-          0,
-          5,
-          0,
+          4,
           0,
           0,
           0,
           0,
           0,
+          1,
           0,
           0,
           0,
           0
         ],
         [
-          0,
           0,
           0,
           0,
@@ -9642,7 +9601,6 @@
           0
         ],
         [
-          0,
           0,
           0,
           0,
@@ -9683,7 +9641,6 @@
           0,
           0,
           0,
-          0,
           4,
           0,
           0,
@@ -9694,7 +9651,6 @@
           0
         ],
         [
-          0,
           0,
           0,
           0,
@@ -9730,23 +9686,21 @@
           0,
           0,
           0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          17,
+          0,
+          0,
           1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          14,
-          0,
-          0,
-          2,
           0,
           0
         ],
         [
-          0,
           0,
           0,
           0,
@@ -9774,7 +9728,7 @@
         [
           0,
           0,
-          0,
+          1,
           0,
           0,
           0,
@@ -9791,8 +9745,7 @@
           0,
           0,
           0,
-          0,
-          13,
+          12,
           0,
           0,
           0
@@ -9807,7 +9760,6 @@
           0,
           0,
           1,
-          0,
           0,
           0,
           0,
@@ -9830,7 +9782,6 @@
           0,
           0,
           0,
-          1,
           0,
           0,
           0,
@@ -9846,11 +9797,10 @@
           0,
           0,
           0,
-          4,
+          5,
           0
         ],
         [
-          0,
           0,
           0,
           0,

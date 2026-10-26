@@ -1,0 +1,54 @@
+{
+  "name": "solving-pi-offload-20261026-121216",
+  "cases": [
+    {
+      "name": "pi-offload::task-1",
+      "inputs": {
+        "instruction": "# Task: Two Pi decisions\n\n(a) You delegated \"add tests for parse_amount\" and pi-offload printed:\n\n```json\n{\"status\":\"invalid\",\"rounds\":1,\"patch\":\"/home/u/.cache/pi-offload/ab12/change.patch\",\"diffstat\":\"\",\"added_files\":\"\",\"dirty_source\":true,\"check_timed_out\":false,\"new_refs\":[],\"moved_refs\":[],\"summary\":\"Tests already pass.\"}\n```\n\n(b) Next, a teammate wants to offload \"rotate the JWT signing-key handling in auth/keys.rs and\nupdate the token validation\" to Pi, with `cargo test -p auth` as the check.\n\n(c) Then someone asks to offload \"tidy up the README wording so it reads better\"; the repo has no\ncheck that could judge it.\n\nWrite `decision.md` with exactly these three lines first, then a short reason for each:\n`Apply patch: yes|no`, `Offload JWT task: yes|no` and `Offload README task: yes|no`.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "pi-offload",
+        "task_id": "task-1",
+        "output_filename": "decision.md"
+      },
+      "metadata": {
+        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/pi-offload/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "Apply patch: no\nOffload JWT task: no\nOffload README task: no\n\n(a) `dirty_source` is true, meaning uncommitted or untracked changes in the source checkout were not copied into Pi's worktree. The source does not match what Pi saw, so the patch is not trustworthy. Commit or stash the dirty state, re-run the check locally to confirm it actually fails, then re-delegate if needed.\n\n(b) JWT key rotation and token validation are security-sensitive changes that require careful design review and should not be sent to a free inference tier (even through a homelab gateway, the prompts leave the machine). This is architecture and judgement-heavy work, not mechanical. Do this locally with human review.\n\n(c) README wording improvements have no check command. Without a crisp acceptance gate, Pi cannot iterate or verify; \"reads better\" is subjective and not automatable. Do this locally with async review from teammates instead.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-pi-offload-task-1-noi1wiwv",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 3.6739876439678483,
+      "total_duration": 3.689859628677368,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

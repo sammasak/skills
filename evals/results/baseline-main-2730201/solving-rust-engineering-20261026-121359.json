@@ -1,5 +1,5 @@
 {
-  "name": "solving-rust-engineering-20261026-114028",
+  "name": "solving-rust-engineering-20261026-121359",
   "cases": [
     {
       "name": "rust-engineering::task-6",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "# Assessment: Can We Skip Tests on This Change?\n\nSkip tests: no\n\n## Analysis\n\nThe Factum output shows three critical limitations that block any decision to skip the test suite:\n\n1. **`\"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"]`**\n   - `test_inventory` is missing entirely. Factum cannot enumerate which tests exist or which ones the change may affect. This is a hard blocker—we have no evidence that the affected tests are empty or that no tests reference the changed code.\n   - `compiler_semantics` being unavailable means Factum could not perform semantic analysis (trait implementations, type bounds, macro expansions, etc.). The change may have runtime or type-checking effects that static patching cannot see.\n\n2. **`\"candidates\":{\"referencing\":[],...}`**\n   - The empty `referencing` list only means that no *direct* textual references exist in the codebase's parsed syntax. This does NOT mean the change is safe:\n     - Indirect effects (through trait methods, closures, or dynamic dispatch) may not show up here.\n     - The three dependent packages (`ledger-sync`, `ledger-cli`, `ledger-web`) are listed as \"dependent_only,\" not \"referencing\"—they may still be semantically affected.\n\n3. **`\"verification\":{\"status\":\"not_run\"}`**\n   - Factum has not run its own verification checks. There is no positive evidence of safety, only an absence of one signal (textual references).\n\n## Command to Decide Merge\n\nPer ADR-026/ADR-027, run the deterministic homelab gate:\n\n```bash\ndevenv tasks run rust:ci\n```\n\nThis gate runs:\n- Strict clippy and cargo-deny\n- rustdoc checks\n- nextest + doctests (full test suite)\n- Coverage validation (if `rust:verify` is required for this merge)\n\nOnly after `rust:ci` passes (and `rust:verify` if applicable) is the change eligible for merge. The absence of Factum evidence is not a substitute for the deterministic test suite.",
+        "content": "# Assessment: Test Skip Decision\n\n## Verdict\n**Skip tests: no**\n\n## Analysis\n\nThe Factum output shows `\"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"]`. Critically, **`test_inventory` is unavailable**, meaning Factum could not enumerate which tests exercise the changed code. This is an **incomplete evidence state**, not a clean bill of health.\n\nThe `candidates.dependent_only` field lists three packages with no direct references to the change—but this only means Factum's static analysis did not find call chains. It does not mean those packages are unaffected:\n\n1. The change may affect shared test fixtures, error types, or configuration that dependent packages use indirectly.\n2. Integration tests in those packages may exercise the changed behavior through public APIs that Factum's brief view does not capture.\n3. The unavailable `test_inventory` is a red flag: Factum cannot tell you what *should* run.\n\n## Decision\n\nPer ADR-026 + ADR-027 and the homelab Rust engineering standard:\n\n**Run the deterministic gates before merge:**\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nFactum is advisory. An empty or partial report does not override the required checks. Merge only after `rust:verify` (coverage floor + ci) passes.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-rust-engineering-task-6-p8w7npdl",
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-kpooyqtu",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 6.873567581002135,
-      "total_duration": 6.943759202957153,
+      "task_duration": 5.063678060017992,
+      "total_duration": 5.113677501678467,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

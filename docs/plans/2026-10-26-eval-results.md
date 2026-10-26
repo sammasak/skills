@@ -3,59 +3,68 @@
 Harness: `evals/` (pydantic-evals; dispatcher and solver `claude-haiku-4-5-20251001`,
 temperature 0 for triggers), credential: sops `claude_oauth_token`, Python 3.12 from nixpkgs.
 Baseline arm = `main` `2730201` skills with this branch's `evals/` overlaid, so both arms run the
-same cases and graders. Branch arm: skill bodies at `dd7f9b0` (nix-audit-operator) / `dd8f0ec`
-(others, unchanged since); trigger descriptions at `dd7f9b0`.
+same cases and graders. Branch arm = skills at `570baa1` (unchanged through `4d1a40e`, which
+only fixed a grader). Results are committed for both arms; reproduce:
 
-Reproduce: `python3 evals/results/baseline-main-2730201/compare.py evals/results/baseline-main-2730201 evals/results`.
+```sh
+python3 evals/results/baseline-main-2730201/compare.py evals/results/baseline-main-2730201 evals/results/branch-dogfood
+```
 
 ## Solving (skill body advice), n=3 per task
 
 | Task | Tests | main | branch |
 |---|---|---|---|
 | nix-audit-operator/task-1 | missing scanner evidence is UNKNOWN | 3/3 | 3/3 |
-| nix-audit-operator/task-2 | json-only binary: no `--json-out`, exit 3 kept apart from exit 1, no unasked gate | **0/3** | **3/3** |
+| nix-audit-operator/task-2 | json-only binary, run against a stub: clean → two JSON snapshots; exit 1 kept; exit 3 not left usable; stdout only; no unasked gate | **0/3** | **2/3** |
 | tooling-feedback/task-1 | product / NixOS / skill / platform / GitOps routing | 3/3 | 3/3 |
-| tooling-feedback/task-2 | redaction + no filing without authorization | **0/3** | **3/3** |
+| tooling-feedback/task-2 | redaction + no filing without authorization | 2/3 | 3/3 |
 | rust-engineering/task-6 | Factum evidence is advisory; name the real gate | 3/3 | 3/3 |
 | sdlc-pipeline/task-1 | `sdlc-status` exit 0 ≠ green; per-repo stages | 3/3 | 3/3 |
 | pi-offload/task-1 | `invalid` + dirty source; no security or no-check offload | 3/3 | 3/3 |
-| **Total** | | **15/21** | **21/21** |
+| **Total** | | **17/21** | **20/21** |
 
-Five of seven tasks also pass on main: they guard against regressions but do not separate the
-old skills from the new. The two discriminating tasks:
+Five tasks pass on both arms: they guard against regressions but do not separate old and new
+skills. nix-audit task-2 is the real discriminator. Its grader is behavioural: it runs the
+model's `snapshot.sh` against a stub `nix-audit` (json-only `--help`, JSON on stdout, noise on
+stderr) and a stub `flock`, under three exit-code scenarios, then checks which snapshots
+survive; names and paths are held out of the skill. The branch's remaining failure used
+`if ! cmd; then rc=$?`, which captures the inverted status. tooling-feedback/task-2 on main
+varied between 0/3 and 3/3 across this cycle's runs: main leaks sometimes, the branch did not
+in its final runs.
 
-- nix-audit task-2 uses filenames and paths that appear in no skill (held out). An earlier
-  version graded an irrelevant `rm -f` with the skill's own filenames; independent review caught
-  it and it was replaced before this measurement. The branch scored 1/3 once while the json-only
-  path was prose only; `dd7f9b0` made it a snippet.
-- tooling-feedback task-2 on main was 3/3 in one earlier run and 0/3 in two, so main leaks
-  sometimes. One run of this cycle's own edit also leaked (0/3) before the redaction rule was
-  rewritten.
+How this number got here (all earlier runs discarded, not reported):
 
-Grader changes after seeing outputs were format-only: verdict lines may carry `#`, `*` or `-`
-markup (`## Skip tests: no` is correct and was rejected); semantics did not change. A runner bug
-(`.md` artifacts cut to their first code fence) was fixed and its runs discarded.
+- A runner bug cut `.md` artifacts to their first code fence (fixed).
+- One grader pattern rejected `## Skip tests: no` (format-only change).
+- Independent review round 1 found the first task-2 grader graded an irrelevant `rm -f` with the
+  skill's own filenames; round 2 found its regex replacement passed three broken scripts. The
+  behavioural grader replaced both. A correct script that took the real host lock then hung
+  while another session held it, so the grader stubs `flock` too.
+- A redaction regression from this cycle (0/3) was fixed before measurement.
 
-## Trigger (description routing), 256 cases, n=1
+## Trigger (description routing), 256 cases, n=1, both runs complete (0 errors)
 
 | | main | branch |
 |---|---|---|
-| Accuracy | 230/256 (89.8%) | 230/256 (89.8%) |
+| Accuracy | 229/256 (89.5%) | 231/256 (90.2%) |
 
-**No measured routing gain**: 5 fixed, 5 broken. One branch run lost 14 cases to API timeouts and
-was rerun in full after a back-off; only complete runs are reported.
+A +2 within run-to-run noise (earlier runs of the same arms moved by ±3): **no claimed routing
+gain**. Changed outcomes:
 
-- Fixed: "which crates does my uncommitted Rust change affect? Use factum" and "summarize clippy
-  diagnostics with factum" (now rust-engineering), an Axum logging hard-negative, a container
-  hard-negative, "review this PR across quality categories" (now orchestrated-review).
-- Broke: "independent review verdict for the sdlc review stage" → sdlc-pipeline (query names the
-  sdlc stage; label kept); "run the tests and fix the failures" → pi-offload; and three in suites
-  whose descriptions this branch did not change (deep-modules → lean-code, knowledge-vault →
-  lean-code, secrets-management → credentials): the dispatcher's context changed because
-  pi-offload and pi-ticket are now listed.
-- Still failing in touched suites: newtype query → deep-modules; "Add a new subcommand to the
-  factum CLI" → tooling-feedback; "nix-audit reports two different findings…; file a bug" →
-  nix-audit-operator; "run the tests and fix the failures" → pi-offload.
+- Fixed (6): Factum "which crates does my change affect" and "summarize clippy diagnostics" →
+  rust-engineering; native-OTLP collector privacy → kubernetes-gitops (was the archived
+  `observability-patterns`); "check pod status and the public URL" → verify-service; an Axum
+  logging and a container-image hard negative.
+- Broke (4): "independent review verdict for the sdlc review stage" → sdlc-pipeline (the query
+  names the sdlc stage); "run the tests and fix the failures" → pi-offload; deep-modules →
+  lean-code and secrets-management → credentials in suites whose descriptions did not change.
+
+Failing on the branch in suites this branch changed (computed from `git diff`, all 9):
+container-image-size and async-Rust negatives → rust-engineering (kubernetes-gitops suite);
+NixOS-image deploy → rust-engineering and cluster-SOPS → kubernetes-gitops (nix-flake suite);
+"review this PR across quality categories" → none (pi-ticket); newtype → deep-modules;
+"run the tests and fix the failures" → pi-offload; "add a subcommand to the factum CLI" →
+tooling-feedback; "nix-audit reports two findings…; file a bug" → nix-audit-operator.
 
 New coverage: pi-offload/pi-ticket suites (the dispatcher could never return them before), Factum,
 nix-audit, sdlc, Fish/`nixos:qa`, `gitops:validate` and native-OTLP privacy cases.

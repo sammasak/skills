@@ -1,0 +1,54 @@
+{
+  "name": "solving-sdlc-pipeline-20261026-121803",
+  "cases": [
+    {
+      "name": "sdlc-pipeline::task-1",
+      "inputs": {
+        "instruction": "# Task: Is this repo's pipeline green?\n\nIn a repo whose devenv enables `platform.sdlc`:\n\n```\n$ devenv shell -q -- sdlc-status --context; echo \"exit=$?\"\nSDLC machine: billing -- migrate (unverified) -- not yet verified\n\n### Current stage brief (migrate)\n\nReplay migrations against disposable PostgreSQL.\nexit=0\n$ devenv shell -q -- sh -c 'jq -c .order \"$SDLC_MACHINE\"'\n[\"migrate\",\"contract\",\"e2e\"]\n```\n\nA release script asks: \"sdlc-status exited 0 — is the pipeline green?\"\n\nWrite `status.md` with a line `Green: yes` or `Green: no`, one sentence why, the stages that must\npass for this repo, and the single command whose exit code actually decides.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "sdlc-pipeline",
+        "task_id": "task-1",
+        "output_filename": "status.md"
+      },
+      "metadata": {
+        "test_script": "/home/lukas/skills/evals/sdlc-pipeline/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe pipeline is not yet verified. `sdlc-status --context` exiting 0 means the machine is readable and accessible, not that stages have passed; the output shows \"migrate (unverified)\", indicating no stages have been verified yet.\n\nStages that must pass for this repo: migrate, contract, e2e\n\nThe single command whose exit code actually decides: `devenv shell -q -- devenv tasks run sdlc:done`",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-7jkyda3s",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 1.6899826579610817,
+      "total_duration": 1.7080209255218506,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

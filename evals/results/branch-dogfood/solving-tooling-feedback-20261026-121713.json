@@ -1,5 +1,5 @@
 {
-  "name": "solving-tooling-feedback-20261026-114000",
+  "name": "solving-tooling-feedback-20261026-121713",
   "cases": [
     {
       "name": "tooling-feedback::task-1",
@@ -10,7 +10,7 @@
         "output_filename": "routing.md"
       },
       "metadata": {
-        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/tooling-feedback/tasks/task-1/test.sh",
+        "test_script": "/home/lukas/skills/evals/tooling-feedback/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
@@ -19,7 +19,7 @@
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-tooling-feedback-task-1-d7nijua6",
+        "tmpdir": "/tmp/eval-tooling-feedback-task-1-jt7iw3ca",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 1.2339737910078838,
-      "total_duration": 1.273263692855835,
+      "task_duration": 1.1836789520457387,
+      "total_duration": 1.2011971473693848,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -53,16 +53,16 @@
         "output_filename": "issue.md"
       },
       "metadata": {
-        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/tooling-feedback/tasks/task-2/test.sh",
+        "test_script": "/home/lukas/skills/evals/tooling-feedback/tasks/task-2/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
       "output": {
-        "content": "Repo: sammasak/llm-gateway\n\n### Problem and impact\nThe gateway rejected all requests from the `pi` project alias with HTTP 429 (quota exhausted) for approximately two hours after midnight UTC on 2026-10-25, despite the upstream provider dashboard showing available free quota. This blocked production traffic from a named user and project during the outage window.\n\n### Actual / expected\n- Actual: POST /v1/chat/completions returned 429 with `{\"error\":\"quota exhausted\",\"retry_after\":3600}` for all requests from project alias `pi` between 2026-10-25T00:14:03Z and 2026-10-25T02:10:44Z (at least).\n- Expected: Requests should succeed or fail based on actual provider quota state; gateway quota tracking should match provider dashboard.\n- Frequency: All requests during the two-hour window (exact count not reported); resolved without user intervention by 02:10:44Z.\n\n### Reproduction\nNot yet reproduced on demand. Observed in production:\n```\nPOST /v1/chat/completions HTTP/1.1\nAuthorization: Bearer sk-live-***[redacted]***\nX-Project-Key: pk_***[redacted]***\nproject=pi user=anna.berg@example.com\n\n2026-10-25T00:14:03Z -> HTTP 429 {\"error\":\"quota exhausted\",\"retry_after\":3600}\n```\n\nExit code / HTTP status: 429\n\n### Environment and provenance\n- Tool: llm-gateway\n- Gateway image digest/revision: not provided; needed to identify deployed version and features\n- Project alias: `pi` (provider, quota model, and associated API key not disclosed here)\n- Provider: referenced as \"provider dashboard\" but identity unknown\n- Host/cluster: assumed homelab Kubernetes cluster; no Flux revision, ingress config, or NetworkPolicy details provided\n- Request timestamp: 2026-10-25T00:14:03Z to 2026-10-25T02:10:44Z UTC\n- User agent/client: not captured\n\n### Evidence and limitations\n- Raw request log excerpt from 2026-10-25, showing one 429 and one 200 response.\n- User confirmed provider dashboard displayed unused free quota during outage.\n- **Not verified:** exact gateway version, quota accounting mechanism (local cache vs. real-time provider API), whether quota state was stale or incorrectly synced, whether other projects were affected, whether any errors appear in gateway logs, whether quota limit was reset by provider or locally cleared by an operator action, root cause of recovery without user intervention.\n- **Cannot conclude:** whether this is a gateway bug, a provider-side quota tracking error, a clock skew issue, or a configuration problem without logs and version details.\n\n### Proposed acceptance criteria\n- [ ] Identify gateway version deployed during outage (image digest or Flux revision for homelab-gitops)\n- [ ] Inspect gateway logs for 2026-10-25T00:00:00Z to 2026-10-25T03:00:00Z; check quota sync, provider API calls, and any errors for project `pi`\n- [ ] Reproduce: confirm whether quota state was stale, and whether a manual quota refresh or provider resync would have cleared the 429 earlier\n- [ ] If quota cache is stale: add provider quota refresh interval visibility and user-triggered refresh command\n- [ ] If provider API returned incorrect quota: confirm whether a clock or schema version mismatch caused misinterpretation\n- [ ] Document quota exhaustion vs. transient provider error distinction in gateway error responses\n\nFiled: no",
+        "content": "Repo: sammasak/llm-gateway\n\n### Problem and impact\nGateway quota enforcement returned HTTP 429 (quota exhausted) for all requests from the `pi` project for approximately two hours after 2026-10-25T00:14:03Z, blocking user access despite the upstream provider dashboard showing available free quota. Production traffic was interrupted during this window.\n\n### Actual / expected\n- Actual: POST /v1/chat/completions with valid credentials returned 429 with `retry_after: 3600` for every request from project `pi` between 2026-10-25T00:14:03Z and 2026-10-25T02:10:44Z.\n- Expected: Requests should have succeeded when upstream provider quota remained available.\n- Frequency: 100% of requests during the affected window; issue self-resolved after ~2 hours.\n\n### Reproduction\nNot yet attempted by reporter. Requires:\n1. Access to a project with active gateway quota and upstream provider free tier\n2. Monitor provider dashboard quota availability in parallel\n3. Send POST requests to `/v1/chat/completions` with valid project credentials\n4. Compare returned 429 errors against actual provider quota status\n\nMinimal command (placeholder credentials):\n```sh\ncurl -X POST https://gateway.example.com/v1/chat/completions \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"X-Project-Key: <key>\" \\\n  -d '{\"model\":\"gpt-4\",\"messages\":[{\"role\":\"user\",\"content\":\"test\"}]}'\n```\n\nExit code: 429\n\n### Environment and provenance\n- Tool: llm-gateway / image digest and deployment revision unknown\n- Gateway version/revision: not provided\n- Host/cluster: homelab-gitops deployment (exact cluster and ingress not specified)\n- Project alias: `pi`\n- Provider: name unknown; dashboard showed unused free quota\n- Request timestamp: 2026-10-25T00:14:03Z–02:10:44Z UTC\n- Schema: OpenAI-compatible chat/completions endpoint\n\n### Evidence and limitations\n**Raw data preserved (credentials redacted):**\n```\n2026-10-25T00:14:03Z POST /v1/chat/completions project=pi user=<user>\n  Authorization: Bearer <token>\n  X-Project-Key: <key>\n  -> 429 {\"error\":\"quota exhausted\",\"retry_after\":3600}\n2026-10-25T02:10:44Z POST /v1/chat/completions project=pi -> 200\n```\n\n**Not verified:**\n- Root cause: local quota cache stale/out of sync vs. provider state, clock skew, quotas applied to wrong project/account alias, or rate-limit vs. quota confusion\n- Whether issue is reproducible on demand or was transient\n- Whether other projects were affected simultaneously\n- Gateway logs, metrics, or provider audit trail during the window\n- Whether `retry_after: 3600` was synthetic or from upstream provider\n\n**Cannot conclude:** Whether this is a gateway bug, provider API bug, configuration issue, or transient state machine anomaly without server-side telemetry.\n\n### Proposed acceptance criteria\n- [ ] Gateway quota state reconciliation logic reviewed for clock-dependent or cache-expiry bugs\n- [ ] Local quota cache compared against live provider state at project/alias boundary\n- [ ] If reproducible: minimal test case with mock provider quota changes passes before and after fix\n- [ ] Request logs and provider audit trail from 2026-10-25T00:00–03:00Z reviewed by on-call maintainer\n- [ ] Determine whether 429 was issued by gateway or forwarded from provider, and why `retry_after` value was chosen\n- [ ] User-facing error message or logs improved to distinguish quota exhaustion from transient rate limits\n\nFiled: no",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-tooling-feedback-task-2-ilz1t7tl",
+        "tmpdir": "/tmp/eval-tooling-feedback-task-2-m5jigdo7",
         "returncode": 0
       },
       "metrics": {},
@@ -72,16 +72,16 @@
       "assertions": {
         "BashGrader": {
           "name": "BashGrader",
-          "value": false,
-          "reason": "FAIL: leaked anna.berg@example.com",
+          "value": true,
+          "reason": "PASS",
           "source": {
             "name": "BashGrader",
             "arguments": null
           }
         }
       },
-      "task_duration": 10.067036286985967,
-      "total_duration": 10.083629369735718,
+      "task_duration": 9.698491169023328,
+      "total_duration": 9.72297716140747,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

@@ -1,5 +1,5 @@
 {
-  "name": "solving-sdlc-pipeline-20261026-113930",
+  "name": "solving-sdlc-pipeline-20261026-121649",
   "cases": [
     {
       "name": "sdlc-pipeline::task-1",
@@ -10,16 +10,16 @@
         "output_filename": "status.md"
       },
       "metadata": {
-        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/sdlc-pipeline/tasks/task-1/test.sh",
+        "test_script": "/home/lukas/skills/evals/sdlc-pipeline/tasks/task-1/test.sh",
         "quality_rubric": null
       },
       "expected_output": null,
       "output": {
-        "content": "# SDLC Status\n\nGreen: no\n\nThe pipeline is not green because the current stage \"migrate\" reports \"(unverified)\" — no stage has yet passed its guard. Exit code 0 from `sdlc-status` means the tool ran successfully and reported state; it does not mean the pipeline passed. The exit code that decides is `devenv shell -q -- devenv tasks run sdlc:done`.\n\nStages that must pass for this repo (in order): migrate, contract, e2e.",
+        "content": "# SDLC Pipeline Status\n\nGreen: no\n\nThe exit code 0 from `sdlc-status --context` means the tool ran successfully and reported state; it does not mean the pipeline passed. The \"unverified\" status on the migrate stage and the incomplete graph indicate stages have not yet been verified.\n\n## Stages that must pass for this repo\n\n1. migrate\n2. contract\n3. e2e\n\n## Command that decides pipeline status\n\n```\ndevenv shell -q -- devenv tasks run sdlc:done\n```\n\nThis command exits 0 only when every configured stage (migrate, contract, e2e) has passed its guard or obtained an approved verdict. Its exit code is the sole authoritative verdict; `sdlc-status --context` is read-only state reporting and always succeeds regardless of pass/fail.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-3bxxh9we",
+        "tmpdir": "/tmp/eval-sdlc-pipeline-task-1-34bmu_gx",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 2.0961945970193483,
-      "total_duration": 2.1671905517578125,
+      "task_duration": 2.6664193379692733,
+      "total_duration": 2.684781789779663,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",

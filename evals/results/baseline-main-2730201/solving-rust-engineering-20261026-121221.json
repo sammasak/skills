@@ -1,5 +1,5 @@
 {
-  "name": "solving-rust-engineering-20261026-114114",
+  "name": "solving-rust-engineering-20261026-121221",
   "cases": [
     {
       "name": "rust-engineering::task-6",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "# Assessment: Test Skip Eligibility\n\n## Recommendation\n**Skip tests: no**\n\n## Analysis\n\nThe Factum report shows:\n- `referencing: []` — no packages reference the changed items\n- `unavailable: [\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"]` — **test inventory is unavailable**\n- `verification: {\"status\":\"not_run\"}` — verification did not run\n\nThe empty `referencing` list is **not sufficient to skip tests**. The `unavailable` array contains `test_inventory`, which means Factum could not determine which tests exercise the changed code. This is the critical gap: Factum cannot confirm that no tests cover the change, only that no *direct package dependencies* reference it. A change to internal implementation (a private function, macro, or module) may have zero referencing packages but still need its own package's test suite to validate behavior.\n\nAdditionally, `unavailable` indicates Factum lacked the compiler semantics and feature/target configuration data needed for a complete analysis. Under incomplete evidence, the safe path is the deterministic one.\n\n## Decision Gate\n\nRun the homelab standard gates before merge:\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nThese are the repo's required pre-merge checks per ADR-026. Factum's advisory evidence is useful for *targeting* expensive tasks (e.g., mutation testing), but does not replace the deterministic gate suite. An empty or ambiguous Factum report means: continue with the full workflow, not: skip to merge.\n\nIf the change is confirmed low-risk by the full gate output (no clippy, test, or doctests failures; coverage above floor), merge proceeds. The gates decide, not the Factum brief.",
+        "content": "# Assessment: Test Skip Decision\n\n## Finding\n\nThe Factum report shows:\n- `referencing: []` — no packages reference the changed items\n- `dependent_only: [ledger-sync, ledger-cli, ledger-web]` — these depend on the changed code *transitively*, not directly\n- `unavailable: [\"compiler_semantics\", \"feature_target_cfg\", \"test_inventory\"]` — the test inventory is **unavailable**, meaning Factum cannot enumerate the affected test suite\n\n## Decision\n\n**Skip tests: no**\n\n## Rationale\n\nThe absence of direct references does not mean the change is safe. Factum's `test_inventory` is unavailable, so we cannot verify whether the changed code is exercised by the test suite at all. The `dependent_only` packages may contain integration tests that cover the change's effects indirectly—and those tests exist, but Factum cannot list them.\n\nSkipping tests would violate the deterministic gates: the `unavailable` fields are explicit caveats that evidence is incomplete. An empty `referencing` list combined with missing test inventory is precisely the scenario where the mechanical scan is *least* informative.\n\n## Merge Path\n\nRun the required project checks; do not shortcut based on Factum's incomplete evidence:\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nIf both gates pass, proceed to review and merge. The `unavailable` fields confirm that Factum is advisory—the deterministic workflow (CI + verify) is the actual decision point.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-rust-engineering-task-6-doipiapg",
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-w9qd492e",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 5.745333198981825,
-      "total_duration": 5.798537492752075,
+      "task_duration": 4.685177974984981,
+      "total_duration": 4.698088884353638,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
