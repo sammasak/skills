@@ -1,5 +1,5 @@
 {
-  "name": "solving-nix-audit-operator-20261026-123110",
+  "name": "solving-nix-audit-operator-20261026-123253",
   "cases": [
     {
       "name": "nix-audit-operator::task-1",
@@ -15,11 +15,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "Verdict: UNKNOWN\n\nExit code 3 and `policy.complete: false` mean this scan has incomplete coverage — vulnix failed because the derivation was built elsewhere. Grype found no findings, but a single scanner is not sufficient for a clean verdict when the intended policy requires more.\n\nThe evidence shows: grype scanned successfully and found nothing. The evidence does not show: whether vulnix would have found vulnerabilities, since it cannot run without the local .drv file.\n\nHonest report: \"Grype scan found 0 findings; vulnix coverage is unavailable (built on another host). Comparison against a baseline requires both scanners to complete.\" If a baseline exists, run `nix-audit diff` to check for new violations relative to the known state, documented as grype-only.\n\nTo claim clean, either rebuild the candidate on this host or use an explicit `--scanners grype` comparison with full acknowledgment of reduced coverage.",
+        "content": "Verdict: UNKNOWN\n\nThe scan exited 3 (incomplete evidence) because vulnix failed — the candidate was built on another host and has no local derivations available. Grype alone found 0 findings, but the policy requires both scanners; with vulnix absent, coverage is unknown, not zero.\n\nTo report clean, re-run the scan on the build host (Lenovo) where derivations exist, or explicitly run a grype-only comparison with `--scanners grype` and document it as grype-only coverage. The current candidate.json is incomplete and cannot support a clean claim.",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-__jt17xi",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-gmfqaxbj",
         "returncode": 0
       },
       "metrics": {},
@@ -37,8 +37,8 @@
           }
         }
       },
-      "task_duration": 3.3883149989997037,
-      "total_duration": 3.3996660709381104,
+      "task_duration": 2.1256616750033572,
+      "total_duration": 2.1379735469818115,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
@@ -58,11 +58,11 @@
       },
       "expected_output": null,
       "output": {
-        "content": "#!/bin/bash\nset -euo pipefail\n\n# snapshot.sh: capture two generations for nix-audit diff\n# Requires: $AUDIT_POLICY (absolute path), $NEXT_GEN (absolute path)\n# Produces: gen-now.json, gen-next.json (only if scans complete)\n\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"error: AUDIT_POLICY not set\" >&2\n  exit 2\nfi\n\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"error: AUDIT_POLICY does not exist: $AUDIT_POLICY\" >&2\n  exit 2\nfi\n\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"error: NEXT_GEN not set\" >&2\n  exit 2\nfi\n\nif [[ ! -e \"$NEXT_GEN\" ]]; then\n  echo \"error: NEXT_GEN does not exist: $NEXT_GEN\" >&2\n  exit 2\nfi\n\n# Ensure output directory is writable\n: > gen-now.json.tmp || {\n  echo \"error: cannot write to current directory\" >&2\n  exit 2\n}\nrm -f gen-now.json.tmp\n\n# Use flock to serialize heavy scans if other nix-audit operations are running\nLOCK=\"/tmp/$(hostname)-heavy-work.lock\"\nLOCK_FD=200\n\nexec {LOCK_FD}>\"$LOCK\"\nflock \"$LOCK_FD\"\n\ntrap 'exec {LOCK_FD}>&-' EXIT\n\n# Snapshot current system\necho \"Scanning /run/current-system...\" >&2\nrc_now=0\nnix-audit scan /run/current-system --policy \"$AUDIT_POLICY\" --json > gen-now.json || rc_now=$?\n\ncase $rc_now in\n  0|1)\n    echo \"Current system scanned (exit $rc_now)\" >&2\n    ;;\n  3)\n    echo \"error: scanner failed or incomplete for current system (exit 3)\" >&2\n    rm -f gen-now.json\n    exit 3\n    ;;\n  *)\n    echo \"error: unexpected exit code $rc_now from current system scan\" >&2\n    rm -f gen-now.json\n    exit \"$rc_now\"\n    ;;\nesac\n\n# Snapshot candidate generation\necho \"Scanning $NEXT_GEN...\" >&2\nrc_next=0\nnix-audit scan \"$NEXT_GEN\" --policy \"$AUDIT_POLICY\" --json > gen-next.json || rc_next=$?\n\ncase $rc_next in\n  0|1)\n    echo \"Candidate generation scanned (exit $rc_next)\" >&2\n    ;;\n  3)\n    echo \"error: scanner failed or incomplete for candidate (exit 3)\" >&2\n    rm -f gen-now.json gen-next.json\n    exit 3\n    ;;\n  *)\n    echo \"error: unexpected exit code $rc_next from candidate scan\" >&2\n    rm -f gen-now.json gen-next.json\n    exit \"$rc_next\"\n    ;;\nesac\n\necho \"Snapshots ready: gen-now.json, gen-next.json\" >&2\nexit 0",
+        "content": "#!/usr/bin/env bash\nset -euo pipefail\n\n# Snapshot two generations with nix-audit for later diff.\n# Requires: $AUDIT_POLICY (path to policy file), $NEXT_GEN (path to candidate system)\n# Produces: gen-now.json, gen-next.json (or incomplete variants on scanner failure)\n# Exit: 0 if both complete, 1 if both have findings, 3 if any scanner failed\n\nrc_now=0\nrc_next=0\n\nif [[ -z \"${AUDIT_POLICY:-}\" ]]; then\n  echo \"error: AUDIT_POLICY not set\" >&2\n  exit 2\nfi\n\nif [[ ! -f \"$AUDIT_POLICY\" ]]; then\n  echo \"error: policy file not found: $AUDIT_POLICY\" >&2\n  exit 2\nfi\n\nif [[ -z \"${NEXT_GEN:-}\" ]]; then\n  echo \"error: NEXT_GEN not set\" >&2\n  exit 2\nfi\n\nif [[ ! -e \"$NEXT_GEN\" ]]; then\n  echo \"error: candidate not found: $NEXT_GEN\" >&2\n  exit 2\nfi\n\n# Refuse to overwrite partial snapshots from a previous failed run\nfor f in gen-now.json gen-next.json gen-now.incomplete.json gen-next.incomplete.json; do\n  if [[ -f \"$f\" ]]; then\n    echo \"error: $f already exists (remove or rename before retrying)\" >&2\n    exit 2\n  fi\ndone\n\necho \"Snapshotting /run/current-system...\" >&2\nnix-audit scan /run/current-system --policy \"$AUDIT_POLICY\" --json > gen-now.json || rc_now=$?\n\ncase $rc_now in\n  0|1)\n    # Complete report (0 = clean, 1 = has findings)\n    echo \"  exit $rc_now: saved to gen-now.json\" >&2\n    ;;\n  3)\n    # Scanner failed; preserve as incomplete to avoid mistaken use\n    mv gen-now.json gen-now.incomplete.json\n    echo \"  exit $rc_now: incomplete, saved to gen-now.incomplete.json\" >&2\n    ;;\n  *)\n    # Other errors (usage, crash, etc.)\n    rm -f gen-now.json\n    echo \"  exit $rc_now: snapshot failed, cleaned up\" >&2\n    ;;\nesac\n\necho \"Snapshotting $NEXT_GEN...\" >&2\nnix-audit scan \"$NEXT_GEN\" --policy \"$AUDIT_POLICY\" --json > gen-next.json || rc_next=$?\n\ncase $rc_next in\n  0|1)\n    # Complete report\n    echo \"  exit $rc_next: saved to gen-next.json\" >&2\n    ;;\n  3)\n    # Scanner failed; mark as incomplete\n    mv gen-next.json gen-next.incomplete.json\n    echo \"  exit $rc_next: incomplete, saved to gen-next.incomplete.json\" >&2\n    ;;\n  *)\n    # Other errors\n    rm -f gen-next.json\n    echo \"  exit $rc_next: snapshot failed, cleaned up\" >&2\n    ;;\nesac\n\n# Exit with the worst outcome\nif [[ $rc_now -eq 3 ]] || [[ $rc_next -eq 3 ]]; then\n  exit 3\nelif [[ $rc_now -gt 1 ]] || [[ $rc_next -gt 1 ]]; then\n  exit 2\nelif [[ $rc_now -eq 1 ]] || [[ $rc_next -eq 1 ]]; then\n  exit 1\nelse\n  exit 0\nfi",
         "stdout": "",
         "stderr": "",
         "timed_out": false,
-        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-mwozljyn",
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-fddzkv10",
         "returncode": 0
       },
       "metrics": {},
@@ -72,16 +72,16 @@
       "assertions": {
         "BashGrader": {
           "name": "BashGrader",
-          "value": false,
-          "reason": "FAIL: a complete current snapshot must survive the candidate's exit 3",
+          "value": true,
+          "reason": "PASS",
           "source": {
             "name": "BashGrader",
             "arguments": null
           }
         }
       },
-      "task_duration": 8.415628593997099,
-      "total_duration": 8.560182571411133,
+      "task_duration": 8.503072901978157,
+      "total_duration": 8.612325191497803,
       "source_case_name": null,
       "trace_id": "00000000000000000000000000000000",
       "span_id": "0000000000000000",
