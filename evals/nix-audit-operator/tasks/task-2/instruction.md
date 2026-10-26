@@ -18,5 +18,6 @@ Options:
 
 The candidate is already built at `$NEXT_GEN`. Write `snapshot.sh`: a bash script that
 produces `gen-now.json` (from `/run/current-system`) and `gen-next.json` (from `$NEXT_GEN`)
-with the policy file whose path is in `$AUDIT_POLICY`, ready for a later `nix-audit diff`. A snapshot from a
-scan that could not complete must not be left looking like a usable one. Do not run a gate.
+with the policy file whose path is in `$AUDIT_POLICY`, ready for a later `nix-audit diff`. Keep every report the
+tool printed as evidence (rename if needed, never delete). A snapshot from a scan that could
+not complete must not be left looking like a complete one. Do not run a gate.

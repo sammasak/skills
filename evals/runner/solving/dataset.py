@@ -43,6 +43,7 @@ OUTPUT_FILENAMES: dict[tuple[str, str], str] = {
     ("rust-engineering", "task-6"): "assessment.md",
     ("nix-audit-operator", "task-1"): "verdict.md",
     ("nix-audit-operator", "task-2"): "snapshot.sh",
+    ("nix-audit-operator", "task-3"): "rescan.md",
     ("tooling-feedback", "task-1"): "routing.md",
     ("tooling-feedback", "task-2"): "issue.md",
     ("sdlc-pipeline", "task-1"): "status.md",
