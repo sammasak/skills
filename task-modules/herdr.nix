@@ -79,22 +79,22 @@ in
       exec = ''
         ${cfg.prelude}
         host=$(input .host); agent=$(input .agent_id); lines=$(input .lines); source=$(input .source)
-        [ -n "$host" ] && [ -n "$agent" ] || fail 3 invalid_input "host and agent_id are required"
-        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters"
-        [[ "$lines" =~ ^[0-9]+$ ]] || fail 3 invalid_input "lines must be an integer"
-        case "$source" in visible|recent|recent-unwrapped) ;; *) fail 3 invalid_input "source must be visible, recent or recent-unwrapped" ;; esac
+        ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:inspect",host:$h,agent_id:$a}')
+        [ -n "$host" ] && [ -n "$agent" ] || fail 3 invalid_input "host and agent_id are required" "$ctx"
+        valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$ctx"
+        [[ "$lines" =~ ^[0-9]{1,6}$ ]] || fail 3 invalid_input "lines must be an integer below 1000000" "$ctx"
+        case "$source" in visible|recent|recent-unwrapped) ;; *) fail 3 invalid_input "source must be visible, recent or recent-unwrapped" "$ctx" ;; esac
         ${cfg.hostCase}
         requested=$lines; [ "$lines" -gt 200 ] && lines=200; [ "$lines" -gt 0 ] || lines=1
-        ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:inspect",host:$h,agent_id:$a}')
         at=$(now_iso); rc=0
         # herdr 0.9.5 parses <TARGET> first and rejects options before it ("unknown option"); valid_id excludes a leading '-'
         text=$(herdr_on ${t} "$target" agent read "$agent" --lines "$lines" --source "$source" --format text 2>/dev/null) || rc=$?
         [ "$rc" -eq 0 ] || fail 2 "$(rc_kind $rc)" "herdr agent read: $(rc_kind $rc) (exit $rc; unknown agent?)" "$ctx"
-        cut=$(printf '%s\n' "$text" | head -n 200 | LC_ALL=C head -c 65536); truncated=false
-        [ "$cut" = "$text" ] && [ "$requested" -le 200 ] || truncated=true
-        emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg t "$cut" --arg src "$source" --argjson req "$requested" --argjson tr "$truncated" \
+        cut=$(printf '%s\n' "$text" | head -n 200 | LC_ALL=C head -c 65536); truncated=false; capped=false
+        [ "$cut" = "$text" ] || truncated=true; [ "$requested" -le 200 ] || capped=true
+        emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg t "$cut" --arg src "$source" --argjson req "$requested" --argjson tr "$truncated" --argjson cap "$capped" \
           '{schema_version:1, task:"herdr:inspect", host:$h, agent_id:$a, observed_at:$at, source:$src, lines_requested:$req,
-            lines_returned:($t | split("\n") | length), truncated:$tr, excerpt:$t, error:null}')"
+            lines_returned:($t | split("\n") | length), truncated:$tr, capped:$cap, excerpt:$t, error:null}')"
       '';
     };
   } // lib.genAttrs [ "herdr:message" "herdr:await" ] (import ./pending.nix);

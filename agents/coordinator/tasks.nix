@@ -17,7 +17,7 @@ in
         ${cfg.prelude}
         at=$(now_iso)
         inv=$(upstream "herdr:inventory"); gh=$(upstream "gh:work"); git=$(upstream "git:recent")
-        out=$(jq -cn --arg at "$at" --argjson inv "$inv" --argjson gh "$gh" --argjson git "$git" --argjson fleet ${lib.escapeShellArg (builtins.toJSON { inherit (cfg) hosts repos; })} '
+        out=$(jq -cn --arg at "$at" --argjson inv "$inv" --argjson gh "$gh" --argjson git "$git" --argjson limit ${toString cfg.ghLimit} --argjson fleet ${lib.escapeShellArg (builtins.toJSON { inherit (cfg) hosts repos; })} '
           def failed(name; src): if src == null then [{source:name, error:{kind:"missing", message:"task produced no output"}}]
                                  else ((src.failed_sources // []) | map({source:(name + ":" + (.repo // "?")), error}))
                                       + ((src.hosts // []) | map(select(.reachable == false) | {source:(name + ":" + .host), error})) end;
@@ -38,7 +38,9 @@ in
                 | ([$g.issues[] | select(.number == $n)]) as $is
                 | (any($ps[]; .merged_at != null and ((.closes // []) | index($n)) != null)) as $closed_by_merge
                 | (any($ps[]; .merged_at != null)) as $merged | (any($ps[]; .state == "OPEN")) as $open
-                | if $merged and ($open | not) and ($closed_by_merge or ($is | length) == 0) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes #\($n), nothing still open"]}
+                | (($g.issues | length) >= $limit) as $issues_truncated
+                | if $merged and ($open | not) and ($closed_by_merge or (($is | length) == 0 and ($issues_truncated | not))) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes #\($n), nothing still open"]}
+                  elif $merged and ($open | not) and $issues_truncated and ($is | length) == 0 then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but the open-issue list is truncated at \($limit); cannot confirm #\($n) is closed"]}
                   elif $merged and ($open | not) then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but issue #\($n) is still open in \($repo.gh)"]}
                   elif $open then {verdict:"unverified", refs:[$ps[] | select(.state=="OPEN") | .url],
                        reasons:(["open PR for #\($n) in \($repo.gh), not merged"] + [$ps[] | select(.state=="OPEN") | select(any(.checks[]?; . != "SUCCESS")) | "PR #\(.number) has non-green checks"])}
@@ -48,7 +50,7 @@ in
            failed_sources: (failed("herdr:inventory"; $inv) + failed("gh:work"; $gh) + failed("git:recent"; $git)),
            items: [($inv.hosts // [])[] | .host as $h | .agents[] | . as $a
              | (evidence_for($a)) as $e
-             | ([($git.repos // [])[] | select(.checkout == $a.cwd and ($local_hosts | index($h)) != null)] | first) as $co
+             | ([($git.repos // [])[] | select(under($a.cwd; .checkout) and ($local_hosts | index($h)) != null)] | first) as $co
              | {host:$h, agent_id:$a.agent_id, harness:$a.harness, session_id:$a.session_id, title:$a.title, task_ref:$a.task_ref,
                 herdr_state:$a.observed_state, state_age_s:$a.state_age_s, stale:$a.stale, observed_at:$a.observed_at,
                 work_verdict: (if $a.observed_state == "blocked" then "blocked" else $e.verdict end),
@@ -79,11 +81,11 @@ in
           "# Fleet brief (\(.observed_at))",
           (if .partial then "", "**Partial:** " + ([.failed_sources[] | "\(.source): \(.error.kind) — \(.error.message)"] | join("; ")) else empty end),
           "", "## Needs you",
-          (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))") end)[]),
+          (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else (.[0:10] | map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))")) + (if length > 10 then ["… \(length - 10) more needing you in the JSON"] else [] end) end)[]),
           "", "Full JSON: \($f)", "", "## Agents",
           (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) (\(.state_age_s)s\(if .stale then ", stale" else "" end)) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
-        ' <<<"$brief" | head -n 40
+        ' <<<"$brief"
         # the brief is the one task whose exit says something: no host answered and nothing stale to show is a failure
         [ "$(jq -r '((.items|length) > 0) or (.answered_hosts > 0)' <<<"$brief")" = true ] || exit 2
       '';

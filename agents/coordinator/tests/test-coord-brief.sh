@@ -57,10 +57,19 @@ jq '.result.agents[1].terminal_title_stripped = "skills #43 part 2"' "$TMP/local
 FAKE_HERDR_LIST="$TMP/local43.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
 [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unverified ] && ok || bad "title-only merged PR with open issue must be unverified"
 jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q 'still open' && ok || bad "title-only reason"
-# a subdirectory of the checkout still resolves the repo
+# a merged PR that names #44 while no issue #44 is open (list not truncated) => verified
+jq '.result.agents[1].terminal_title_stripped = "skills #44 done"' "$TMP/local.json" > "$TMP/local44.json"
+FAKE_HERDR_LIST="$TMP/local44.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
+[ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = verified ] && ok || bad "title-only with closed issue => verified ($(jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]'))"
+# ... but not when the open-issue list may be truncated (ghLimit 2 and the fixture has 2 open issues)
+FAKE_HERDR_LIST="$TMP/local44.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json" --option coordinator.ghLimit:int 2
+[ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unverified ] && ok || bad "truncated issue list must not verify"
+jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q truncated && ok || bad "truncation reason"
+# a subdirectory of the checkout still resolves the repo (and keeps the checkout reasons)
 jq '.result.agents[1].cwd += "/sub/dir"' "$TMP/local.json" > "$TMP/localsub.json"
 FAKE_HERDR_LIST="$TMP/localsub.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
 [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = verified ] && ok || bad "subdirectory cwd resolves the checkout"
+jqr '.items[] | select(.agent_id=="wT:p1") | .reasons | join(";")' | grep -q uncommitted && ok || bad "subdirectory cwd keeps checkout reasons"
 # digits inside other numbers never match: #4 is not verified by PR 15 closing #42
 jq '.result.agents[1].terminal_title_stripped = "skills #4 thing"' "$TMP/local.json" > "$TMP/local4.json"
 FAKE_HERDR_LIST="$TMP/local4.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"

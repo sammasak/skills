@@ -111,7 +111,7 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 **Files:** `task-modules/bin/herdr-inspect`, `herdr.nix` task (`input={host, agent_id, lines=40, source="visible"}`), fixtures, `task-modules/tests/test-herdr-inspect.sh`
 
-- [x] Tests: `lines` capped at 200 (request 1000 → 200), invalid id rejected (exit 3), unknown host rejected, output record has `excerpt` (text), `lines_returned`, never exceeds cap; remote path uses `ssh <host> herdr agent read <id> --lines N --format text`.
+- [x] Tests: `lines` capped at 200 (request 1000 → 200), invalid id rejected (exit 3), unknown host rejected, output record has `excerpt` (text), `lines_returned`, never exceeds cap; remote path runs `herdr agent read <id> --lines N --source S --format text` through the base64 ssh transport (target first; herdr 0.9.5 rejects options before it).
 - [x] Implement; PASS; live run against own pane. Commit.
 
 ### Task 2.3: `harness:session-summary`
