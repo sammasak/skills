@@ -20,8 +20,7 @@
 
 ## Our Tools
 
-- Before reimplementing a check, use what is installed: `factum` (Rust change impact; `rust-engineering`), `nix-audit` (closure inventory/CVE evidence; `nix-audit-operator`), `sdlc-status`/`sdlc:*` in a `platform.sdlc` devenv (`sdlc-pipeline`), `pi-offload` (`pi-offload`). Confirm the real binary or dev shell (`command -v`, `--version`) first; the tool's own docs outrank the skill.
-- Tool output is evidence, not a verdict: missing, failed or incomplete output is unknown, never a pass, and the repo's own gates decide. A tool defect, or a skill command that no longer matches the tool, gets a sanitized `tooling-feedback` draft, filed only under that skill's authorization rule.
+- Prefer installed tools to ad-hoc checks (`factum`, `nix-audit`, `sdlc-status`, `pi-offload`; their skills say how), after confirming the real binary. Missing or incomplete tool output is unknown, never a pass; a tool defect or stale skill command gets a `tooling-feedback` draft.
 
 ## Knowledge Vault
 
