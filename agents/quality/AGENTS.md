@@ -4,8 +4,8 @@ Codex has no per-agent definition files, preloaded skills or agent-scoped
 hooks. This file is the whole adapter: the launcher passes it as the system
 context (`codex exec --cd "$COORDINATOR_CHECKOUT" --sandbox workspace-write
 "$(cat agents/quality/AGENTS.md)"$'\n\n'"<owner request>"`), and the same
-`hooks/validate-quality.sh` guard is registered in `~/.codex/hooks.json` by
-nixos-config. Where Codex differs from Claude Code, the difference is noted
+`hooks/validate-quality.sh` guard is registered in a dedicated `CODEX_HOME`'s
+`hooks.json` by the launcher (never the user's global `~/.codex/hooks.json`). Where Codex differs from Claude Code, the difference is noted
 here instead of hidden.
 
 ## Contract
@@ -39,13 +39,13 @@ retry with a variation.
   `.integrity` manifest the guard verifies on every call, in a session that
   exports `COORDINATOR_REQUIRE_INTEGRITY=1` and the manifest's pinned hash
   (nixos-config writes both at materialisation; the parity test writes them in
-  its copy). The guard itself must run from a path the agent cannot write
-  (nixos-config installs it from the store; the parity test runs it from a
-  read-only copy outside the checkout), otherwise an agent that can edit its
-  own hook has no guard. The check happens at hook time; an edit racing between
-  the check and the task's evaluation is not caught. Then editing or
-  deleting a contract, task, hook, devenv or `devenv.local.*` file makes the
-  guard refuse everything. Running Codex with `--sandbox workspace-write` on
+  its copy). Then editing or deleting a contract, task, hook, devenv or
+  `devenv.local.*` file makes the guard refuse everything. The guard itself
+  must run from a path the agent cannot write (nixos-config installs it from
+  the store; the parity test runs it from a read-only copy outside the
+  checkout and outside `/tmp`), otherwise an agent that can edit its own hook
+  has no guard. The check happens at hook time; an edit racing between the
+  check and the task's evaluation is not caught. Running Codex with `--sandbox workspace-write` on
   an unmanaged clone, or without the pin, is **not enforced** and must not be
   described as such; the `.devenv/` evaluation cache is not covered either.
 - **Global hooks file.** `~/.codex/hooks.json` is per user, so a guard

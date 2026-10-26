@@ -5,7 +5,9 @@
 # Run: bash agents/quality/tests/two-harness.sh [out-dir]
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-OUT="${1:-$(mktemp -d)}"; mkdir -p "$OUT"
+# $OUT must not live under /tmp or $TMPDIR: Codex's workspace-write sandbox can write there and would reach its own guard
+OUT="${1:-$HOME/.cache/epic16-two-harness/$(date -u +%Y%m%dT%H%M%SZ)}"; mkdir -p "$OUT"
+case "$(readlink -f "$OUT")" in /tmp/*|"${TMPDIR:-/nonexistent}"/*) echo "refusing an output dir under /tmp or TMPDIR (Codex sandbox can write there)" >&2; exit 2 ;; esac
 FX="$ROOT/task-modules/fixtures"
 CK="$OUT/checkout"; REPO="$OUT/repo"
 rm -rf "$CK" "$REPO"; mkdir -p "$CK"
@@ -22,15 +24,17 @@ for sk in sdlc-pipeline rust-engineering orchestrated-review; do ln -sfn "../../
 mkdir -p "$CK/.claude" && echo '{}' > "$CK/.claude/settings.json"
 # shellcheck disable=SC2046  # the roots file is a space-free word list
 ( cd "$CK" && find -L $(cat hooks/lib/integrity-paths) devenv.local.nix -type f -print0 | sort -z | xargs -0 sha256sum > .integrity )
+# the guard copy comes from the same tree as the checkout copy (HEAD), not from the working tree
 pin=$(sha256sum "$CK/.integrity" | cut -d' ' -f1)
 export COORDINATOR_CHECKOUT="$CK" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
-# nothing is planted in $HOME: the guard reaches Claude through the settings file below, not the frontmatter path
+# nothing is planted in $HOME by this script; note the adapter's frontmatter hook still requires the host-installed
+# ~/.claude/hooks/validate-quality.sh (it fails closed without it), so both guards run in the Claude half
 ASK="Report the SDLC quality state of the checkout $REPO. Run exactly one command: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output. Then answer from its JSON with exactly one line per stage in the form 'STAGE <name>: <state>' followed by one line 'HEAD <sha>' and one line 'ALL_GREEN <true|false>'. Do not run any gate and do not run anything else."
 # Claude honours a PreToolUse allow only from settings-level hooks in this mode (an agent-frontmatter hook alone
 # left every Bash call at the permission prompt in a live run), so the guard is registered the way the launcher does it.
 # the guard runs from OUTSIDE the agent-writable copy (a session that could edit its own hook has no guard), and
 # every invocation is logged so a run without a single guard decision cannot be called guarded
-GUARD="$OUT/guard"; mkdir -p "$GUARD"; cp -r "$ROOT/hooks/." "$GUARD/"; chmod -R a-w "$GUARD"
+GUARD="$OUT/guard"; mkdir -p "$GUARD"; cp -r "$CK/hooks/." "$GUARD/"; chmod -R a-w "$GUARD"
 glog() { printf '#!/usr/bin/env bash\ninput=$(cat); printf "%%s\\n" "$input" >> "%s"; printf "%%s" "$input" | ROLE=quality exec "%s/validate-role.sh"\n' "$OUT/guard-$1.log" "$GUARD" > "$OUT/guard-$1.sh"; chmod +x "$OUT/guard-$1.sh"; }
 glog claude; glog codex
 jq -n --arg g "$OUT/guard-claude.sh" '{permissions:{allow:[],deny:["Edit","Write","NotebookEdit"]}, env:{BASH_DEFAULT_TIMEOUT_MS:"600000",BASH_MAX_TIMEOUT_MS:"600000"}, hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g,timeout:10}]}]}}' > "$OUT/claude-settings.json"
@@ -46,8 +50,8 @@ echo "== codex"; : > "$FAKE_LOG"
 # Codex gets its own CODEX_HOME with the same guard registered, so the run is guarded even if the host's ~/.codex is not
 mkdir -p "$OUT/codex-home"; jq -n --arg g "$OUT/guard-codex.sh" '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g,timeout:10}]}]}}' > "$OUT/codex-home/hooks.json"
 [ -f "$HOME/.codex/auth.json" ] && cp "$HOME/.codex/auth.json" "$OUT/codex-home/" 2>/dev/null; [ -f "$HOME/.codex/config.toml" ] && grep -E '^(model|model_reasoning_effort)' "$HOME/.codex/config.toml" > "$OUT/codex-home/config.toml" 2>/dev/null
-if ! CODEX_HOME="$OUT/codex-home" codex login status 2>/dev/null | grep -qi 'logged in'; then echo "codex: not logged in on this host (owner gate: OpenAI credentials); skipping the Codex run" | tee "$OUT/codex.txt"; else
-( cd "$CK" && CODEX_HOME="$OUT/codex-home" timeout 600 codex exec --cd "$CK" --sandbox workspace-write --skip-git-repo-check -c model_reasoning_effort=low --color never "$(cat agents/quality/AGENTS.md)"$'\n\n'"$ASK" > "$OUT/codex.txt" 2> "$OUT/codex.err" ); echo "codex exit=$?"; fi
+if ! CODEX_HOME="$OUT/codex-home" codex login status >/dev/null 2>&1; then echo "codex: not logged in on this host (owner gate: OpenAI credentials); skipping the Codex run" | tee "$OUT/codex.txt"; else
+( cd "$CK" && CODEX_HOME="$OUT/codex-home" timeout 600 codex exec --cd "$CK" --sandbox workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true --skip-git-repo-check -c model_reasoning_effort=low --color never "$(cat agents/quality/AGENTS.md)"$'\n\n'"$ASK" > "$OUT/codex.txt" 2> "$OUT/codex.err" ); echo "codex exit=$?"; fi
 cp "$FAKE_LOG" "$OUT/codex-fake-calls.log"
 
 echo "== compare"
