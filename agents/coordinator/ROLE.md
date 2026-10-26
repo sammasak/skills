@@ -8,6 +8,7 @@ mission: >-
   messages. Coordinate only.
 skills:
   - herdr-operations
+  - agent-handoff
 tasks:
   read:
     - herdr:inventory
@@ -36,7 +37,7 @@ forbidden:
 evidence:
   completion_requires:
     - a work:status record with work_verdict=verified
-    - the evidence_ref (merged PR, green task exit, or commit) it was derived from
+    - the evidence_ref (merged PR URL) it was derived from; exit codes of status tasks are never evidence
     - observed_at and state_age_s on every status claim
 adapters:
   - claude

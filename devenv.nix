@@ -7,6 +7,7 @@ let
     { name = "policy"; script = "bash tests/test-policy.sh"; }
     { name = "contract"; script = "bash tests/test-role-contract.sh"; }
     { name = "negative"; script = "bash tests/test-coordinator-negative.sh"; }
+    { name = "tasks"; script = "for t in task-modules/tests/test-*.sh agents/*/tests/test-*.sh; do echo \"== $t\"; bash \"$t\" || exit 1; done"; }
   ];
 in
 {
@@ -17,7 +18,7 @@ in
     ./agents/coordinator/tasks.nix
   ];
 
-  packages = [ pkgs.jq pkgs.yq-go pkgs.shellcheck pkgs.git pkgs.openssh ];
+  packages = [ pkgs.yq-go pkgs.shellcheck pkgs.git pkgs.openssh pkgs.fish ];
 
   tasks = lib.listToAttrs (map (s: lib.nameValuePair "skills:test:${s.name}" { exec = s.script; }) suites)
     // {

@@ -1,0 +1,4 @@
+> Implementing the settlement tests now.
+  Running cargo test --package herman-settlement
+  test result: ok. 12 passed; 0 failed
+● Should I also add the property test for rounding? (y/n)

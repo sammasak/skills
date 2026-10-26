@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Fake herdr for task tests. FAKE_HERDR_LIST=<file> is what `agent list` prints;
+# FAKE_HERDR_READ=<file> what `agent read` prints; FAKE_HERDR_EXIT forces an exit code.
+echo "herdr $*" >> "${FAKE_LOG:-/dev/null}"
+[ -n "${FAKE_HERDR_SLEEP:-}" ] && sleep "$FAKE_HERDR_SLEEP"
+case "$1 $2" in
+  "agent list") cat "${FAKE_HERDR_LIST:?}" ;;
+  "agent read") # like herdr 0.9.5: <TARGET> comes first; an option or `--` in its place is "unknown option"
+    case "$3" in -*|"") echo "unknown option: ${3:-<none>}" >&2; exit 2 ;; esac
+    cat "${FAKE_HERDR_READ:?}" ;;
+  *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
+esac
+exit "${FAKE_HERDR_EXIT:-0}"

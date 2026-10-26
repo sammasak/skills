@@ -19,6 +19,7 @@ disallowedTools:
   - WebSearch
 skills:
   - herdr-operations
+  - agent-handoff
 hooks:
   PreToolUse:
     - matcher: Bash
