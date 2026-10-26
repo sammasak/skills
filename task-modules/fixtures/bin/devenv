@@ -4,7 +4,7 @@
 echo "devenv($PWD) $*" >> "${FAKE_LOG:-/dev/null}"
 case "$*" in
   "shell -q -- sh -c cat \"\$SDLC_MACHINE\"") [ -f "${FAKE_SDLC_DIR:?}/machine.json" ] && cat "$FAKE_SDLC_DIR/machine.json" || exit 1 ;;
-  "shell -q -- sdlc-status --context") cat "${FAKE_SDLC_DIR:?}/status.txt" ;;
+  "shell -q -- sdlc-status") cat "${FAKE_SDLC_DIR:?}/status.txt" ;;
   "tasks run sdlc:"*" --show-output") echo "fake stage $2 running"; echo "fake tail line"; exit "${FAKE_GATE_EXIT:-0}" ;;
   *) echo "fake devenv: unsupported $*" >&2; exit 2 ;;
 esac

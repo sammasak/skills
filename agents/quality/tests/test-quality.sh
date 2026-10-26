@@ -20,13 +20,14 @@ run quality:report "{\"checkout\":\"$TMP/repo\"}"
 [ "$CODE" -eq 0 ] && ok || bad "report: exit $CODE ($(tail -3 "$TMP/run.log"))"
 [ "$(jqr '.machine.order | join(",")')" = "sketch,model,test,review,perf,security" ] && ok || bad "report: order ($OUT)"
 [ "$(jqr '.stages[] | select(.stage=="test") | .state')" = red ] && ok || bad "report: test red"
-[ "$(jqr '.stages[] | select(.stage=="perf") | .state')" = stale ] && ok || bad "report: perf stale"
+[ "$(jqr '.stages[] | select(.stage=="perf") | .state')" = unverified ] && ok || bad "report: perf unverified"
+[ "$(jqr '.stages[] | select(.stage=="sketch") | .state')" = green ] && ok || bad "report: sketch green"
 [ "$(jqr '.stages[] | select(.stage=="review") | .verdict')" = true ] && ok || bad "report: review is a verdict stage"
 [ "$(jqr '.red[0].guard')" = "rust:test" ] && ok || bad "report: red record parsed"
 [ "$(jqr '.verdicts[0].grade')" = 9 ] && ok || bad "report: verdict parsed"
-[ "$(jqr .all_fresh)" = false ] && ok || bad "report: not all fresh"
+[ "$(jqr .all_green)" = false ] && ok || bad "report: not all green"
 [ "$(jqr .dirty_files)" = 0 ] && ok || bad "report: clean tree"
-grep -q "devenv($TMP/repo) shell -q -- sdlc-status --context" "$FAKE_LOG" && ok || bad "report: sdlc-status run inside the checkout"
+grep -q "devenv($TMP/repo) shell -q -- sdlc-status$" "$FAKE_LOG" && ok || bad "report: sdlc-status (digest) run inside the checkout"
 grep -q 'tasks run' "$FAKE_LOG" && bad "report: must not run any stage" || ok
 
 # a checkout with no stamps or verdicts at all still reports (unmatched globs)

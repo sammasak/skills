@@ -20,7 +20,7 @@ ln -sfn ../../agents/quality.md "$CK/.claude/agents/quality.md"
 for sk in sdlc-pipeline rust-engineering orchestrated-review; do ln -sfn "../../skills/$sk" "$CK/.claude/skills/$sk"; done
 export COORDINATOR_CHECKOUT="$CK" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
 [ -x "$HOME/.claude/hooks/validate-quality.sh" ] || ln -sfn "$ROOT/hooks/validate-quality.sh" "$HOME/.claude/hooks/validate-quality.sh"
-ASK="Report the SDLC quality state of the checkout $REPO. Run exactly one command: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output. Then answer from its JSON with exactly one line per stage in the form 'STAGE <name>: <state>' followed by one line 'HEAD <sha>' and one line 'ALL_FRESH <true|false>'. Do not run any gate and do not run anything else."
+ASK="Report the SDLC quality state of the checkout $REPO. Run exactly one command: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output. Then answer from its JSON with exactly one line per stage in the form 'STAGE <name>: <state>' followed by one line 'HEAD <sha>' and one line 'ALL_GREEN <true|false>'. Do not run any gate and do not run anything else."
 # Claude honours a PreToolUse allow only from settings-level hooks in this mode (an agent-frontmatter hook alone
 # left every Bash call at the permission prompt in a live run), so the guard is registered the way the launcher does it.
 jq -n --arg g "$ROOT/hooks/validate-quality.sh" '{permissions:{allow:[],deny:["Edit","Write","NotebookEdit"]}, hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g,timeout:10}]}]}}' > "$OUT/claude-settings.json"
@@ -38,7 +38,7 @@ if ! codex login status 2>/dev/null | grep -qi 'logged in'; then echo "codex: no
 cp "$FAKE_LOG" "$OUT/codex-fake-calls.log"
 
 echo "== compare"
-extract() { grep -oE '^(STAGE [a-z]+: [a-z]+|HEAD [0-9a-f]+|ALL_FRESH (true|false))' "$1" | sort -u; }
+extract() { grep -oE '^(STAGE [a-z]+: [a-z]+|HEAD [0-9a-f]+|ALL_GREEN (true|false))' "$1" | sort -u; }
 extract "$OUT/claude.txt" > "$OUT/claude.fields"; extract "$OUT/codex.txt" > "$OUT/codex.fields"
 echo "claude fields: $(wc -l < "$OUT/claude.fields")  codex fields: $(wc -l < "$OUT/codex.fields")"
 if diff -u "$OUT/claude.fields" "$OUT/codex.fields" > "$OUT/fields.diff"; then echo "IDENTICAL reported fields"; else echo "DIFFER:"; cat "$OUT/fields.diff"; fi

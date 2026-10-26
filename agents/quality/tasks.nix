@@ -42,8 +42,9 @@ in
         [ "$rc" -eq 0 ] && jq -e '.schemaVersion == 1 and (.order | type == "array")' <<<"$machine" >/dev/null 2>&1 \
           || fail 2 no_sdlc "the checkout's devenv exposes no platform.sdlc machine (exit $rc)" "$ctx"
         rc=0
-        status=$(cd "$checkout" && timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.devenvCommand} shell -q -- sdlc-status --context 2>/dev/null) || rc=$?
-        [ "$rc" -eq 0 ] || fail 2 command_failed "sdlc-status --context exited $rc" "$ctx"
+        # digest mode prints the per-stage table (`| stage | green|red|unverified |`) plus the current-stage context
+        status=$(cd "$checkout" && timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.devenvCommand} shell -q -- sdlc-status 2>/dev/null) || rc=$?
+        [ "$rc" -eq 0 ] || fail 2 command_failed "sdlc-status exited $rc" "$ctx"
         state="$checkout/.devenv/state/sdlc"
         reds="[]"; verdicts="[]"
         if [ -d "$state" ]; then
@@ -51,14 +52,14 @@ in
           reds=$(for f in "$state"/last-red-*.json; do [ -f "$f" ] || continue; jq -c '{stage, guard, at, fingerprint, tail: (.tail // "" | .[-1200:])}' "$f" 2>/dev/null || true; done | jq -sc '.')
           verdicts=$(for f in "$state"/verdict-*.json; do [ -f "$f" ] || continue; jq -c --arg n "$(basename "$f" .json)" '{stage: ($n | ltrimstr("verdict-")), grade, fingerprint}' "$f" 2>/dev/null || true; done | jq -sc '.')
         fi
-        # stage state from sdlc-status's own context lines: "<stage>: <state>" (fresh|stale|red|unverified|...)
+        # stage state from sdlc-status's own table rows: "| <stage> | green|red|unverified |" (sdlc-status is read-only and already handles staleness)
         stages=$(jq -cn --argjson m "$machine" --arg s "$status" '
-          ($s | split("\n") | map(capture("^\\s*(?<stage>[a-z][a-z0-9-]*)\\s*[:=]\\s*(?<state>fresh|stale|red|unverified|green|skipped|pending)\\b")?) | map(select(. != null)) | map({key:.stage, value:.state}) | from_entries) as $st
+          ($s | split("\n") | map(capture("^\\s*\\|\\s*(?<stage>[a-z][a-z0-9-]*)\\s*\\|\\s*(?<state>green|red|unverified)\\s*\\|")?) | map(select(. != null)) | map({key:.stage, value:.state}) | from_entries) as $st
           | [$m.order[] | {stage:., guards:($m.stages[.].guards // []), verdict:($m.stages[.].verdict // false), state:($st[.] // "unknown")}]')
         emit "$(jq -cn --arg at "$at" --argjson c "$ctx" --arg head "$head" --argjson dirty "$dirty" --argjson m "$machine" --argjson st "$stages" --arg txt "$status" --argjson reds "$reds" --argjson v "$verdicts" \
           '{schema_version:1} + $c + {observed_at:$at, error:null, head:(if $head=="null" then null else $head end), dirty_files:$dirty,
-                 machine:{name:$m.name, bar:$m.bar, order:$m.order, terminal:$m.terminal}, stages:$st, status_context:($txt | .[0:4000]), red:$reds, verdicts:$v,
-                 all_fresh:([$st[] | .state] | all(. == "fresh")), note:"states come from sdlc-status; exit codes of this task are never a verdict"}')"
+                 machine:{name:$m.name, bar:$m.bar, order:$m.order, terminal:$m.terminal}, stages:$st, status_text:($txt | .[0:4000]), red:$reds, verdicts:$v,
+                 all_green:([$st[] | .state] | all(. == "green")), note:"states come from sdlc-status (green|red|unverified); exit codes of this task are never a verdict"}')"
       '';
     };
 

@@ -49,16 +49,16 @@ devenv-platform); you read that machine, you do not define or edit it.
 ## How to work
 
 1. Start with `quality:report` for the checkout. It returns the stage order,
-   each stage's guards and the durable state (`fresh`, `stale`, `red`,
+   each stage's guards and the state sdlc-status derives (`green`, `red`,
    `unverified`) plus the git head the state belongs to. Never guess a stage
    name; use the ones the report lists.
-2. For a stale or red stage that the owner wants checked, run `quality:gate`
+2. For a red or unverified stage that the owner wants checked, run `quality:gate`
    with that stage. It runs `devenv tasks run sdlc:<stage>` in the checkout and
    records the exit code and the output tail. One stage per call, in the order
    the machine defines.
 3. Report per stage: state before, whether you ran it, exit code, the first
    failing guard and the evidence tail. A stage is green only when its
-   `quality:gate` record says `exit: 0` or `quality:report` says `fresh`.
+   `quality:gate` record says `exit: 0` or `quality:report` says `green`.
 4. The `review` stage's verdict is written by a human or by an independent
    review; you may summarise findings, but you never write the verdict file
    and never call the result a merge decision.
