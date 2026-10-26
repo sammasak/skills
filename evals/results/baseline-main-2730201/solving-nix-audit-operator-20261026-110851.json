@@ -1,0 +1,97 @@
+{
+  "name": "solving-nix-audit-operator-20261026-110851",
+  "cases": [
+    {
+      "name": "nix-audit-operator::task-1",
+      "inputs": {
+        "instruction": "# Task: Can we say the candidate is clean?\n\nA teammate scanned a candidate NixOS generation and pasted this:\n\n```\n$ nix-audit scan /nix/store/…-nixos-system-builder-26.11 --policy p.toml --json-out candidate.json\ngrype: 0 findings\nnix-audit: scan incomplete — vulnix failed: no local derivation for /nix/store/…-nixos-system-builder-26.11 (built on another host?); full stderr in /tmp/w/vulnix.stderr\n$ echo $?\n3\n$ jq '.policy | {complete, incomplete}' candidate.json\n{\"complete\": false, \"incomplete\": [\"vulnix failed\"]}\n```\n\nThey want to post \"the candidate has no known vulnerabilities\" in the team channel.\n\nWrite `verdict.md`. Its first line must be exactly one of `Verdict: CLEAN`, `Verdict: UNKNOWN`\nor `Verdict: VIOLATIONS`. Then at most six short lines: what the evidence does and does not\nshow, and what (if anything) could honestly be reported instead.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "nix-audit-operator",
+        "task_id": "task-1",
+        "output_filename": "verdict.md"
+      },
+      "metadata": {
+        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/nix-audit-operator/tasks/task-1/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "Verdict: UNKNOWN\n\nThe scan is incomplete: grype found 0 findings, but vulnix failed because the closure was built on another host and local derivations are missing. Vulnix coverage is unknown, not zero. Exit code 3 and `.policy.incomplete` confirm the policy evaluation is incomplete.\n\nDo not report \"no known vulnerabilities.\" Instead: \"Grype found 0 findings; vulnix scanner unavailable (closure built elsewhere). Full vulnerability coverage unknown. This scan does not satisfy a clean-bill-of-health claim.\"\n\nTo obtain comparable evidence, either rebuild the closure locally with both scanners operational, or document why vulnix coverage loss is acceptable for this candidate.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-1-4xtx7er4",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 2.358058843004983,
+      "total_duration": 2.369915246963501,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    },
+    {
+      "name": "nix-audit-operator::task-2",
+      "inputs": {
+        "instruction": "# Task: Snapshot two generations with the installed nix-audit\n\nThe current README says to snapshot with `--json-out FILE`. On this host:\n\n```\n$ nix-audit --version\nnix-audit 0.1.0 (a1b2c3d4e5f6)\n$ nix-audit scan --help\nUsage: nix-audit scan [OPTIONS] <TARGET>\nOptions:\n      --json             print the JSON report instead of the terminal summary\n      --policy <FILE>    evaluate a nix-audit-policy/v0 file\n      --scanners <LIST>  which scanners run [default: grype,vulnix]\n      --no-scan          inventory only\n      --offline          do not update scanner databases\n  -h, --help             Print help\n```\n\nThe candidate is already built at `$CANDIDATE`. Write `snapshot.sh`: a bash script that\nproduces `current.json` (from `/run/current-system`) and `candidate.json` (from `$CANDIDATE`)\nwith policy `p.toml`, ready for a later `nix-audit diff`. Do not run a gate.\n",
+        "skill": "nix-audit-operator",
+        "task_id": "task-2",
+        "output_filename": "snapshot.sh"
+      },
+      "metadata": {
+        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/nix-audit-operator/tasks/task-2/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "#!/usr/bin/env bash\nset -euo pipefail\n\n# snapshot.sh: Capture two NixOS generations for later nix-audit diff\n# Requires: nix-audit installed, $CANDIDATE set, p.toml in current directory\n\nif [[ -z \"${CANDIDATE:-}\" ]]; then\n  echo \"error: \\$CANDIDATE not set\" >&2\n  exit 1\nfi\n\nif [[ ! -f p.toml ]]; then\n  echo \"error: p.toml not found in current directory\" >&2\n  exit 1\nfi\n\nif ! command -v nix-audit &>/dev/null; then\n  echo \"error: nix-audit not found in PATH\" >&2\n  exit 1\nfi\n\necho \"nix-audit version: $(nix-audit --version)\"\necho \"Nix version: $(nix --version)\"\necho \"\"\n\n# Snapshot current system\necho \"[1/2] Scanning /run/current-system...\"\nnix-audit scan /run/current-system \\\n  --policy p.toml \\\n  --no-scan \\\n  --json > current.json\n\necho \"Wrote current.json\"\necho \"\"\n\n# Snapshot candidate\necho \"[2/2] Scanning $CANDIDATE...\"\nnix-audit scan \"$CANDIDATE\" \\\n  --policy p.toml \\\n  --no-scan \\\n  --json > candidate.json\n\necho \"Wrote candidate.json\"\necho \"\"\n\necho \"Snapshots ready. Run: nix-audit diff current.json candidate.json\"",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-nix-audit-operator-task-2-j9wpywvy",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": false,
+          "reason": "FAIL: must remove stale snapshots before scanning",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 4.7467405830393545,
+      "total_duration": 4.762707948684692,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}

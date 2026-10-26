@@ -1,0 +1,54 @@
+{
+  "name": "solving-rust-engineering-20261026-110918",
+  "cases": [
+    {
+      "name": "rust-engineering::task-6",
+      "inputs": {
+        "instruction": "# Task: Can we skip tests because Factum found nothing?\n\nA teammate ran the deterministic Factum CLI on a Rust change and pasted the tail of\n`factum review --diff change.patch --format json`:\n\n```json\n{\"schema\":\"facts-review/v3\",\n \"candidates\":{\"referencing\":[],\"unresolved\":[],\"dependent_only\":[\n   {\"package\":\"ledger-sync\"},{\"package\":\"ledger-cli\"},{\"package\":\"ledger-web\"}]},\n \"unavailable\":[\"compiler_semantics\",\"feature_target_cfg\",\"test_inventory\"],\n \"verification\":{\"status\":\"not_run\"}}\n```\n\nThey propose: \"No package references the changed items, so we can skip the test suite and merge.\"\nThe repo uses the homelab devenv Rust gates.\n\nWrite `assessment.md`. Include a line `Skip tests: yes` or `Skip tests: no`, a short explanation\ngrounded in the fields above, and the exact command(s) that decide whether to merge.\n\nReply with only the file content as plain text, without code fences.\n",
+        "skill": "rust-engineering",
+        "task_id": "task-6",
+        "output_filename": "assessment.md"
+      },
+      "metadata": {
+        "test_script": "/tmp/claude-1000/-home-lukas/5704d9d6-8ad1-4638-8ee3-81a03b7cdb6c/scratchpad/base/evals/rust-engineering/tasks/task-6/test.sh",
+        "quality_rubric": null
+      },
+      "expected_output": null,
+      "output": {
+        "content": "# Assessment: Factum Review and Merge Readiness\n\n## Skip tests: no\n\n## Analysis\n\nThe Factum output contains critical omissions that **prevent** using this brief alone to skip tests:\n\n1. **`unavailable: [\"compiler_semantics\", \"feature_target_cfg\", \"test_inventory\"]`**\n   - `test_inventory` is unavailable, meaning Factum could not enumerate the test suite.\n   - This is a concrete gap: no evidence exists about which tests exercise the changed code.\n   - The absence of a test finding is not a test clearance.\n\n2. **`verification: {\"status\": \"not_run\"}`**\n   - Factum's verification lane (which would validate that the change compiles and passes basic checks) has not run.\n   - This is an unverified change state.\n\n3. **`dependent_only` packages exist (ledger-sync, ledger-cli, ledger-web)**\n   - These are listed as dependent-only, not in `referencing` or `unresolved`.\n   - This means they import the changed module but do not directly call changed items.\n   - However, no test coverage for those imports has been confirmed; Factum's visibility is limited.\n\n4. **Per ADR-026 (homelab conventions)**\n   - Factum is advisory; empty findings are not correctness claims.\n   - The required gates (`rust:ci`, tests, security checks) are deterministic and owned by the project, not delegated to Factum.\n   - Missing evidence (`test_inventory`, `verification`) explicitly signals incompleteness.\n\n## Merge Decision\n\nRun the full deterministic workflow:\n\n```bash\ndevenv tasks run rust:ci\ndevenv tasks run rust:verify\n```\n\nIf both pass, the change is ready to merge. Factum's incompleteness does not override the project's required gates.",
+        "stdout": "",
+        "stderr": "",
+        "timed_out": false,
+        "tmpdir": "/tmp/eval-rust-engineering-task-6-mrnep445",
+        "returncode": 0
+      },
+      "metrics": {},
+      "attributes": {},
+      "scores": {},
+      "labels": {},
+      "assertions": {
+        "BashGrader": {
+          "name": "BashGrader",
+          "value": true,
+          "reason": "PASS",
+          "source": {
+            "name": "BashGrader",
+            "arguments": null
+          }
+        }
+      },
+      "task_duration": 5.472351732023526,
+      "total_duration": 5.483598232269287,
+      "source_case_name": null,
+      "trace_id": "00000000000000000000000000000000",
+      "span_id": "0000000000000000",
+      "evaluator_failures": []
+    }
+  ],
+  "failures": [],
+  "analyses": [],
+  "report_evaluator_failures": [],
+  "experiment_metadata": null,
+  "trace_id": "00000000000000000000000000000000",
+  "span_id": "0000000000000000"
+}
