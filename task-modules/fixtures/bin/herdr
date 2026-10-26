@@ -5,7 +5,9 @@ echo "herdr $*" >> "${FAKE_LOG:-/dev/null}"
 [ -n "${FAKE_HERDR_SLEEP:-}" ] && sleep "$FAKE_HERDR_SLEEP"
 case "$1 $2" in
   "agent list") cat "${FAKE_HERDR_LIST:?}" ;;
-  "agent read") cat "${FAKE_HERDR_READ:?}" ;;
+  "agent read") # options must come before `--`; a positional id before `--lines` means the task got the order wrong
+    [ "$3" = -- ] && { echo "fake herdr: unexpected argument order ($*)" >&2; exit 2; }
+    cat "${FAKE_HERDR_READ:?}" ;;
   *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
 esac
 exit "${FAKE_HERDR_EXIT:-0}"

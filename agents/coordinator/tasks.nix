@@ -17,8 +17,7 @@ in
         ${cfg.prelude}
         at=$(now_iso)
         inv=$(upstream "herdr:inventory"); gh=$(upstream "gh:work"); git=$(upstream "git:recent")
-        fleet=$(jq -c . ${cfg.fleetFile})
-        out=$(jq -cn --arg at "$at" --argjson inv "$inv" --argjson gh "$gh" --argjson git "$git" --argjson fleet "$fleet" '
+        out=$(jq -cn --arg at "$at" --argjson inv "$inv" --argjson gh "$gh" --argjson git "$git" --argjson fleet ${lib.escapeShellArg (builtins.toJSON { inherit (cfg) hosts repos; })} '
           def failed(name; src): if src == null then [{source:name, error:{kind:"missing", message:"task produced no output"}}]
                                  else ((src.failed_sources // []) | map({source:(name + ":" + (.repo // "?")), error}))
                                       + ((src.hosts // []) | map(select(.reachable == false) | {source:(name + ":" + .host), error})) end;
@@ -26,23 +25,26 @@ in
           | ($fleet.repos) as $repos
           | def refnum: if . == null then null else (ltrimstr("#") | tonumber? // null) end;
           # the agent repo: a fleet repo whose checkout equals the agent cwd (local agents), else a repo name that appears in the title
-          def repo_for($a): ([$repos[] | select(.checkout != null and .checkout == $a.cwd and ($local_hosts | index($a.host)) != null)] | first)
-                            // ([$repos[] | select(. as $r | ($a.title // "") | test("\\b" + $r.name + "\\b"))] | first) // null;
+          def under($cwd; $co): $cwd != null and $co != null and ($cwd == $co or ($cwd | startswith($co + "/")));
+          def repo_for($a): ([$repos[] | select(under($a.cwd; .checkout) and ($local_hosts | index($a.host)) != null)] | first)
+                            // ([$repos[] | select(. as $r | ($a.title // "") | test("(^|[^A-Za-z0-9_.-])" + ($r.name | gsub("\\."; "\\\\.")) + "([^A-Za-z0-9_.-]|$)"))] | first) // null;
           def evidence_for($a): ($a.task_ref | refnum) as $n | repo_for($a) as $repo
             | if $n == null then {verdict:"unknown", refs:[], reasons:["no task reference (#N) on the agent"]}
-              elif $gh == null then {verdict:"unknown", refs:[], reasons:["GitHub evidence unavailable"]}
+              elif $gh == null or (($gh.repos // []) | length) == 0 then {verdict:"unknown", refs:[], reasons:["GitHub evidence unavailable" + (if $gh != null and (($gh.failed_sources // []) | length) > 0 then " (" + ($gh.failed_sources | map(.error.kind) | unique | join(",")) + ")" else "" end)]}
               elif $repo == null or $repo.gh == null then {verdict:"unknown", refs:[], reasons:["cannot tell which fleet repo #\($n) belongs to (no checkout match, no repo name in title)"]}
               else (($gh.repos // []) | map(select(.repo == $repo.name)) | first) as $g
               | if $g == null then {verdict:"unknown", refs:[], reasons:["no GitHub data for \($repo.name) in this run"]}
                 else ([$g.prs[] | select(((.closes // []) | index($n)) != null or ((.title // "") | test("(^|[^0-9])#\($n)([^0-9]|$)")))]) as $ps
                 | ([$g.issues[] | select(.number == $n)]) as $is
+                | (any($ps[]; .merged_at != null and ((.closes // []) | index($n)) != null)) as $closed_by_merge
                 | (any($ps[]; .merged_at != null)) as $merged | (any($ps[]; .state == "OPEN")) as $open
-                | if $merged and ($open | not) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes or names #\($n), nothing still open"]}
+                | if $merged and ($open | not) and ($closed_by_merge or ($is | length) == 0) then {verdict:"verified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR in \($repo.gh) closes #\($n), nothing still open"]}
+                  elif $merged and ($open | not) then {verdict:"unverified", refs:[$ps[] | select(.merged_at != null) | .url], reasons:["merged PR names #\($n) but issue #\($n) is still open in \($repo.gh)"]}
                   elif $open then {verdict:"unverified", refs:[$ps[] | select(.state=="OPEN") | .url],
                        reasons:(["open PR for #\($n) in \($repo.gh), not merged"] + [$ps[] | select(.state=="OPEN") | select(any(.checks[]?; . != "SUCCESS")) | "PR #\(.number) has non-green checks"])}
                   elif ($is | length) > 0 then {verdict:"unverified", refs:[$is[].url], reasons:["issue #\($n) open in \($repo.gh), no PR found"]}
                   else {verdict:"unknown", refs:[], reasons:["#\($n) not found in \($repo.gh)"]} end end end;
-          {schema_version:1, task:"work:status", observed_at:$at,
+          {schema_version:1, task:"work:status", observed_at:$at, answered_hosts:($inv.answered_hosts // 0),
            failed_sources: (failed("herdr:inventory"; $inv) + failed("gh:work"; $gh) + failed("git:recent"; $git)),
            items: [($inv.hosts // [])[] | .host as $h | .agents[] | . as $a
              | (evidence_for($a)) as $e
@@ -78,12 +80,12 @@ in
           (if .partial then "", "**Partial:** " + ([.failed_sources[] | "\(.source): \(.error.kind) — \(.error.message)"] | join("; ")) else empty end),
           "", "## Needs you",
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))") end)[]),
-          "", "## Agents",
-          (if (.items|length) == 0 then "- none observed" else (.items[] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) (\(.state_age_s)s\(if .stale then ", stale" else "" end)) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
-          "", "Full JSON: \($f)"
+          "", "Full JSON: \($f)", "", "## Agents",
+          (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) (\(.state_age_s)s\(if .stale then ", stale" else "" end)) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
+          (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
         ' <<<"$brief" | head -n 40
-        # the brief is the one task whose exit says something: nothing observed from any host is a failure
-        [ "$(jq -r '((.items|length) > 0) or ((.failed_sources | map(select(.source | startswith("herdr:inventory"))) | length) == 0)' <<<"$brief")" = true ] || exit 2
+        # the brief is the one task whose exit says something: no host answered and nothing stale to show is a failure
+        [ "$(jq -r '((.items|length) > 0) or (.answered_hosts > 0)' <<<"$brief")" = true ] || exit 2
       '';
     };
 

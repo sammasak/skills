@@ -87,13 +87,13 @@ in
         requested=$lines; [ "$lines" -gt 200 ] && lines=200; [ "$lines" -gt 0 ] || lines=1
         ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"herdr:inspect",host:$h,agent_id:$a}')
         at=$(now_iso); rc=0
-        text=$(herdr_on ${t} "$target" agent read -- "$agent" --lines "$lines" --source "$source" --format text 2>/dev/null) || rc=$?
+        text=$(herdr_on ${t} "$target" agent read --lines "$lines" --source "$source" --format text -- "$agent" 2>/dev/null) || rc=$?
         [ "$rc" -eq 0 ] || fail 2 "$(rc_kind $rc)" "herdr agent read: $(rc_kind $rc) (exit $rc; unknown agent?)" "$ctx"
-        full_lines=$(printf '%s\n' "$text" | wc -l); full_bytes=''${#text}
-        text=$(printf '%s\n' "$text" | head -n 200 | head -c 65536)
-        emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg t "$text" --arg src "$source" --argjson req "$requested" --argjson fl "$full_lines" --argjson fb "$full_bytes" \
+        cut=$(printf '%s\n' "$text" | head -n 200 | LC_ALL=C head -c 65536); truncated=false
+        [ "$cut" = "$text" ] && [ "$requested" -le 200 ] || truncated=true
+        emit "$(jq -cn --arg h "$host" --arg a "$agent" --arg at "$at" --arg t "$cut" --arg src "$source" --argjson req "$requested" --argjson tr "$truncated" \
           '{schema_version:1, task:"herdr:inspect", host:$h, agent_id:$a, observed_at:$at, source:$src, lines_requested:$req,
-            lines_returned:($t | split("\n") | length), truncated:($req > 200 or $fl > 200 or $fb > 65536), excerpt:$t, error:null}')"
+            lines_returned:($t | split("\n") | length), truncated:$tr, excerpt:$t, error:null}')"
       '';
     };
   } // lib.genAttrs [ "herdr:message" "herdr:await" ] (import ./pending.nix);

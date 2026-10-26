@@ -52,6 +52,15 @@ jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q 'which fleet
 jq '.result.agents[0].cwd = "'"$TMP/skills"'"' "$FX/herdr/remote-ok.json" > "$TMP/remote-samecwd.json"
 FAKE_HERDR_LIST="$TMP/local.json" FAKE_REMOTE_LIST="$TMP/remote-samecwd.json" run work:status "$TMP/fleet.json"
 jqr '.items[] | select(.agent_id=="wA:p2") | .reasons | join(";")' | grep -q uncommitted && bad "remote agent must not get local checkout reasons" || ok
+# a merged PR that only NAMES #43 while issue #43 is open is unverified, not verified
+jq '.result.agents[1].terminal_title_stripped = "skills #43 part 2"' "$TMP/local.json" > "$TMP/local43.json"
+FAKE_HERDR_LIST="$TMP/local43.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
+[ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unverified ] && ok || bad "title-only merged PR with open issue must be unverified"
+jqr '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' | grep -q 'still open' && ok || bad "title-only reason"
+# a subdirectory of the checkout still resolves the repo
+jq '.result.agents[1].cwd += "/sub/dir"' "$TMP/local.json" > "$TMP/localsub.json"
+FAKE_HERDR_LIST="$TMP/localsub.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
+[ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = verified ] && ok || bad "subdirectory cwd resolves the checkout"
 # digits inside other numbers never match: #4 is not verified by PR 15 closing #42
 jq '.result.agents[1].terminal_title_stripped = "skills #4 thing"' "$TMP/local.json" > "$TMP/local4.json"
 FAKE_HERDR_LIST="$TMP/local4.json" FAKE_REMOTE_LIST="$FX/herdr/remote-ok.json" run work:status "$TMP/fleet.json"
@@ -66,10 +75,15 @@ jqr '.failed_sources[].source' | grep -q 'gh:work' && ok || bad "gh down: failed
 grep -q 'Partial:' "$TMP/run.log" && ok || bad "gh down: markdown says Partial"
 grep -q 'Full JSON: ' "$TMP/run.log" && ok || bad "brief points at the saved JSON"
 
-# herdr down everywhere: no items, inventory failed, work:status exits 2, brief fails honestly
+# herdr down everywhere: no items, no host answered, brief fails honestly with the real reason
 printf '{"schema_version":1,"hosts":[{"name":"gone","ssh":"lukas@down.lan"}],"repos":[]}' > "$TMP/down.json"
 run coord:brief "$TMP/down.json"
 [ "$CODE" -ne 0 ] && ok || bad "herdr down: brief must fail"
 grep -q 'herdr:inventory:gone: unreachable' "$TMP/run.log" && ok || bad "herdr down: the real reason (unreachable) is surfaced, not 'missing'"
+# one host down, one answering with zero agents: observed, so the brief succeeds (partial)
+printf '{"schema_version":1,"hosts":[{"name":"gone","ssh":"lukas@down.lan"},{"name":"acer-swift","ssh":null}],"repos":[]}' > "$TMP/mixed.json"
+printf '{"id":"cli:agent:list","result":{"agents":[]}}' > "$TMP/empty.json"
+FAKE_HERDR_LIST="$TMP/empty.json" run coord:brief "$TMP/mixed.json"
+[ "$CODE" -eq 0 ] && [ "$(jqr .partial)" = true ] && [ "$(jqr .answered_hosts)" = 1 ] && ok || bad "mixed: brief must succeed when a host answered (exit $CODE)"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]
