@@ -90,7 +90,12 @@ there and the limitation is recorded, not hidden.
   rules therefore list only exact input-less forms and deny `-O`, `--option`,
   `--from`, `--override-input`; every call that carries input is allowed only
   by the guard hook, which returns `allow` after validating the grammar, the
-  JSON body and the working directory. A missing hook degrades to prompting.
+  JSON body and the working directory. The adapter's hook command refuses every
+  Bash call when the guard file is not installed, so a host that has the
+  adapter but not the launcher cannot run tasks at all (fail closed).
+- `Read(~/...)` and `Read(./**)` rules are checked as rule text; the emulator
+  does not expand `~` or `./`. The launcher renders the real state directory
+  (`$XDG_STATE_HOME/coordinator`) in place of the portable default.
 - The test matcher (`tests/lib/claude-permission-match.sh`) is deliberately
   stricter than Claude Code in two places: it never auto-allows a command with
   substitutions or redirections, and it splits on separators without quote

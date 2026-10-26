@@ -22,6 +22,10 @@ tasks:
     - herdr:await
   act:
     - herdr:message
+  inputless:
+    - coord:brief
+    - herdr:inventory
+    - work:status
 forbidden:
   - editing, writing or generating code or documentation in any repository
   - building, testing or running worker projects
