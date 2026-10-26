@@ -39,7 +39,13 @@ Claude Code links **all** skills into `~/.claude/skills`; Codex (`~/.codex/skill
 | 15 | tooling-feedback | generic template only | nix-audit (PR #46 `docs/FEEDBACK.md`) and devenv-platform (`docs/FEEDBACK.md`) own templates; Factum #30 tracks one | link owners' templates |
 | 16 | kubernetes-gitops, verify-service | commands with no host | `flux`/kubeconfig only on Lenovo (k3s server); acer fails with a misleading `localhost:8080 refused` | one line |
 | 17 | pi-ticket | — | `--help` exit codes match (0/1/64/70/75) | none |
+| 18 | rust-engineering | no statement on `factum-worker` | mission: never present the experimental model worker as the supported CLI; README "Two products" | one clause |
+| 19 | kubernetes-gitops, verify-service | `./scripts/validate.sh` / `just validate` / `just unhealthy` | homelab-gitops `ec23984` has no Justfile or `scripts/validate.sh`; `devenv tasks run gitops:validate` (+ hooks), `gitops:status`/`gitops:unhealthy` | replace |
+| 20 | nix-flake-development | `just check`; "push `~/claude-code-skills`"; no `naked-pi`; no operator boundary | `devenv tasks run nixos:qa` (= `just check`, includes every-host build); input `skills` = `sammasak/skills`; `naked-pi` host; switching is operator-only | update |
+| 21 | kubernetes-gitops, nix-flake-development | — | homelab-gitops PR #138 (`77ede40`) and nixos-config PR #95 (`9b52965`), both open: OTLP fixture boundaries, exactly-once Fish dispatch | pending-PR wording |
 
 No discrepancy found in: verify-service levels, kubernetes-gitops topology (matches homelab-gitops `ec23984` CLAUDE.md), sdlc `machine-reference.md` (schemaVersion 1, `order`, matches `examples/consumer`), pi-offload exit codes and JSON fields otherwise.
+
+Installed skills revision is recorded separately from branch HEAD in the dogfood evidence §6.
 
 Upstream doc mismatches → [2026-10-26-upstream-mismatches.md](2026-10-26-upstream-mismatches.md).

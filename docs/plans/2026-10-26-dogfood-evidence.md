@@ -1,119 +1,112 @@
 # Dogfood evidence, 2026-10-26
 
-Host `acer-swift`, read-only, no full Rust builds. Raw outputs were kept in the session
-scratchpad; excerpts below are verbatim.
+Host `acer-swift`, read-only, no full Rust or host builds; anything heavier than an eval ran
+under `flock /tmp/$(hostname)-heavy-work.lock`. Private workspaces are described generically
+because this repository is public. Issue drafts for private repositories are kept out of it.
 
-## Run 1: Factum on a real Rust change (primary)
+## 1. Factum (rust-engineering)
 
-**Skill and why.** `rust-engineering` (Factum section): the task was "what does this Rust
-commit affect, and which checks matter?" for one commit in a private 10-package Rust
-workspace (3 files, +74/-2; names withheld because this repo is public). It touches a
-shared logic crate, so the blast radius is not obvious.
+**Why this skill:** "what does this Rust change affect, and which checks matter?" for one
+commit in a private 10-package workspace (3 files, +74/-2).
 
-**Discovery.** `command -v factum` → nothing on acer (Lenovo-only HM package). The pinned
-build exists in the store: `nix eval …nixos-config?rev=6f18d82#nixosConfigurations.lenovo.pkgs.factum.outPath`
-= `/nix/store/bi7zsbz7269ca2fcrjvklslawhkhrc0l-factum-0.2.0`, the same path present locally.
-`factum --version` → `factum 0.2.0` (no source revision; tracked by factum#30 AC1).
-
-**Invocations and results.**
-
-| Invocation | Exit | Time | Result |
-|---|---|---|---|
-| `factum impact --diff change.patch` (bare PATH, no cargo) | 3 | 0.01 s | `factum: error: cannot load the workspace` / `` `cargo metadata` failed `` / `failed to start …: No such file or directory`. Clear, honest. |
-| `nix develop -c factum impact --diff change.patch` | 0 | 0.32 s | `facts-impact/v0`, 9 roots, 30 KB JSON |
-| `nix develop -c factum review --diff change.patch --format json` | 0 | 0.26 s | `facts-review/v3`, 5 KB |
-| `factum review --diff change.patch` (human) | 0 | <1 s | excerpt below |
-| `factum review --diff <a/b-swapped patch>` | 2 | — | `usage error: diff path without a git a/ or b/ prefix (line 1)` |
-| `factum review --diff <plain text>` | 2 | — | `usage error: the diff is empty` |
-| `factum review --diff /nonexistent.patch` | 2 | — | `usage error: No such file or directory (os error 2)` (path not named) |
-| `factum brief --help` | 2 | — | `usage error: unknown or repeated flag --help` + full usage; `factum help` exits 0 |
-
-`target/` mtime and `git status` of the workspace were unchanged after every run (no compile, no writes).
-
-```
-Changed: 1 entity in <app>, 3 entities in <logic> (+4 cfg(test)).
-Referenced by: <app> (1 site; also changed).
-5 more packages compile against <app>, <logic> without directly referencing the changed items (dependent_only).
-Note: 2 changed items are a type, trait, impl, module or crate; D9 does not model type users, so dependent_only is not evidence of no use.
-…
-unavailable: compiler_semantics, feature_target_cfg, test_inventory
-verification: not_run (factum review composes existing impact facts; it never compiles, lists or runs tests)
-```
-
-**Did it help?** Yes, within its stated scope. In 0.3 s it showed that the new
-function has exactly one caller (wasm-only, also changed), so the targeted checks are the
-logic crate's unit tests plus the app's wasm build. It also named five `dependent_only`
-packages and said plainly that this is not evidence of no use.
-It does not replace `rust:ci`; it says so itself (`verification: not_run`).
-
-**Confusing or broken.**
-1. `factum <cmd> --help` is a usage error (exit 2); only `factum help` works. Every agent
-   tries `<cmd> --help` first.
-2. Cost is undocumented outside source: `brief` and `tests-for` compile through
-   `cargo nextest list`, while `review`/`impact` never compile (`crates/factum/src/main.rs`
-   module doc). Neither the README nor nixos-config `docs/factum-pilot.md` says so; on
-   memory-constrained hosts that decides whether an agent may run it. I did not run
-   `brief`/`tests-for` for this reason.
-3. The README's command list ("Two products") omits `review`, `brief` and `tests-for`,
-   the commands the pilot guide leads with.
-4. A missing `--diff` file is reported without its path.
-
-**Owner and draft.** `sammasak/factum`; all four belong under the open factum#30 (CLI adoption
-tracking issue), which asks for a recorded dogfood result. Draft comment (not posted):
-
-````markdown
-Dogfood record for #30 (agent, read-only), factum 0.2.0 = nixos-config pin 5bb7fa3,
-run from /nix/store/bi7zsbz7…-factum-0.2.0 inside a consumer's `nix develop` shell.
-
-Task: blast radius of a 3-file Rust commit (+74/-2) in a 10-package workspace.
-`factum review --diff change.patch` → exit 0 in 0.26 s; correctly found the single
-caller, 5 dependent_only packages, and disclosed `unavailable: compiler_semantics,
-feature_target_cfg, test_inventory` / `verification: not_run`. Useful; no false claim seen.
-
-Usability findings (each reproducible with any well-formed `git diff`):
-1. `factum review --help` → exit 2 `usage error: unknown or repeated flag --help`;
-   only `factum help` works. Expected: per-command help, exit 0.
-2. Which commands compile is only in `crates/factum/src/main.rs` docs: `brief` and
-   `tests-for` compile via `cargo nextest list`; `review`/`impact` never compile.
-   Expected: README/USER-GUIDE states cost per command.
-3. README "Two products" lists diagnostics/owner/entity/impact/tests-for/packet but not
-   `review` or `brief`.
-4. `factum review --diff /nonexistent.patch` → `usage error: No such file or directory
-   (os error 2)` without the path.
-Without cargo on PATH: exit 3 `cannot load the workspace … failed to start cargo metadata`
-(clear; fine as is).
-
-Not checked: `diagnostics`, `brief`, `tests-for` on this workspace (compile cost),
-factum main (5812b62).
-````
-
-## Run 2: platform.sdlc on a non-Rust machine (secondary)
-
-**Skill and why.** `sdlc-pipeline`: the skill's description hardcoded the rust preset; the
-question was whether an agent discovers a repo's real stage machine.
-Target: devenv-platform `e23f544` (= nixos-config pin) `examples/consumer`, a fresh clone in
-the scratchpad, devenv 2.4.0.
+**Discovery:** `command -v factum` → nothing on acer (Lenovo-only HM package). The pinned build
+is `nix eval …nixos-config?rev=6f18d82#nixosConfigurations.lenovo.pkgs.factum.outPath` =
+`/nix/store/bi7zsbz7269ca2fcrjvklslawhkhrc0l-factum-0.2.0`, present in acer's store; run from
+there. `factum --version` → `factum 0.2.0` (no revision).
 
 | Invocation | Exit | Result |
 |---|---|---|
-| `devenv shell -q -- sdlc-status --context` | 0 | `SDLC machine: consumer -- database (unverified) -- not yet verified` + brief (15 s, first eval) |
-| `jq -c '{schemaVersion, order, stages}' "$SDLC_MACHINE"` (in shell) | 0 | `schemaVersion 1`, `order ["database","integration"]`, guards `postgres:verify`, `consumer:integration` |
-| `sdlc-status` (digest) | 0 | table, both stages `unverified` |
-| `sdlc-status --bogus` | 2 | `sdlc-status: unknown mode: --bogus` |
+| `factum impact --diff change.patch` (bare PATH) | 3 | `cannot load the workspace` / `` `cargo metadata` failed `` / `No such file or directory`: missing tool reported honestly |
+| `nix develop -c factum impact --diff change.patch` | 0 | `facts-impact/v0`, 0.32 s |
+| `nix develop -c factum review --diff change.patch --format json` | 0 | `facts-review/v3`, 0.26 s; `unavailable: compiler_semantics, feature_target_cfg, test_inventory`; `verification: not_run` |
+| `factum review --diff <a/b-swapped patch>` | 2 | `usage error: diff path without a git a/ or b/ prefix (line 1)` |
+| `factum review --diff /nonexistent.patch` | 2 | `usage error: No such file or directory (os error 2)`, path not named |
+| `factum brief --help` | 2 | `usage error: unknown or repeated flag --help`; `factum help` exits 0 |
+
+The workspace's `target/` mtime and `git status` were unchanged (no compile, no writes).
+**Helped:** yes. It found the single caller of the changed function and five `dependent_only`
+packages, and said itself that `dependent_only` is not evidence of no use; that picked the
+targeted tests. `rust:ci` stays authoritative. `brief`/`tests-for` were not run (they compile).
+**Findings → `sammasak/factum`, under the open adoption issue #30:** `<cmd> --help` is exit 2;
+cost per command is documented only in source; the README command list omits `review`/`brief`;
+a missing `--diff` file is not named. A sanitized comment draft exists outside this repo; not posted.
+
+## 2. platform.sdlc (sdlc-pipeline)
+
+devenv-platform `e23f544` `examples/consumer` (non-Rust machine), fresh clone, devenv 2.4.0.
+
+| Invocation | Exit | Result |
+|---|---|---|
+| `devenv shell -q -- sdlc-status --context` | 0 | `consumer -- database (unverified) -- not yet verified` |
+| `jq -c '{schemaVersion, order, stages}' "$SDLC_MACHINE"` | 0 | `schemaVersion 1`, `order ["database","integration"]` |
+| `sdlc-status --bogus` | 2 | `unknown mode: --bogus` |
 | `sdlc-status --context` without `$SDLC_MACHINE` | 1 | `$SDLC_MACHINE not set; is platform.sdlc.enable on?` |
-| `devenv tasks list \| grep sdlc:` | 0 | 5 tasks: `sdlc:done → integration → … → database-postgres-verify` |
 
-**Did it help?** Yes: the machine is discoverable in two commands and contradicts the old
-description (no sketch/model/test). **Confusing:** `sdlc-status` exits 0 with every stage
-unverified; correct by design (read-only, `sdlc:done` decides) but easy to misread as a pass,
-so the skill now says so. Benign notice: `devenv 2.4.0 is newer than devenv input (2.2.2)`.
-No product defect found; no issue draft.
+**Helped:** yes; contradicted the old rust-preset description. **Confusing:** exit 0 with every
+stage unverified; by design, now stated in the skill. No defect.
 
-## Supporting verification: nix-audit commands in the skill
+## 3. nix-audit commands cited by nix-audit-operator
 
-Not a dogfood of nix-audit (owned by the nix-audit agent); only the commands cited in
-`nix-audit-operator` were executed, inventory-only, against the pinned `12d640a` and rc1
-`bbd58d5` store builds. Results are in the skill commit messages and the coordination thread:
-`scan --no-scan --policy` exit 1 / `complete:false`; `diff --gate` on two `--no-scan`
-snapshots exit 3; a bogus flag leaves an existing `--json-out` file; `diff | head` exit 3 on
-`12d640a` only (already fixed on main).
+Inventory-only, both store builds (`12d640a` = Lenovo pin, `bbd58d5` = rc1), scratch dir.
+
+| Invocation | 12d640a | bbd58d5 |
+|---|---|---|
+| `scan --help \| grep -c -- --json-out` | 0 | 1 |
+| `scan /run/current-system --no-scan --json > before.json` / `--json-out` | 0 | 0 |
+| `scan /run/current-system --no-scan --policy examples/policy.toml --json` | 1, `policy.complete: false` (33 unscannable) | 1, same; stderr `policy — 33 violations … incomplete: finding rules not evaluated` |
+| `diff c.json c.json --policy … --gate` (two `--no-scan` snapshots) | 3, `gate: not evaluated — security not comparable: no scanner ran on either side` | 3, same |
+| `scan … --bogus --json-out before.json` with an existing file | 2, file kept | 2, file kept |
+| `diff before.json after.json \| head -4` | 3, `cannot write the diff: Broken pipe (os error 32)` | 0 |
+
+## 4. nixos-config Fish wrapper regression (nix-flake-development)
+
+PR #95 head `9b52965` in a disposable worktree; ~2 s under the host lock.
+
+| Invocation | Exit | Result |
+|---|---|---|
+| `python3 scripts/test-native-otel-fish.py "$nixpkgs_source"` | 0 | three `PASS: … one dispatch, arguments and status preserved` |
+| same tests against main's `native-otel.nix` | 1 | `AssertionError: ('codex', True, True, 2)`: two dispatches, the defect |
+
+`devenv tasks run nixos:qa` was **not** run: it builds every x86 host; PR #95 reports it passed
+on MSI.
+
+## 5. homelab-gitops tasks (kubernetes-gitops)
+
+main `ec23984` in a disposable worktree.
+
+| Invocation | Exit | Result |
+|---|---|---|
+| `devenv tasks run gitops:validate` | 0 | 13.4 s, output `{}` |
+| `devenv tasks run gitops:status` (acer, no kubeconfig) | 1 | `Get "http://localhost:8080/api": … connection refused`: missing client config, not an outage |
+
+The PR #138 Alloy/Loki fixtures were not run (no local Alloy/Loki binaries); their claims were
+checked against the scripts at `77ede40` (sanitizer swaps exporters for `otelcol.exporter.debug`;
+the Loki test runs `<alloy> <loki>` with a bounded 3 s settle).
+
+## 6. Discovery and activation in the Nix-managed setup
+
+Installed skills revision: **`2730201`** (nixos-config main `6f18d82` `flake.lock` input `skills`);
+repository branch HEAD differs (see the PR). The branch was **not** deployed: its tree was built
+through nixos-config with `--override-input skills git+file://…/skills?rev=<HEAD>`, which built
+only `home-manager-files` and two settings derivations. The built `.claude/skills`,
+`.codex/skills`, `.agents/skills` and `.claude/CLAUDE.md` are byte-identical to the branch.
+
+- **Codex 0.162.1:** `codex debug prompt-input` lists 9 sammasak skills from root
+  `~/.codex/skills` (installed descriptions); with `CODEX_HOME` pointing at the built tree, the
+  same command shows the branch descriptions. `sdlc-pipeline`, `pi-ticket`, `verify-service` are
+  absent in both (nixos-config `portableSkillNames`). Codex has no credentials on acer
+  (`codex doctor`: `no Codex credentials were found`), so a Codex task run was not possible.
+- **Claude Code 2.1.300:** headless `claude -p --output-format stream-json`, Skill tool only (plus
+  a recording `gh` stub where noted), `HOME` = real (installed) or a mirror whose only difference
+  is `.claude/skills` + `CLAUDE.md` from the built tree:
+
+| Prompt | Branch tree | Installed |
+|---|---|---|
+| nix-audit exit 3, vulnix failed, "clean?" | nix-audit-operator; "No … unknown coverage", grype-only fallback | nix-audit-operator |
+| "which crates does my Rust change affect; our tooling" | rust-engineering; Factum first | rust-engineering |
+| Fish prints `codex --version` twice | nix-flake-development; went to `test-native-otel-fish*` | nix-flake-development |
+| "file it right away with gh" (stub `gh`) | tooling-feedback; `gh issue list` then `issue create` on `sammasak/nix-audit`; pasted token unused | same |
+| "write up a bug report" (stub `gh`) | tooling-feedback; `gh issue list` only, no create | same |
+
+Explicit filing requests count as authorization under tooling-feedback; draft-only requests did
+not file. Both arms behave the same on routing; the branch adds the content differences shown.
