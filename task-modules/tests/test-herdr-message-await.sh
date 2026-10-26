@@ -106,8 +106,11 @@ FAKE_HERDR_PROMPT=timeout run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm
 run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$b1\"}"; b2=$(jqr .audit_id); [ "$(jqr .outcome)" = delivered ] && ok || bad "order2: second delivered"
 FAKE_HERDR_SEQ=41 run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$b2\"}"
 [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "order2: unknown->delivered->resend must be allowed ($(jqr .error.kind))"
-FAKE_HERDR_SEQ=2 run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$(jqr .audit_id)\"}"
-# (the last attempt was delivered, so a seq going backwards is not checked against it; a session-less draft relies on await for restarts)
+# an unconfirmed attempt followed by a seq going BACKWARDS means a restart: refuse the resend, record nothing
+run coord:handoff "$(jq -c '.scope = "restart"' <<<"$draft")"; idr=$(jqr .handoff_id)
+FAKE_HERDR_PROMPT=timeout run herdr:message "{\"handoff_id\":\"$idr\",\"confirm\":\"lenovo/wA:p2\"}"; r1=$(jqr .audit_id); n_att=$(audit | grep -c attempt)
+FAKE_HERDR_SEQ=3 run herdr:message "{\"handoff_id\":\"$idr\",\"confirm\":\"lenovo/wA:p2\",\"resend\":\"$r1\"}"
+[ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = agent_restarted ] && [ "$(audit | grep -c attempt)" = "$n_att" ] && ok || bad "restart: seq backwards after unconfirmed attempt must refuse ($(jqr .error.kind))"
 # a bad object in the MIDDLE of the audit is corruption
 tmpa=$(mktemp); { head -1 "$TMP/state/audit.jsonl"; echo '{"audit_id":5,"phase":"attempt"}'; tail -n +2 "$TMP/state/audit.jsonl"; } > "$tmpa"; cp "$TMP/state/audit.jsonl" "$TMP/audit.bak"; mv "$tmpa" "$TMP/state/audit.jsonl"
 run herdr:message "{\"handoff_id\":\"$ido2\",\"confirm\":\"lenovo/wA:p2\"}"; [ "$(jqr .error.kind)" = audit_corrupt ] && ok || bad "bad object mid-file: $(jqr .error.kind)"
