@@ -184,8 +184,9 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 ### M4 progress log
 - [x] `agents/quality/ROLE.md`, `agents/quality.md` (Claude), `agents/quality/AGENTS.md` (Codex), `agents/quality/permissions.json`; shared `hooks/validate-role.sh` reads any role's `tasks.{read,run,act}` from ROLE.md (coordinator/quality are 1-line wrappers); `quality:report` (sdlc-status is the authority) and `quality:gate` (runs one `sdlc:<stage>`), fake devenv + SDLC fixtures, 19 assertions; contract test asserts the awk parser equals the yq parser; negative suite drives the quality guard (95 assertions). Branch `epic-16/m4-quality` @ 8697fd5.
-- [ ] Two-harness proof (`agents/quality/tests/two-harness.sh`): Claude side runs when the guard is registered at settings level (frontmatter-only allow was not honoured — recorded in the RFC); **Codex side blocked: no OpenAI credentials on acer-swift (`codex login status` → Not logged in; nixos seeds from `/run/secrets/openai_api_key` which this host does not have) — owner gate.**
-- [ ] Operator runbook + "add a third role by composition" doc.
+- [x] Two-harness proof script (`agents/quality/tests/two-harness.sh`) and the **Claude half**: `claude -p --agent quality` in a throwaway copy with `devenv.local.nix` → one task call (`quality:report --input-json`), no gates, all 8 fields (6 stages, HEAD, ALL_FRESH) correct, 0 denials, $0.02. Guard honoured only at settings level (recorded in the RFC). The parity run found the errexit glob bug in `quality:report` (fixed f97cc06).
+- [ ] **Codex half blocked: no OpenAI credentials on acer-swift** (`codex login status` → Not logged in; nixos seeds from `/run/secrets/openai_api_key`, absent here) — owner gate; the script skips Codex and says so.
+- [x] `docs/operator-runbook.md` + `docs/adding-a-role.md`.
 
 ## Slice 6 — Close-out
 
