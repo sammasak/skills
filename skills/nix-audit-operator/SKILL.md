@@ -17,7 +17,7 @@ command -v nix-audit && nix-audit --version        # nix-audit 0.1.0 (<12-char r
 nix-audit scan --help | grep -q -- --json-out && echo json-out || echo json-only
 ```
 
-Installed only where nixos-config enables it (Lenovo); the pinned build may predate `--json-out`, so branch on `--help`, not on the README. Current release candidate: CHANGELOG (rc1 untagged at the time of writing). Refuse a binary whose version ends `-dirty)` or `(unknown revision)` for any release claim; do not build one just for an example (USER-GUIDE §1 if the pilot needs one).
+Installed only where nixos-config enables it (Lenovo); the pinned build may predate `--json-out`, so branch on `--help`, not on the README. Current release candidate: CHANGELOG. Refuse a binary whose version ends `-dirty)` or `(unknown revision)` for any release claim; do not build one just for an example (USER-GUIDE §1 if the pilot needs one).
 
 ## Run it safely
 

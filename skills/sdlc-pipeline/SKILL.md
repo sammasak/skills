@@ -69,7 +69,6 @@ not proof that there are no committed changes to review.
 - **Never push past a red `sdlc:done`.** Re-run the loop until green before `git push`.
 - **Single pipeline at a time, per checkout.** State derives from the working tree, so two pipelines running concurrently in the same checkout will stamp over each other's fingerprints. Don't parallelize this loop.
 - Any working-tree change invalidates every stamp by design. That's re-verification, not a bug. Don't be surprised when a fix to stage N causes stage N-1's guard to re-run too.
-- Stage order and which stages exist are per-repo config (`platform.sdlc.stages`, preset-dependent). Read `$SDLC_MACHINE`, don't assume the rust preset applies to a non-rust repo.
 - A guard fails for a non-code reason (missing executable, eval error such as `references missing guard task`, stale pre-push hook after a platform re-pin): match the message against the [troubleshooting table](https://github.com/sammasak/devenv-platform/blob/main/docs/ADOPTING-SDLC.md#troubleshooting), fix the environment, never write a verdict or skip the stage. A platform defect goes to `tooling-feedback` (`sammasak/devenv-platform`, its `docs/FEEDBACK.md` template).
 - `sdlc-status` is read-only (never writes stamps, never runs guards) and already accounts for staleness: it only reports a stage red when `last-red.json`'s fingerprint matches the current tree, otherwise a stale red demotes to unverified. Trust its state, don't recompute freshness by hand.
 
