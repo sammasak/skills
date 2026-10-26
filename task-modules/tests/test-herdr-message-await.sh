@@ -107,7 +107,7 @@ sed -i '/^not json$/d' "$TMP/state/audit.jsonl"
 # await: the turn must start before it can end
 : > "$FAKE_LOG"; rm -f "$FAKE_LOG.seq"
 FAKE_HERDR_STATE_SEQ="idle,working,done" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
-[ "$CODE" -eq 0 ] && [ "$(jqr .herdr_state)" = done ] && [ "$(jqr .turn_observed)" = true ] && [ "$(jqr .worker_done)" = true ] && [ "$(jqr .accepted)" = false ] && ok || bad "await idle→working→done: $OUT"
+[ "$CODE" -eq 0 ] && [ "$(jqr .herdr_state)" = "done" ] && [ "$(jqr .turn_observed)" = true ] && [ "$(jqr .worker_done)" = true ] && [ "$(jqr .accepted)" = false ] && ok || bad "await idle→working→done: $OUT"
 grep -q 'herdr agent wait wA:p2 --until working --until blocked --timeout 5000' "$FAKE_LOG" && ok || bad "await: phase-1 argv"
 grep -q 'herdr agent wait wA:p2 --until idle --until done --until blocked --timeout' "$FAKE_LOG" && ok || bad "await: phase-2 argv"
 rm -f "$FAKE_LOG.seq"; FAKE_HERDR_STATE_SEQ="working,idle" run herdr:await '{"host":"lenovo","agent_id":"wA:p2","timeout_s":5}'
