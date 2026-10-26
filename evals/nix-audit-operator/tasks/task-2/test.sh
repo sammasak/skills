@@ -33,6 +33,15 @@ printf '{"schema":"nix-audit-report/v0","target":"%s"}\n' "$target"
 exit "$rc"
 STUB
 chmod +x "$work/bin/nix-audit"
+# The real host lock may be held by other work; a correct script that takes it must not hang here.
+cat > "$work/bin/flock" <<'STUB'
+#!/usr/bin/env bash
+while [ $# -gt 0 ]; do case "$1" in -w|-E|--timeout|--conflict-exit-code) shift 2 ;; -*) shift ;; *) break ;; esac; done
+shift   # the lock file
+[ $# -gt 0 ] && exec "$@"
+exit 0
+STUB
+chmod +x "$work/bin/flock"
 
 # run <now-rc> <next-rc>: fresh dir, stub exit codes per target, run the script
 run() {
