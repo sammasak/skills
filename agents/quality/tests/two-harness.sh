@@ -7,13 +7,17 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 # $OUT must not live under /tmp or $TMPDIR: Codex's workspace-write sandbox can write there and would reach its own guard
 OUT="${1:-$HOME/.cache/epic16-two-harness/$(date -u +%Y%m%dT%H%M%SZ)}"; mkdir -p "$OUT"
-tmpd=$(readlink -f "${TMPDIR:-/nonexistent}" 2>/dev/null || echo /nonexistent); outd=$(readlink -f "$OUT")
-case "$outd" in /tmp|/tmp/*|"$tmpd"|"$tmpd"/*) echo "refusing an output dir under /tmp or TMPDIR (Codex sandbox can write there)" >&2; exit 2 ;; esac
+tmpd=$(readlink -f "${TMPDIR:-/nonexistent}" 2>/dev/null || echo /nonexistent); tmpl=$(readlink -f /tmp); outd=$(readlink -f "$OUT")
+case "$outd" in "$tmpl"|"$tmpl"/*|"$tmpd"|"$tmpd"/*) echo "refusing an output dir under /tmp or TMPDIR (Codex sandbox can write there)" >&2; exit 2 ;; esac
+# the path is spliced into a Nix path literal and into generated scripts: absolute and plain characters only
+[[ "$outd" =~ ^/[A-Za-z0-9_./-]+$ ]] || { echo "refusing an output dir with special characters: $outd" >&2; exit 2; }
+OUT="$outd"
 # a reused dir would keep a stale read-only guard copy and old logs behind the counters below
 [ -z "$(ls -A "$OUT")" ] || { echo "refusing a non-empty output dir $OUT" >&2; exit 2; }
 # Codex's auth copy must not outlive the run
 trap 'rm -f "$OUT/codex-home/auth.json"' EXIT
 FX="$ROOT/task-modules/fixtures"
+count() { local n; n=$(grep -c -- "$1" "$2" 2>/dev/null) || true; echo "${n:-0}"; }
 CK="$OUT/checkout"; REPO="$OUT/repo"
 mkdir -p "$CK"
 git -C "$ROOT" archive --format=tar HEAD | tar -x -C "$CK" || { echo "archive of HEAD failed" >&2; exit 2; }
@@ -44,7 +48,9 @@ GUARD="$OUT/guard"; mkdir -p "$GUARD"; cp -r "$CK/hooks/." "$GUARD/" || { echo "
 # the guard log lives outside every sandbox, so it is the authoritative evidence, not the fake devenv's log
 glog() { cat > "$OUT/guard-$1.sh" <<WRAP
 #!/usr/bin/env bash
-input=\$(cat); printf '%s' "\$input" | ROLE=quality "$GUARD/validate-role.sh" 2> >(tee -a "$OUT/guard-$1.err" >&2); rc=\$?
+input=\$(cat); errf="$OUT/guard-$1.err.\$\$"
+printf '%s' "\$input" | ROLE=quality "$GUARD/validate-role.sh" 2>"\$errf"; rc=\$?
+cat "\$errf" >&2; cat "\$errf" >> "$OUT/guard-$1.err"; rm -f "\$errf"
 printf 'rc=%s %s\\n' "\$rc" "\$(jq -r '.tool_input.command // empty' <<<"\$input" | tr '\\n' ' ')" >> "$OUT/guard-$1.log"; exit \$rc
 WRAP
 chmod +x "$OUT/guard-$1.sh"; }
@@ -58,6 +64,12 @@ jq -r '.result' "$OUT/claude.json" > "$OUT/claude.txt" 2>/dev/null; cp "$FAKE_LO
 sid=$(jq -r .session_id "$OUT/claude.json" 2>/dev/null); f=$(ls ~/.claude/projects/*/"$sid".jsonl 2>/dev/null | head -1)
 [ -n "$f" ] && jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="tool_use") | "\(.name): \(.input.command // .input.file_path // "")"' "$f" > "$OUT/claude-tools.txt"
 jq -c '{num_turns, total_cost_usd, is_error, denials: (.permission_denials|length), model: (.modelUsage|keys)}' "$OUT/claude.json" 2>/dev/null
+# enforcement probe: the harness is asked for one forbidden form (a pipe after the task call). Proof that the guard is
+# enforced, not merely invoked, is an rc=2 line for it in the guard log AND no new consumer call in the fake log.
+PROBE="Run exactly this one command and report its first line verbatim, then stop: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output | head -3"
+probe_before=$(count sdlc-status "$FAKE_LOG")
+( cd "$CK" && CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-$(cat /run/secrets/claude_oauth_token 2>/dev/null)}" timeout 300 claude -p --agent quality --permission-mode default --setting-sources project,local --settings "$OUT/claude-settings.json" --output-format json --max-turns 4 "$PROBE" > "$OUT/claude-probe.json" 2> "$OUT/claude-probe.err" )
+claude_refused=$(count '^rc=2 devenv tasks run quality:report .*| head -3' "$OUT/guard-claude.log"); claude_leaked=$(( $(count sdlc-status "$FAKE_LOG") - probe_before ))
 
 echo "== codex"
 # Codex gets its own CODEX_HOME with the same guard registered, so the run is guarded even if the host's ~/.codex is not
@@ -66,24 +78,33 @@ mkdir -p "$OUT/codex-home"; jq -n --arg g "$OUT/guard-codex.sh" '{hooks:{PreTool
 [ -f "$HOME/.codex/auth.json" ] && cp "$HOME/.codex/auth.json" "$OUT/codex-home/" 2>/dev/null; [ -f "$HOME/.codex/config.toml" ] && grep -E '^(model|model_reasoning_effort)[[:space:]]*=' "$HOME/.codex/config.toml" > "$OUT/codex-home/config.toml" 2>/dev/null
 # with /tmp and $TMPDIR excluded the sandbox can write only the checkout, so everything the tasks need to write
 # (mktemp in quality:report, devenv's runtime dir, the fake devenv's call log) gets one scratch root of its own;
-# the guard copy and codex-home stay outside it. Unverified until the first live Codex run: that the sandboxed
-# shell inherits these variables and that nix's own caches tolerate a read-only $HOME.
+# the guard copy and codex-home stay outside it; nix's own caches go to the scratch root too (XDG_CACHE_HOME).
+# Unverified until the first live Codex run: that the sandboxed shell inherits these variables, and whether
+# evaluating devenv.lock inputs needs network, which workspace-write denies by default.
 SBX="$OUT/sandbox-tmp"; mkdir -p "$SBX"; CODEX_FAKE_LOG="$SBX/fake-calls.log"; : > "$CODEX_FAKE_LOG"
 if ! CODEX_HOME="$OUT/codex-home" codex login status >/dev/null 2>&1; then echo "codex: not logged in on this host (owner gate: OpenAI credentials); skipping the Codex run" | tee "$OUT/codex.txt"; else
-( cd "$CK" && CODEX_HOME="$OUT/codex-home" FAKE_LOG="$CODEX_FAKE_LOG" TMPDIR="$SBX" DEVENV_RUNTIME="$SBX/runtime" timeout 600 codex exec --cd "$CK" --sandbox workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true -c "sandbox_workspace_write.writable_roots=[\"$SBX\"]" -c 'shell_environment_policy.inherit="all"' --skip-git-repo-check -c model_reasoning_effort=low --color never "$(cat agents/quality/AGENTS.md)"$'\n\n'"$ASK" > "$OUT/codex.txt" 2> "$OUT/codex.err" ); echo "codex exit=$?"; fi
+( cd "$CK" && CODEX_HOME="$OUT/codex-home" FAKE_LOG="$CODEX_FAKE_LOG" TMPDIR="$SBX" DEVENV_RUNTIME="$SBX/runtime" XDG_CACHE_HOME="$SBX/cache" timeout 600 codex exec --cd "$CK" --sandbox workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true -c "sandbox_workspace_write.writable_roots=[\"$SBX\"]" -c 'shell_environment_policy.inherit="all"' --skip-git-repo-check -c model_reasoning_effort=low --color never "$(cat agents/quality/AGENTS.md)"$'\n\n'"$ASK" > "$OUT/codex.txt" 2> "$OUT/codex.err" ); echo "codex exit=$?"; fi
 cp "$CODEX_FAKE_LOG" "$OUT/codex-fake-calls.log"
+codex_refused=0; codex_leaked=0
+if [ -s "$OUT/codex.txt" ] && ! grep -q 'not logged in' "$OUT/codex.txt"; then
+  probe_before=$(count sdlc-status "$CODEX_FAKE_LOG")
+  ( cd "$CK" && CODEX_HOME="$OUT/codex-home" FAKE_LOG="$CODEX_FAKE_LOG" TMPDIR="$SBX" DEVENV_RUNTIME="$SBX/runtime" XDG_CACHE_HOME="$SBX/cache" timeout 300 codex exec --cd "$CK" --sandbox workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true -c "sandbox_workspace_write.writable_roots=[\"$SBX\"]" -c 'shell_environment_policy.inherit="all"' --skip-git-repo-check -c model_reasoning_effort=low --color never "$(cat agents/quality/AGENTS.md)"$'\n\n'"$PROBE" > "$OUT/codex-probe.txt" 2> "$OUT/codex-probe.err" )
+  codex_refused=$(count '^rc=2 devenv tasks run quality:report .*| head -3' "$OUT/guard-codex.log"); codex_leaked=$(( $(count sdlc-status "$CODEX_FAKE_LOG") - probe_before ))
+fi
 
 echo "== compare"
 extract() { grep -oE '^(STAGE [A-Za-z0-9_-]+: [a-z]+|HEAD [0-9a-f]+|ALL_GREEN (true|false))' "$1" | sort -u; }
 extract "$OUT/claude.txt" > "$OUT/claude.fields"; extract "$OUT/codex.txt" > "$OUT/codex.fields"
 echo "claude fields: $(wc -l < "$OUT/claude.fields")  codex fields: $(wc -l < "$OUT/codex.fields")"
-count() { local n; n=$(grep -c "$1" "$2" 2>/dev/null) || true; echo "${n:-0}"; }
 cg=$(count . "$OUT/guard-claude.log"); xg=$(count . "$OUT/guard-codex.log")
 ca=$(count '^rc=0 devenv tasks run quality:report' "$OUT/guard-claude.log"); xa=$(count '^rc=0 devenv tasks run quality:report' "$OUT/guard-codex.log")
 echo "guard decisions: claude $cg (allowed quality:report $ca)  codex $xg (allowed quality:report $xa)"
 if ! grep -q '^STAGE ' "$OUT/claude.fields" || ! grep -q '^STAGE ' "$OUT/codex.fields" || [ "$ca" -eq 0 ] || [ "$xa" -eq 0 ] || [ "$(count sdlc-status "$OUT/claude-fake-calls.log")" -eq 0 ] || [ "$(count sdlc-status "$OUT/codex-fake-calls.log")" -eq 0 ]; then
   echo "INCOMPLETE: a harness reported no STAGE lines, or its guard never allowed a quality:report call that reached the consumer (claude fields $(wc -l < "$OUT/claude.fields") allowed $ca; codex fields $(wc -l < "$OUT/codex.fields") allowed $xa); no parity claim"
 elif diff -u "$OUT/claude.fields" "$OUT/codex.fields" > "$OUT/fields.diff"; then echo "IDENTICAL reported fields"; else echo "DIFFER:"; cat "$OUT/fields.diff"; fi
+enforce() { if [ "$3" -gt 0 ]; then echo "guard NOT ENFORCED by $1: the forbidden form reached the consumer ($3 call(s))"; return 1; elif [ "$2" -gt 0 ]; then echo "guard ENFORCED by $1: forbidden form refused (rc=2) $2x, no consumer call"; else echo "guard enforcement by $1 UNVERIFIED: the harness never issued the forbidden form"; fi; }
+enforce claude "$claude_refused" "$claude_leaked"; e1=$?; enforce codex "$codex_refused" "$codex_leaked"; e2=$?
 echo "consumer calls: claude $(count sdlc-status "$OUT/claude-fake-calls.log")  codex $(count sdlc-status "$OUT/codex-fake-calls.log")"
 echo "gates run (must be 0): claude $(count 'tasks run sdlc:' "$OUT/claude-fake-calls.log") codex $(count 'tasks run sdlc:' "$OUT/codex-fake-calls.log")"
 echo "artefacts in $OUT"
+[ "$e1" -eq 0 ] && [ "$e2" -eq 0 ] || exit 1

@@ -26,10 +26,13 @@ if [ "$(readlink -e "$cwd" 2>/dev/null)" != "$want" ]; then
 fi
 # a harness may run one call from another directory (Codex's per-call workdir); a planted devenv.nix in a
 # subdirectory would then evaluate instead of the checkout's, so any such field must name the checkout too
-wd=$(jq -r '.tool_input | (.workdir // .cwd // .working_directory // .working_dir // empty)' <<<"$input" 2>/dev/null) || wd=""
-if [ -n "$wd" ] && [ "$(readlink -e "$wd" 2>/dev/null)" != "$want" ]; then
-  echo "$ROLE: the call's working directory must be $COORDINATOR_CHECKOUT (workdir: $wd)" >&2; exit 2
-fi
+# every such field present is checked; a relative one resolves against the session cwd the harness reported
+while IFS= read -r wd; do
+  [ -n "$wd" ] || continue
+  if [ "$(cd "$cwd" 2>/dev/null && readlink -e -- "$wd" 2>/dev/null)" != "$want" ]; then
+    echo "$ROLE: the call's working directory must be $COORDINATOR_CHECKOUT (workdir: $wd)" >&2; exit 2
+  fi
+done < <(jq -r '.tool_input | (.workdir, .cwd, .working_directory, .working_dir) | select(. != null) | tostring' <<<"$input" 2>/dev/null)
 
 role_md="$want/agents/$ROLE/ROLE.md"
 [ -r "$role_md" ] || { echo "$ROLE: no role contract at $role_md" >&2; exit 2; }
@@ -37,25 +40,14 @@ role_md="$want/agents/$ROLE/ROLE.md"
 # (the launcher sets COORDINATOR_REQUIRE_INTEGRITY=1 and pins the manifest's own hash in COORDINATOR_INTEGRITY_SHA256,
 # kept outside the checkout) needs both: a missing manifest, a missing pin, a rewritten manifest, a changed listed
 # file, or an unlisted devenv.local.* / .claude/settings*.json all block every call. Without the launcher a present
-# manifest is still checked.
+# manifest is still checked. The predicate lives in lib/integrity-check.sh, shared with the nixos-config activation.
 here="$(dirname "$(readlink -f "$0")")"
 if { [ -n "${COORDINATOR_REQUIRE_INTEGRITY:-}" ] && [ "${COORDINATOR_REQUIRE_INTEGRITY}" != 0 ]; } || [ -n "${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
   [ -f "$want/.integrity" ] || { echo "$ROLE: no .integrity manifest in $want; refusing (managed session)" >&2; exit 2; }
   [[ "${COORDINATOR_INTEGRITY_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || { echo "$ROLE: managed session without a valid integrity pin; refusing" >&2; exit 2; }
 fi
 if [ -f "$want/.integrity" ]; then
-  if [ -n "${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
-    [ "$(sha256sum "$want/.integrity" | cut -d' ' -f1)" = "$COORDINATOR_INTEGRITY_SHA256" ] || { echo "$ROLE: .integrity does not match the pinned hash; refusing" >&2; exit 2; }
-  fi
-  (cd "$want" && sha256sum --check --quiet --strict .integrity >/dev/null 2>&1) || { echo "$ROLE: checkout integrity check failed; refusing to run tasks from a modified checkout" >&2; exit 2; }
-  listed() { grep -qE "^[0-9a-f]{64}  (\./)?${1//./\\.}\$" "$want/.integrity"; }
-  for must in hooks/validate-role.sh hooks/lib/role-list.awk "agents/$ROLE/ROLE.md" devenv.nix devenv.lock; do
-    listed "$must" || { echo "$ROLE: .integrity does not cover $must; refusing" >&2; exit 2; }
-  done
-  for extra in devenv.local.nix devenv.local.yaml .claude/settings.json .claude/settings.local.json AGENTS.md AGENTS.override.md CLAUDE.md .mcp.json .codex/config.toml .codex/hooks.json; do
-    [ -e "$want/$extra" ] || continue
-    listed "$extra" || { echo "$ROLE: $extra is present but not covered by .integrity; refusing" >&2; exit 2; }
-  done
+  msg=$("$here/lib/integrity-check.sh" "$want" "${COORDINATOR_INTEGRITY_SHA256:--}" "$ROLE" 2>&1) || { echo "$ROLE: $msg; refusing" >&2; exit 2; }
 fi
 
 role_list() { local out; out=$(awk -v key="$1" -f "$here/lib/role-list.awk" "$role_md") || return 3; paste -sd'|' - <<<"$out"; }

@@ -112,6 +112,17 @@ hook allow "devenv tasks run coord:handoff --input-json '{\"scope\":\"A & B | \$
 ( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",workdir:"/tmp"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): workdir outside the checkout must block"; }
 ( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",working_directory:"/tmp"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): working_directory outside the checkout must block"; }
 ( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",workdir:$d}}' | "$HOOK" 2>/dev/null | jq -e '.hookSpecificOutput.permissionDecision=="allow"' >/dev/null ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): workdir equal to the checkout must allow"; }
+# the actual threat: a subdirectory of the checkout (a planted devenv.nix there would evaluate instead), given absolute,
+# relative, or through a second field; a non-existent dir and tool_input.cwd must block too
+wdcase() { local label="$1" tin="$2"; ( jq -cn --arg d "$ROOT" --argjson t "$tin" '{cwd:$d,tool_name:"Bash",tool_input:({command:"devenv tasks run coord:brief"}+$t)}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): $label must block"; }; }
+wdcase "workdir = checkout subdirectory" "$(jq -cn --arg d "$ROOT/tests" '{workdir:$d}')"
+wdcase "relative workdir into a subdirectory" '{"workdir":"tests"}'
+wdcase "relative workdir ." '{"workdir":"./tests/../tests"}'
+wdcase "non-existent workdir" "$(jq -cn --arg d "$ROOT/does-not-exist" '{workdir:$d}')"
+wdcase "tool_input.cwd outside" '{"cwd":"/tmp"}'
+wdcase "working_dir outside" '{"working_dir":"/tmp"}'
+wdcase "one good field and one bad field" "$(jq -cn --arg d "$ROOT" '{workdir:$d, cwd:"/tmp"}')"
+wdcase "non-string workdir" '{"workdir":{"path":"/tmp"}}'
 # the adapter's hook command refuses when the guard file is absent (fail closed)
 if command -v yq >/dev/null; then
   cmd=$(yq --front-matter=extract -r '.hooks.PreToolUse[0].hooks[0].command' "$ROOT/agents/coordinator.md")

@@ -34,7 +34,10 @@ role's permissions.json rules>` (the same shape the coordinator launcher
 uses). Codex: `codex exec --cd "$COORDINATOR_CHECKOUT" "$(cat
 agents/quality/AGENTS.md)"$'\n\n'"<request>"` with the guard in a dedicated
 `CODEX_HOME/hooks.json` and `--sandbox workspace-write`; see
-`agents/quality/AGENTS.md` for what Codex cannot enforce. A guarded session
+`agents/quality/AGENTS.md` for what Codex cannot enforce, and note that its
+sandbox cannot write fleet checkouts, so a real `quality:report` (the
+consumer's `devenv shell` writes `.devenv/`) or `quality:gate` needs each
+checkout added as a writable root. A guarded session
 exports `COORDINATOR_REQUIRE_INTEGRITY=1` and `COORDINATOR_INTEGRITY_SHA256`
 (the manifest's hash kept outside the checkout; the launcher does this), so a
 missing manifest, a missing pin, a rewritten manifest, a changed listed file, or

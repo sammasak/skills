@@ -55,9 +55,22 @@ retry with a variation.
   the parity run happens: the exact PreToolUse payload shape
   (`tool_input.command` as a string), how Codex treats `permissionDecision`,
   and whether a per-call working directory arrives as `tool_input.workdir`.
-  The guard refuses any `workdir`/`cwd`/`working_directory` field that is not
-  the checkout, because a planted `devenv.nix` in a new subdirectory is not
-  caught by the manifest and would evaluate instead of the checkout's.
+  The guard refuses any `workdir`, `cwd`, `working_directory` or
+  `working_dir` field under `tool_input` that does not resolve to the
+  checkout, because a planted `devenv.nix` in a new subdirectory is not caught
+  by the manifest and would evaluate instead of the checkout's. The parity
+  script ends each half with an enforcement probe (one forbidden form: a pipe
+  after the task call) and reports ENFORCED only when the guard log shows the
+  refusal and the consumer saw no call; a hook that is invoked but ignored
+  shows up as NOT ENFORCED.
+- **The sandbox cannot write fleet checkouts.** `--sandbox workspace-write`
+  lets the agent write the skills checkout (and the scratch root) only. A real
+  `quality:report` enters the consumer's `devenv shell`, which writes
+  `<checkout>/.devenv/`, and `quality:gate` builds and tests inside the
+  consumer repo; both fail under Codex unless every fleet checkout is added
+  with `-c sandbox_workspace_write.writable_roots=[…]`, which widens what the
+  agent can edit. The parity run uses a fake devenv that never writes into the
+  consumer repo, so an IDENTICAL verdict says nothing about this.
 - **Sandbox scratch.** With `/tmp` and `$TMPDIR` excluded from the writable
   roots (so the agent cannot reach its own guard copy), the tasks still need
   somewhere to write (`mktemp` in `quality:report`, devenv's runtime dir); the
