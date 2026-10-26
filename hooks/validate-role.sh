@@ -33,7 +33,7 @@ role_md="$want/agents/$ROLE/ROLE.md"
 # file, or an unlisted devenv.local.* / .claude/settings*.json all block every call. Without the launcher a present
 # manifest is still checked.
 here="$(dirname "$(readlink -f "$0")")"
-if [ "${COORDINATOR_REQUIRE_INTEGRITY:-0}" = 1 ] || [ -n "${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
+if { [ -n "${COORDINATOR_REQUIRE_INTEGRITY:-}" ] && [ "${COORDINATOR_REQUIRE_INTEGRITY}" != 0 ]; } || [ -n "${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
   [ -f "$want/.integrity" ] || { echo "$ROLE: no .integrity manifest in $want; refusing (managed session)" >&2; exit 2; }
   [[ "${COORDINATOR_INTEGRITY_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || { echo "$ROLE: managed session without a valid integrity pin; refusing" >&2; exit 2; }
 fi
@@ -46,7 +46,7 @@ if [ -f "$want/.integrity" ]; then
   for must in hooks/validate-role.sh hooks/lib/role-list.awk "agents/$ROLE/ROLE.md" devenv.nix devenv.lock; do
     listed "$must" || { echo "$ROLE: .integrity does not cover $must; refusing" >&2; exit 2; }
   done
-  for extra in devenv.local.nix devenv.local.yaml .claude/settings.json .claude/settings.local.json; do
+  for extra in devenv.local.nix devenv.local.yaml .claude/settings.json .claude/settings.local.json AGENTS.md CLAUDE.md .mcp.json .codex/config.toml .codex/hooks.json; do
     [ -e "$want/$extra" ] || continue
     listed "$extra" || { echo "$ROLE: $extra is present but not covered by .integrity; refusing" >&2; exit 2; }
   done

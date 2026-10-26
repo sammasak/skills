@@ -12,7 +12,7 @@ let
   consumerEnv = ''
     cenv=(HOME="$HOME" TERM="''${TERM:-dumb}" LANG="''${LANG:-C.UTF-8}" PATH="/run/current-system/sw/bin:/etc/profiles/per-user/''${USER:-nobody}/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/bin:/bin")
     for v in USER LOGNAME TZ NIX_PATH NIX_SSL_CERT_FILE SSL_CERT_FILE XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME XDG_STATE_HOME ${cfg.consumerEnvPassthrough}; do
-      [ -n "''${!v+x}" ] && cenv+=("$v=''${!v}")
+      [ -n "''${!v:+x}" ] && cenv+=("$v=''${!v}")
     done
   '';
   # resolve $checkout against the fleet or fail; $repo gets the fleet name
@@ -28,7 +28,7 @@ in
   imports = [ ../../task-modules/fleet.nix ];
 
   options.coordinator.devenvCommand = lib.mkOption { type = t.str; default = "devenv"; description = "Overridable for tests (fake devenv)."; };
-  options.coordinator.consumerEnvPassthrough = lib.mkOption { type = t.str; default = ""; description = "Extra variable names forwarded to the consumer's devenv (tests use it for FAKE_*)."; };
+  options.coordinator.consumerEnvPassthrough = lib.mkOption { type = t.strMatching "^([A-Z_][A-Z0-9_]*( [A-Z_][A-Z0-9_]*)*)?$"; default = ""; description = "Extra variable names forwarded to the consumer's devenv (tests use it for FAKE_*)."; };
   options.coordinator.consumerTimeoutSeconds = lib.mkOption { type = t.int; default = 180; description = "Bound for evaluating the consumer's devenv shell (cold evals of Rust consumers take a while)."; };
   # below Claude's longest Bash tool timeout (600s) so a gate call can always report
   options.coordinator.gateTimeoutSeconds = lib.mkOption { type = t.int; default = 540; };

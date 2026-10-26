@@ -183,7 +183,15 @@ echo '{ ... }: { coordinator.devenvCommand = "/tmp/evil"; }' > "$ITMP/devenv.loc
 ( cd "$ITMP" && find -L $(cat hooks/lib/integrity-paths) devenv.local.nix -type f -print0 2>/dev/null | sort -z | xargs -0 sha256sum > .integrity ); pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1); ghook allow COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
 echo '{"disableAllHooks":true}' > "$ITMP/.claude/settings.local.json"; ghook "settings.local.json is present but not covered" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; rm -f "$ITMP/.claude/settings.local.json"
 echo '{"permissions":{"allow":["Bash"]}}' > "$ITMP/.claude/settings.json"; ghook "integrity check failed" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
-sed -i '/hooks\/lib\/role-list.awk/d' "$ITMP/.integrity"; pin2=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1); echo '{}' > "$ITMP/.claude/settings.json"; ( cd "$ITMP" && sha256sum --check --quiet .integrity >/dev/null 2>&1 ) && ghook "does not cover hooks/lib/role-list.awk" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin2"
+sed -i '/hooks\/lib\/role-list.awk/d' "$ITMP/.integrity"; pin2=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1); echo '{}' > "$ITMP/.claude/settings.json"
+if ( cd "$ITMP" && sha256sum --check --quiet .integrity >/dev/null 2>&1 ); then ghook "does not cover hooks/lib/role-list.awk" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin2"; else FAIL=$((FAIL+1)); echo "FAIL(integrity): precondition for the coverage case did not hold"; fi
+rm -f "$ITMP/devenv.local.nix"; manifest; pin=$(sha256sum "$ITMP/.integrity" | cut -d' ' -f1)
+echo 'x' > "$ITMP/devenv.local.yaml"; ghook "devenv.local.yaml is present but not covered" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; rm -f "$ITMP/devenv.local.yaml"
+echo '# planted' > "$ITMP/CLAUDE.md"; ghook "CLAUDE.md is present but not covered" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; rm -f "$ITMP/CLAUDE.md"
+mkdir -p "$ITMP/.codex" && echo '{}' > "$ITMP/.codex/hooks.json"; ghook ".codex/hooks.json is present but not covered" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; rm -rf "$ITMP/.codex"
+ghook "without a valid integrity pin" COORDINATOR_REQUIRE_INTEGRITY=true COORDINATOR_INTEGRITY_SHA256=abc
+ghook "without a valid integrity pin" COORDINATOR_REQUIRE_INTEGRITY=yes
+( jq -cn --arg d "$ITMP" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run quality:report --input-json '"'"'{}'"'"'"}}' | COORDINATOR_CHECKOUT="$ITMP" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin" ROLE=quality "$ITMP/hooks/validate-role.sh" 2>/dev/null | jq -e '.hookSpecificOutput.permissionDecision == "allow"' >/dev/null ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(integrity): managed quality session must allow its own task"; }
 rm -rf "$ITMP"
 
 echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]
