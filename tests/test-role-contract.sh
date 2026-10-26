@@ -28,15 +28,17 @@ for role_md in agents/*/ROLE.md; do
 
   perms="$dir/permissions.json"
   [ -f "$perms" ] || { bad "$role: permissions.json missing"; continue; }
-  for t in $(jq -r '.tasks.read[]' <<<"$fm"); do
-    jq -e --arg t "$t" '[.allow[] | select(startswith("Bash(devenv tasks run " + $t + ")") or startswith("Bash(devenv tasks run " + $t + " "))] | length > 0' "$perms" >/dev/null && ok || bad "$role: read task $t not allowlisted"
+  # input-less read tasks get exact settings rules; tasks that need input are allowed by the guard only
+  for t in coord:brief herdr:inventory work:status; do
+    jq -e --arg t "$t" '.tasks.read | index($t)' <<<"$fm" >/dev/null || continue
+    jq -e --arg r "Bash(devenv tasks run ${t})" '.allow|index($r)' "$perms" >/dev/null && ok || bad "$role: exact rule for $t missing"
   done
   for t in $(jq -r '.tasks.act[]' <<<"$fm"); do
     jq -e --arg t "$t" '[.allow[] | select(contains($t))] | length == 0' "$perms" >/dev/null && ok || bad "$role: act task $t is allowlisted"
     jq -e --arg t "$t" '[.ask[] | select(contains($t))] | length > 0' "$perms" >/dev/null && ok || bad "$role: act task $t not in ask"
   done
   # every Bash allow rule names a read task; nothing else is allowed besides Read
-  extra=$(jq -r --argjson r "$(jq -c '.tasks.read' <<<"$fm")" '.allow[] | select(. != "Read") | select((capture("^Bash\\(devenv tasks run (?<t>[a-z]+:[a-z-]+)").t) as $t | ($r | index($t)) == null)' "$perms")
+  extra=$(jq -r --argjson r "$(jq -c '.tasks.read' <<<"$fm")" '.allow[] | select(. != "Read") | select((capture("^Bash\\(devenv tasks run (?<t>[a-z]+:[a-z-]+)( --show-output)?\\)$")?.t // "") as $t | ($r | index($t)) == null)' "$perms")
   [ -z "$extra" ] && ok || bad "$role: allow rules outside the read tasks: $extra"
   [ "$(jq -r '.allow[] | select(startswith("Bash(") | not)' "$perms")" = "Read" ] && ok || bad "$role: only Read may be allowed besides Bash rules"
   [ -x "$ROOT/$(jq -r .guard "$perms")" ] && ok || bad "$role: guard hook missing or not executable"

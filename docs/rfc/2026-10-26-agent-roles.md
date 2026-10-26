@@ -9,11 +9,12 @@ fleet-wide rollout via `just bump skills`.
 |---|---|---|---|
 | **Role** | `agents/<role>/ROLE.md` | Portable contract: mission, assigned skills, allowed task names split into `read` and `act`, forbidden operations, evidence rules, adapters. YAML frontmatter is machine-read by tests; prose is read by the agent. | A runtime boundary. |
 | **Skill** | `skills/<name>/SKILL.md` | Short "when and how" instructions, Agent Skills compatible; may name tasks and scripts. | A copy of a task's implementation. |
-| **Task** | `task-modules/bin/<name>` + `task-modules/<family>.nix` | Deterministic executable with versioned JSON output, bounded runtime, documented exit codes, tested with fixtures and no LLM. Wrapped by a devenv task of the same name. | Something only an LLM can run. |
-| **DAG** | `agents/<role>/tasks.nix` | Native devenv `after` edges composing shared tasks with role tasks; `@completed` where a partial result is still useful, with failures surfaced in the output. | A scheduler, queue or state machine. |
+| **Task** | `task-modules/<family>.nix` | A devenv task: `exec` holds the logic (shared helpers sourced from `task-modules/lib.sh`), `input` declares its parameters, output goes to `$DEVENV_TASK_OUTPUT_FILE` as versioned JSON, bounded runtime, documented exit codes, tested by running the task against fixtures with no LLM. | A standalone CLI or a devenv `scripts` entry. |
+| **DAG** | `task-modules/*.nix`, `agents/<role>/tasks.nix` | Native devenv `after` edges. Fan-out is generated at eval time from `fleet.json` (one `herdr:list:<host>`, `gh:work:<repo>`, `git:recent:<repo>` per entry); aggregators depend on `<task>@completed`, read `DEVENV_TASKS_OUTPUTS`, and list every expected upstream that is missing as a failed source. | A scheduler, queue or state machine. |
 | **Adapter** | `agents/<role>.md` (Claude), `agents/<role>/AGENTS.md` (Codex) | Thin harness-specific file that points at ROLE.md, preloads the role's skills and restricts tools to what the harness supports. | A second copy of the role logic. |
-| **Guard** | `hooks/validate-<role>.sh` | PreToolUse(Bash) hook wired in the Claude adapter's frontmatter, so it applies only when that agent runs. Accepts one strict grammar (`devenv tasks run <task> [--input-json '<object>'] [--show-output]`), returns `allow` for read tasks, `ask` for act tasks, blocks everything else. | An OS boundary. |
-| **Permissions** | `agents/<role>/permissions.json` | Portable allow/ask/deny rules for the same surface, plus `Read` denies for key and secret paths. Rendered by nixos-config into a settings file that the role's launcher passes with `--settings`, so the rules never leak into other agents' sessions. | Enforced by the skills repo itself. |
+| **Guard** | `hooks/validate-<role>.sh` | PreToolUse(Bash) hook wired in the Claude adapter's frontmatter, so it applies only when that agent runs. The authority for allowing a call: one strict grammar (`devenv tasks run <task> [--input-json '<object>'] [--show-output]`), exactly one JSON object as body, cwd equal to `$COORDINATOR_CHECKOUT`; returns `allow` for read tasks, `ask` for act tasks, blocks everything else. | An OS boundary. |
+| **Permissions** | `agents/<role>/permissions.json` | Fallback settings rules: exact input-less forms allowed, act form `ask`, denies for `-O`/`--option`/`--from`/`--override-input`, Edit/Write, and `Read` of key, token and secret paths. Rendered by nixos-config into a settings file that the role's launcher passes with `--settings`, so the rules never leak into other agents' sessions. | Enforced by the skills repo itself, or sufficient on its own. |
+| **Launcher** | nixos-config (M3) | Installs the guard at `~/.claude/hooks/validate-<role>.sh`, exports `COORDINATOR_CHECKOUT`, scopes `Read` to that checkout plus `$XDG_STATE_HOME/coordinator` in the rendered settings, and starts `claude --agent <role> --settings <file>` from the checkout. | Part of this repo. |
 
 ## Operation classes
 
@@ -59,9 +60,13 @@ installed by nixos-config, never committed here:
  "repos":[{"name":"skills","gh":"OWNER/skills","checkout":"/home/user/skills"}]}
 ```
 
-`ssh: null` means local. Only hosts and checkouts listed here are ever
-touched; identifiers are validated against `^[A-Za-z0-9_:.@/-]+$` before use
-and passed as separate argv words, never interpolated into a shell string.
+`ssh: null` means local. The file is read at Nix evaluation time
+(`coordinator.fleetFile`, default `$XDG_CONFIG_HOME/coordinator/fleet.json`),
+so the task graph itself contains exactly the configured hosts and repos;
+names and targets are validated during evaluation against
+`^[A-Za-z0-9_:.@/-]+$`, and runtime identifiers (agent ids, session ids) are
+validated again before use and passed as separate argv words. Tests point
+`coordinator.fleetFile` at fixtures with `--option coordinator.fleetFile:path`.
 
 ## Adapters
 
@@ -73,15 +78,19 @@ there and the limitation is recorded, not hidden.
 ## Claude Code permission gotchas (verified against docs 2026-10-26)
 
 - Rules live in settings, not in agent files; agent files only restrict tools.
-- `Bash(x:*)` means `x *` (a space is required), so a task named `coord:brief`
-  must be allowlisted as `Bash(devenv tasks run coord:brief*)`.
+- `Bash(x:*)` means `x *` (a space is required), so a rule ending in a task
+  name such as `coord:brief:*` would never match the task. Do not use prefix
+  globs for tasks at all (next bullet); list exact forms.
 - Deny and ask beat allow for any subcommand, including `$(...)`; allow needs
   every subcommand of a compound to match. Matching is textual, so these
   rules are guardrails; the OS-level boundary is nixos-config's job.
 - `devenv tasks run` accepts several task names and `-O`/`--option` overrides
-  that replace a task's `exec`, so a prefix rule such as `Bash(devenv tasks run
-  coord:brief*)` would allow arbitrary code. Hence the exact-form rules and the
-  grammar guard.
+  that replace a task's `exec`, so any rule with a wildcard after the task
+  name (`coord:brief*`, `--input-json *`) allows arbitrary code. Settings
+  rules therefore list only exact input-less forms and deny `-O`, `--option`,
+  `--from`, `--override-input`; every call that carries input is allowed only
+  by the guard hook, which returns `allow` after validating the grammar, the
+  JSON body and the working directory. A missing hook degrades to prompting.
 - The test matcher (`tests/lib/claude-permission-match.sh`) is deliberately
   stricter than Claude Code in two places: it never auto-allows a command with
   substitutions or redirections, and it splits on separators without quote

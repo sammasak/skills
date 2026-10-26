@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088  # literal ~ paths are what an agent would type into Read
 # Negative controls for the Coordinator surface (epic #16 M0): the portable
 # permission rules must not be able to express code changes, pushes, merges,
 # host switches, arbitrary SSH or the act-class herdr:message without a prompt.
@@ -18,11 +19,12 @@ expect() { # <want> <tool> <command>
 # read-class tasks are allowed without a prompt
 expect allow Bash "devenv tasks run coord:brief"
 expect allow Bash "devenv tasks run coord:brief --show-output"
-expect allow Bash "devenv tasks run herdr:inspect --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
-expect allow Bash "devenv tasks run herdr:await --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
 expect allow Bash "timeout 60 devenv tasks run work:status"
 expect allow Bash "timeout 60s devenv tasks run work:status"
 expect allow Read
+# calls that carry input are allowed only by the guard hook, so the settings rules prompt
+expect none Bash "devenv tasks run herdr:inspect --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
+expect none Bash "devenv tasks run herdr:await --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
 
 # act-class tasks always prompt
 expect ask Bash "devenv tasks run herdr:message --input-json '{}'"
@@ -30,16 +32,21 @@ expect ask Bash "devenv tasks run coord:brief && devenv tasks run herdr:message 
 
 # bypass attempts found in review: multi-task runs, option overrides, redirections, substitutions
 expect none Bash "devenv tasks run coord:brief herdr:message"
-expect none Bash "devenv tasks run coord:brief -O 'tasks.\"coord:brief\".exec:string' 'ssh lenovo id'"
+expect deny Bash "devenv tasks run coord:brief -O 'tasks.\"coord:brief\".exec:string' 'ssh lenovo id'"
+expect deny Bash "devenv tasks run gh:work --input-json '{}' -O 'tasks.\"gh:work\".exec:string' 'ssh lenovo id'"
+expect none Bash "devenv tasks run gh:work --input-json '{}' herdr:message"
+expect deny Bash "devenv tasks run coord:brief --from path:/tmp/evil"
 expect none Bash "devenv tasks run coord:brief > ~/.ssh/authorized_keys"
 expect deny Bash "devenv tasks run coord:brief \`ssh lenovo x\`"
 expect deny Bash "devenv tasks run coord:brief \$(ssh h \"\$(id)\")"
 expect none Bash "devenv tasks run coord:brief \$(cat ~/.ssh/id_ed25519)"
 expect none Bash "devenv tasks run coord:brief &"
 expect none Bash "devenv tasks run coord:brief |&"
-# shellcheck disable=SC2088  # the literal tilde form is what an agent would type
 expect deny Read "~/.ssh/id_ed25519"
 expect deny Read "/run/secrets/claude_oauth_token"
+expect deny Read "~/.claude/.credentials.json"
+expect deny Read "~/.config/gh/hosts.yml"
+expect deny Read "~/.kube/config"
 
 # privileged or arbitrary operations are denied or at least never silently allowed
 expect deny Bash "ssh lenovo rm -rf /"
@@ -59,9 +66,10 @@ expect none Bash "devenv tasks run coord:brief &&"
 
 # the agent-scoped PreToolUse hook: strict grammar, allow for read tasks, ask for act tasks, block otherwise
 HOOK="$ROOT/hooks/validate-coordinator.sh"
-hook() { # <want: allow|ask|block> <command>
+export COORDINATOR_CHECKOUT="$ROOT"
+hook() { # <want: allow|ask|block> <command> [cwd]
   local out code dec
-  out=$(jq -cn --arg c "$2" '{session_id:"t",tool_name:"Bash",tool_input:{command:$c}}' | "$HOOK" 2>/dev/null); code=$?
+  out=$(jq -cn --arg c "$2" --arg d "${3:-$ROOT}" '{session_id:"t",cwd:$d,tool_name:"Bash",tool_input:{command:$c}}' | "$HOOK" 2>/dev/null); code=$?
   dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null)
   if [ "$1" = block ]; then [ "$code" -eq 2 ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): '$2' -> exit $code dec=$dec (want block)"; }
   else [ "$code" -eq 0 ] && [ "$dec" = "$1" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): '$2' -> exit $code dec=$dec (want $1)"; }; fi
@@ -87,16 +95,21 @@ hook block "timeout 60 devenv tasks run coord:brief"
 hook block "ssh lenovo herdr agent list"
 hook block "cat ~/.ssh/id_ed25519"
 hook block $'devenv tasks run coord:brief\nssh lenovo id'
+hook block $'devenv tasks run coord:brief\r'
 hook block ""
+hook block "devenv tasks run coord:brief --input-json '{} {}'"
+hook block "devenv tasks run coord:brief" "/tmp"
+hook block "devenv tasks run coord:handoff --input-json '{\"scope\":\"don'\"'\"'t\"}'"  # apostrophes need \u0027 in the body
+hook allow "devenv tasks run coord:handoff --input-json '{\"scope\":\"A & B | \$HOME; <x>\"}'"
+( unset COORDINATOR_CHECKOUT; out=$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" 2>/dev/null); [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): unset COORDINATOR_CHECKOUT must block"; }
 
 # the Claude adapter must not carry editing tools
 if grep -qE '^\s*-\s*(Edit|Write|NotebookEdit)\s*$' <(awk '/^tools:/{f=1;next} /^[a-zA-Z]+:/{f=0} f' "$ROOT/agents/coordinator.md"); then
   FAIL=$((FAIL+1)); echo "FAIL: adapter lists an editing tool"
 else PASS=$((PASS+1)); fi
 
-# allow rules: never the `:*` suffix (Claude parses it as `name *`), and a wildcard only after --input-json
-if jq -r '.allow[]' "$P" | grep -qE ':\*\)$'; then FAIL=$((FAIL+1)); echo "FAIL: an allow rule uses the ':*' suffix"; else PASS=$((PASS+1)); fi
-if jq -r '.allow[]' "$P" | grep -E '\*' | grep -qvE -- "--input-json \*\)$"; then FAIL=$((FAIL+1)); echo "FAIL: an allow rule has a wildcard outside --input-json"; else PASS=$((PASS+1)); fi
+# allow rules carry no wildcard at all: a wildcard after the task name admits -O overrides and extra task names
+if jq -r '.allow[]' "$P" | grep -q '\*'; then FAIL=$((FAIL+1)); echo "FAIL: an allow rule contains a wildcard"; else PASS=$((PASS+1)); fi
 # the hook's task lists equal the role contract
 rtasks=$(yq --front-matter=extract -o=json '.' "$ROOT/agents/coordinator/ROLE.md" 2>/dev/null)
 if [ -n "$rtasks" ]; then
