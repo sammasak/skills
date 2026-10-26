@@ -1,6 +1,6 @@
 ---
 name: sdlc-pipeline
-description: "Use when a repo's devenv defines platform.sdlc: checking sdlc-status, driving the sdlc:* stage machine until sdlc:done is green, or writing a review-stage verdict. Stages are per repo (the rust preset is sketch -> model -> test -> review -> perf -> security)."
+description: "Use when a repo's devenv defines platform.sdlc: checking sdlc-status or driving the sdlc:* stage machine until sdlc:done is green. Stages are per repo (the rust preset is sketch -> model -> test -> review -> perf -> security)."
 allowed-tools: Bash, Read, Edit, Write, Agent
 ---
 
