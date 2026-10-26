@@ -36,6 +36,8 @@ Platform: Flux, Cilium (CNI + kube-proxy replacement), MetalLB (pool 192.168.10.
 
 ## Debug entry points
 
+Run cluster commands on Lenovo (k3s server: `flux` and the kubeconfig live there). Elsewhere `kubectl` has no kubeconfig and fails with `localhost:8080 ... refused`: a missing client config, not a cluster outage.
+
 ```bash
 flux get kustomizations && flux get helmreleases -A
 flux logs --all-namespaces --level=error

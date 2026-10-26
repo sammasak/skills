@@ -22,5 +22,6 @@ Done means observed healthy, not "Flux applied it". Pick the deepest level that 
 
 - First request after idle can fail or time out during cold start; retry once before calling it broken.
 - Don't use `curl -k`; it hides cert-manager failures.
+- Levels 1-3 need `flux`/kubeconfig, which exist only on Lenovo; `localhost:8080 refused` elsewhere means no client config, not a down cluster. Level 4 works from any host.
 - The `verify-deployment` agent covers levels 2 and 4 cheaply for ungated apps.
 - `just unhealthy` in `~/homelab-gitops` lists anything not Ready cluster-wide.
