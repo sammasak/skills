@@ -52,7 +52,7 @@ Set aside only the side that failed. Rescanning just that side is valid only if 
 ## Interpret
 
 - Exit 3, a failed or stale scanner, or a missing scan section means **unknown coverage, never zero vulnerabilities**. Exit 0 with `policy.complete: false` is not clean.
-- Typed causes (`policy.incomplete_kinds[].kind`, diff `policy.gate.causes[].kind`) are newer than rc1: check they exist (`jq '.policy | has("incomplete_kinds")'`) and branch on `kind`, never on prose; otherwise use `policy.complete`/`incomplete` and `scan.scanners[].outcome` (§7). Atomic `--json-out` is also post-rc1.
+- Typed causes (`policy.incomplete_kinds[].kind`, diff `policy.gate.causes[].kind`) are newer than rc1: check they exist (`jq '.policy | has("incomplete_kinds")'`) and branch on `kind`, never on prose; otherwise use `policy.complete`/`incomplete` and `scan.scanners[].outcome` for a scan, and `policy.gate.result` plus the exit code for a diff (§7). Atomic `--json-out` is also post-rc1.
 - A target built on another host often has no local `.drv`, so vulnix fails (exit 3); prefer the deploy build host (Lenovo), where derivations exist. Otherwise record the full gate's exit 3 first, then, only if grype `ran` on both sides, run the explicit `diff … --scanners grype --policy "$P"` and report it as grype-only; review any `findings after not compared` before calling an upgrade clean (§6).
 - `gate: pass` = no new violations vs the baseline, not a strict pass. `confirmed` = two scanners matched, not proven exploitable.
 - Report the binary revision, scanners and their outcomes, the policy identity (`policy.source.sha256`, or `bytes`/`path` on `12d640a`), `policy.complete` and comparability with any verdict (§7).
