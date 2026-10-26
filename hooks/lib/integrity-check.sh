@@ -21,6 +21,8 @@ for must in hooks/validate-role.sh hooks/lib/role-list.awk hooks/lib/integrity-c
   listed "$must" || { echo ".integrity does not cover $must" >&2; exit 1; }
 done
 for role in "$@"; do
+  # the predicate defends itself (the activation calls it directly): a role name is plain lowercase, never a pattern
+  [[ "$role" =~ ^[a-z][a-z-]*$ ]] || { echo "role name '$role' is not a lowercase role name" >&2; exit 2; }
   listed "agents/$role/ROLE.md" || { echo ".integrity does not cover agents/$role/ROLE.md" >&2; exit 1; }
 done
 # files a harness reads as policy or that redirect evaluation: present means they must be manifest-listed

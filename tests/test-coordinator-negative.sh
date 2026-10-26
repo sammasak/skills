@@ -123,8 +123,6 @@ wdcase "tool_input.cwd outside" '{"cwd":"/tmp"}'
 wdcase "working_dir outside" '{"working_dir":"/tmp"}'
 wdcase "one good field and one bad field" "$(jq -cn --arg d "$ROOT" '{workdir:$d, cwd:"/tmp"}')"
 wdcase "non-string workdir" '{"workdir":{"path":"/tmp"}}'
-wdcase "newline-only workdir" '{"workdir":"\n"}'
-wdcase "workdir with an embedded newline" "$(jq -cn --arg d "$ROOT" '{workdir:($d+"\n/tmp")}')"
 # these must be refused by the control-character/type check itself (reason pinned), not by a later check
 cchook() { local label="$1" payload="$2" err code; err=$(printf '%s' "$payload" | "$HOOK" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'control characters or unparseable input' <<<"$err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): $label -> $code '$err' (want the control-character refusal)"; }; }
 cchook "control character in working_dir" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",working_dir:($d+"\t")}}')"
@@ -133,6 +131,9 @@ cchook "string tool_input" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",t
 cchook "array tool_input" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:["devenv tasks run coord:brief"]}')"
 cchook "non-string command" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:["devenv","tasks","run","coord:brief"]}}')"
 cchook "newline-only workdir" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",workdir:"\n"}}')"
+cchook "workdir with an embedded newline" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",workdir:($d+"\n/tmp")}}')"
+cchook "newline inside the command" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\nssh lenovo id"}}')"
+cchook "carriage return in the command" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\r"}}')"
 # the adapter's hook command refuses when the guard file is absent (fail closed)
 if command -v yq >/dev/null; then
   cmd=$(yq --front-matter=extract -r '.hooks.PreToolUse[0].hooks[0].command' "$ROOT/agents/coordinator.md")
@@ -212,6 +213,13 @@ pc 1 "role whose contract is not listed" "$ITMP" "$pin" nosuchrole
 cp "$ITMP/.integrity" "$ITMP/.integrity.orig"; sed -i 's#^\([0-9a-f]\{64\}\)  #\1  ./#' "$ITMP/.integrity"
 pc 0 "./-prefixed manifest lines" "$ITMP" - coordinator
 mv "$ITMP/.integrity.orig" "$ITMP/.integrity"; pc 0 "manifest restored" "$ITMP" "$pin"
+pc 2 "role name that is a pattern" "$ITMP" - 'a+'
+# near misses must not count as listed: a dot is literal, and a prefix or suffix of a listed path is another path
+cp "$ITMP/.integrity" "$ITMP/.integrity.orig"
+cp "$ITMP/devenv.nix" "$ITMP/devenvXnix"; sed -i 's#  devenv\.nix$#  devenvXnix#' "$ITMP/.integrity"; pc 1 "dot is literal (devenvXnix does not cover devenv.nix)" "$ITMP" -
+mv "$ITMP/.integrity.orig" "$ITMP/.integrity"; cp "$ITMP/.integrity" "$ITMP/.integrity.orig"
+cp "$ITMP/hooks/lib/role-list.awk" "$ITMP/hooks/lib/role-list.awk.bak"; sed -i 's#  hooks/lib/role-list\.awk$#  hooks/lib/role-list.awk.bak#' "$ITMP/.integrity"; pc 1 "suffix near miss (role-list.awk.bak does not cover role-list.awk)" "$ITMP" -
+mv "$ITMP/.integrity.orig" "$ITMP/.integrity"; rm -f "$ITMP/devenvXnix" "$ITMP/hooks/lib/role-list.awk.bak"; pc 0 "manifest restored again" "$ITMP" "$pin"
 ghook "without a valid integrity pin" COORDINATOR_REQUIRE_INTEGRITY=1
 mv "$ITMP/.integrity" "$ITMP/.integrity.bak"; ghook "no .integrity manifest" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; ghook "no .integrity manifest" COORDINATOR_INTEGRITY_SHA256="$pin"; mv "$ITMP/.integrity.bak" "$ITMP/.integrity"
 echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; manifest; ghook "does not match the pinned hash" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
