@@ -51,7 +51,7 @@ FAKE_HERDR_LIST="$TMP/changed.json" run "$TMP/local.json"
 fleet "$TMP/remote.json" '[{"name":"lenovo","ssh":"lukas@lenovo.lan"}]'
 FAKE_HERDR_LIST="$FX/herdr/remote-ok.json" run "$TMP/remote.json"
 [ "$CODE" -eq 0 ] && ok || bad "remote: exit $CODE"
-grep -q '^ssh .*-- lukas@lenovo.lan echo .* | base64 -d | bash' "$FAKE_LOG" && grep -q '^herdr agent list' "$FAKE_LOG" && ok || bad "remote: expected ssh <target> herdr agent list"
+grep -q "^ssh .*-- lukas@lenovo.lan bash -c '.*' _ " "$FAKE_LOG" && grep -q '^herdr agent list' "$FAKE_LOG" && ok || bad "remote: expected ssh <target> herdr agent list"
 [ "$(jqr '.hosts[0].agents[0].approval_required')" = true ] && ok || bad "remote: blocked => approval_required"
 [ "$(jqr '.hosts[0].agents[0].host')" = lenovo ] && ok || bad "remote: host field"
 

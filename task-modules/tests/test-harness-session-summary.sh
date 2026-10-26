@@ -33,7 +33,7 @@ jqr .last_assistant_excerpt | grep -q 'property test' && ok || bad "claude: assi
 : > "$FAKE_LOG"
 run '{"host":"lenovo","harness":"claude","session_id":"aaaaaaaa-1111-4111-8111-111111111111","cwd":"/home/lukas/herman"}'
 [ "$CODE" -eq 0 ] && [ "$(jqr .event_count)" = 7 ] && ok || bad "remote claude: exit $CODE count $(jqr .event_count) ($(tail -2 "$TMP/run.log"))"
-grep -q '^ssh .*lukas@lenovo.lan echo .* | base64 -d | bash' "$FAKE_LOG" && ok || bad "remote: ssh bash -c argv"
+grep -q "^ssh .*lukas@lenovo.lan bash -c '.*' _ " "$FAKE_LOG" && ok || bad "remote: ssh bash -c argv"
 # a half-written trailing line is skipped and counted, not fatal
 cp "$FX/claude/-home-lukas-herman/aaaaaaaa-1111-4111-8111-111111111111.jsonl" "$TMP/partial.jsonl"; printf '{"type":"assistant","timestamp":"2026-10-26T14:0' >> "$TMP/partial.jsonl"
 mkdir -p "$TMP/claude/-home-lukas-herman" && cp "$TMP/partial.jsonl" "$TMP/claude/-home-lukas-herman/bbbbbbbb-1111-4111-8111-111111111111.jsonl"
