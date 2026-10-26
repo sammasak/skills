@@ -3,9 +3,20 @@
 # FAKE_HERDR_READ=<file> what `agent read` prints; FAKE_HERDR_EXIT forces an exit code.
 echo "herdr $*" >> "${FAKE_LOG:-/dev/null}"
 [ -n "${FAKE_HERDR_SLEEP:-}" ] && sleep "$FAKE_HERDR_SLEEP"
+# FAKE_HERDR_STATE drives `agent get` (agent_status) and `agent wait`; FAKE_HERDR_PROMPT=ok|blocked|stalled|timeout drives `agent prompt`.
 case "$1 $2" in
   "agent list") cat "${FAKE_HERDR_LIST:?}" ;;
   "agent read") cat "${FAKE_HERDR_READ:?}" ;;
+  "agent get") printf '{"id":"cli:agent:get","result":{"agent":{"pane_id":"%s","agent":"claude","agent_status":"%s","state_change_seq":7,"revision":3},"type":"agent_info"}}\n' "$3" "${FAKE_HERDR_STATE:-idle}" ;;
+  "agent prompt") case "${FAKE_HERDR_PROMPT:-ok}" in
+      ok) printf '{"id":"cli:agent:prompt","result":{"type":"agent_prompt","delivered":true}}\n' ;;
+      blocked) echo '{"error":{"code":"agent_blocked","message":"agent is blocked"}}' >&2; exit 1 ;;
+      stalled) echo '{"error":{"code":"agent_prompt_stalled","message":"no activity within 5000ms"}}' >&2; exit 1 ;;
+      timeout) exec sleep 60 ;;
+    esac ;;
+  "agent wait") [ -n "${FAKE_HERDR_WAIT_SLEEP:-}" ] && sleep "$FAKE_HERDR_WAIT_SLEEP"
+    if [ "${FAKE_HERDR_WAIT:-reached}" = timeout ]; then echo '{"error":{"code":"timeout","message":"state not reached"}}' >&2; exit 1; fi
+    printf '{"id":"cli:agent:wait","result":{"type":"agent_wait","status":"%s","state_change_seq":9}}\n' "${FAKE_HERDR_STATE:-idle}" ;;
   *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
 esac
 exit "${FAKE_HERDR_EXIT:-0}"
