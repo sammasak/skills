@@ -1,6 +1,6 @@
 ---
 name: pi-offload
-description: "Use when a small, mechanical, machine-checkable task (lint or clippy fixes, adding tests, small refactors, repetitive edits) could be delegated to the free-tier Pi worker instead of spending your own context. Not for design, security-sensitive code, work without a check command, or durable issue-to-PR work (pi-ticket)."
+description: "Use when a small, mechanical, machine-checkable task (lint or clippy fixes, adding tests, small refactors, repetitive edits) could be delegated to the free-tier Pi worker instead of spending your own context, or when deciding what a pi-offload result (status, dirty source, patch) means before applying it. Not for design, security-sensitive code, work without a check command, or durable issue-to-PR work (pi-ticket)."
 allowed-tools: Bash, Read
 ---
 

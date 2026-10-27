@@ -1,6 +1,6 @@
 ---
 name: nix-audit-operator
-description: "Use when running, interpreting, or safely dogfooding nix-audit on a built NixOS closure, comparing running and candidate generations, or checking an incomplete vulnerability scan. Not for flake development or creating a bug report (use tooling-feedback)."
+description: "Use when running, interpreting, or safely dogfooding nix-audit on a built NixOS closure, comparing running and candidate generations, or checking an incomplete vulnerability scan. Not for flake development, or for reporting or filing a bug about nix-audit itself, even one seen in a scan (use tooling-feedback)."
 allowed-tools: Bash, Read
 ---
 
