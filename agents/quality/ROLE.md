@@ -34,7 +34,6 @@ evidence:
     - the git head and dirty-tree state the verdict applies to
 adapters:
   - claude
-  - codex
 ---
 
 # Quality

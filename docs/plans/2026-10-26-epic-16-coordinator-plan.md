@@ -204,6 +204,14 @@ Owner redirect (verbatim on #25): no `fleet.json`, no own abstraction; hosts are
 - [x] nixos-config PR #108 (`herdr-native-machines`, c78d0e8): the dormant `coordinator` launcher module and `sam.coordinator.*` deleted; `sam.herdr.machines` added (idempotent `herdr machine add` at activation; lenovo declares `acer-swift`); both hosts evaluate; skills pin at this branch head (re-pin to the merge sha of #26 before merging). Owner gates: merge #26, re-pin + merge #108, `just switch` both hosts.
 - [ ] Live check after switch: on acer `coord:brief` shows this host only; on lenovo it shows `+ 1 saved herdr machine(s)` and acer's agents.
 
+## Slice 10 — no guard (owner decision 2026-10-27)
+
+Owner, verbatim: "we dont need to over engineer this part … We should just prompt and be clear about its role. We dont need full on guards for this."
+
+- [x] Removed: `hooks/role-guard-dispatch.sh`, `task-modules/guard-lib.nix`, `task-modules/guard.nix`, `hooks/lib/integrity-paths`, `agents/*/permissions.json`, `tests/fixtures/roles/`, the `skills:test:negative` suite, the Codex adapter `agents/quality/AGENTS.md` and the live `quality:two-harness` task.
+- [x] Adapters are plain role prompts (`permissionMode: default`, no hooks); the contract suite asserts exactly that. Runbook, RFC, adding-a-role rewritten.
+- [ ] nixos-config: drop `role-guard.nix`, the hook registration in `mcp.nix`, the `skills.nix` dispatcher assertion (PR #108).
+
 ---
 
 ## Effort log

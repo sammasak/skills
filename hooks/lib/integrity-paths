@@ -1,8 +1,0 @@
-agents
-task-modules
-hooks
-skills
-devenv.nix
-devenv.yaml
-devenv.lock
-.claude

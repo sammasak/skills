@@ -10,7 +10,6 @@ in
     ./task-modules/herdr.nix
     ./task-modules/harness.nix
     ./task-modules/evidence.nix
-    ./task-modules/guard.nix
     ./task-modules/tests.nix
     ./agents/coordinator/tasks.nix
     ./agents/coordinator/tests.nix
@@ -48,7 +47,7 @@ in
     "skills:test" = {
       description = "Every repo test suite.";
       exec = "echo skills:test green";
-      after = [ "skills:test:hooks" "skills:test:manifests" "skills:test:policy" "skills:test:contract" "skills:test:negative" "skills:test:tasks" "skills:test:herdr-skill" ];
+      after = [ "skills:test:hooks" "skills:test:manifests" "skills:test:policy" "skills:test:contract" "skills:test:tasks" "skills:test:herdr-skill" ];
     };
   };
 }
