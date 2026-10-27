@@ -202,7 +202,7 @@ Owner redirect (verbatim on #25): no `fleet.json`, no own abstraction; hosts are
 - [x] `skills/herdr/SKILL.md` vendored verbatim from `herdr --skill` (0.9.5) with `skills:herdr-skill-sync` and a drift test in `skills:test`; `herdr-operations` and `agent-handoff` rewritten for machines; ROLE.md, adapter, runbook, RFC, adding-a-role updated.
 - [x] Suites rewritten (fake herdr with `--machine` forwarding and `machine list`); `skills:test` green (15 suites).
 - [x] nixos-config PR #108 (`herdr-native-machines`, c78d0e8): the dormant `coordinator` launcher module and `sam.coordinator.*` deleted; `sam.herdr.machines` added (idempotent `herdr machine add` at activation; lenovo declares `acer-swift`); both hosts evaluate; skills pin at this branch head (re-pin to the merge sha of #26 before merging). Owner gates: merge #26, re-pin + merge #108, `just switch` both hosts.
-- [ ] Live check after switch: on acer `coord:brief` shows this host only; on lenovo it shows `+ 1 saved herdr machine(s)` and acer's agents.
+- [x] Live check after switch (2026-10-27T16:19Z): acer `coord:brief` → "this one only; 1/1 answered"; lenovo → answered_hosts 2/2, machines_configured 1, acer's wF:p1 read through `--machine acer-swift`, partial false. Both hosts switched (nixos-config main 732aeb4, skills main 08e300a). Gotcha: lenovo's old diverged skills checkout needed `git rebase --abort` + `reset --hard origin/main` (history kept on `lenovo-local-2026-10-27`).
 
 ## Slice 10 — no guard (owner decision 2026-10-27)
 
@@ -218,6 +218,7 @@ Owner, verbatim: "we dont need to over engineer this part … We should just pro
 
 | When (UTC) | Slice / task | Commit / PR | Tasks run (exit) | Outcome / limitation |
 |---|---|---|---|---|
+| 2026-10-27 16:20 | Deploy + live check | skills main 08e300a (#26), nixos-config main 732aeb4 (#108) | coord:brief lenovo 2/2, acer 1/1 (0) | GOAL MET: herdr-native coordinator live on both hosts, no fleet file, no guard |
 | 2026-10-27 13:30 | Slice 9 herdr-native (#25) | skills #26 (`refactor/herdr-native` 48d663e), nixos-config #108 (c78d0e8) | skills:test (0): 15 suites | fleet.json/ssh transport/snapshots removed; machines come from `herdr machine list`; herdr skill vendored; nixos-config module deletion + `sam.herdr.machines` pending |
 | 2026-10-26 20:00 | Stop-hook check | f55c904 | — | Goal condition unmet and not reachable by an agent: remaining items are owner merges, lenovo switch, dedicated key, SSH authorization and OpenAI credentials (money). No explicit owner deferral exists in the transcript, so the label is a status, not an acceptance. Decision requested from the owner: activate now, or explicitly defer |
 | 2026-10-26 19:58 | Slice 6 close-out | m4 781893e (code), #16 comment + label | skills:test (0) final | buildable scope complete; terminal state = deployment-ready pending owner activation; owner steps listed on #16 |
