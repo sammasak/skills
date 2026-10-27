@@ -89,10 +89,12 @@ Two facts fix where the guard must live:
 So the guard is a settings-level hook, `hooks/role-guard-dispatch.sh`, installed
 by nixos-config next to the other user-scope hooks: it reads `agent_type`,
 and when that role ships next to it (`agents/<agent_type>/ROLE.md` in the
-installed copy) or is present in the skills checkout, it runs the installed
-the `guard:check` task (`task-modules/guard.nix`) in the checkout; a shipped role whose checkout
-lacks the contract is refused; for every other agent and for the main session
-it is a silent no-op. The frontmatter hook in each adapter stays as the
+installed copy) or is present in the skills checkout, it decides through the
+guard library (`task-modules/guard-lib.nix`): the store-built binary nixos-config
+hands over as `ROLE_GUARD_BIN`, or, where none is installed (Codex, unmanaged
+main sessions), the checkout's own `guard:check` task, which then trusts the
+checkout; a shipped role whose checkout lacks the contract is refused; for every
+other agent and for the main session it is a silent no-op. The frontmatter hook in each adapter stays as the
 main-session backstop. Installing this repo as a Claude Code plugin loads the
 adapters without that settings hook, so a plugin-installed role is unguarded
 unless the dispatcher is registered separately; the nixos-config install path

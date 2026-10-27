@@ -85,12 +85,15 @@ with the other user-scope hooks): the dispatcher reads the hook input's
 `agent_type` and runs the guard only for role agents (a role is one whose
 `agents/<name>/ROLE.md` ships in the installed copy, or is present in the
 checkout); other agents and the main session are untouched. Where the guard
-logic runs matters: with nixos-config's install the dispatcher runs a
-store-built binary of `task-modules/guard-lib.nix` (`ROLE_GUARD_BIN`), so the
-checkout supplies only `ROLE.md` and `.integrity` and an agent that can write
-the checkout cannot change its guard. Without that install the dispatcher
-falls back to `devenv tasks run guard:check` in the checkout, under its own
-timeout; then the checkout's guard is trusted as-is, so keep it pulled. The
+logic runs matters: with nixos-config's install, Claude Code's user-scope hook
+runs a store-built binary of `task-modules/guard-lib.nix` (`ROLE_GUARD_BIN`),
+so an agent that can write the checkout cannot change the guard *code*. The
+policy (`ROLE.md` task lists) and the task bodies still come from the
+checkout; they are protected only in hardened mode (`COORDINATOR_REQUIRE_INTEGRITY`
+with a pin). Without the install, in a `claude --agent <role>` main session
+without the launcher, and under Codex, the dispatcher falls back to
+`devenv tasks run guard:check` in the checkout under its own timeout; then the
+checkout's guard is trusted as-is, so keep it pulled. The
 checkout path must be plain (`[A-Za-z0-9_./-]`, no `..`, spaces or unicode).
 A subagent's
 frontmatter hooks never run (verified 2026-10-27), so the frontmatter hook in

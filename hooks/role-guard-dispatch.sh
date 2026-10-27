@@ -39,13 +39,17 @@ tmpd="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
 df=$(mktemp -p "$tmpd" 2>/dev/null || mktemp) || { echo "$agent: cannot create a decision file; refusing" >&2; exit 2; }
 errf=$(mktemp -p "$tmpd" 2>/dev/null || mktemp) || { rm -f "$df"; echo "$agent: cannot create a temp file; refusing" >&2; exit 2; }
 trap 'rm -f "$df" "$errf"' EXIT
-if [ -n "${ROLE_GUARD_BIN:-}" ] && [ -x "$ROLE_GUARD_BIN" ]; then
-  # installed guard: the library built into the Nix store, so the checkout only supplies ROLE.md and .integrity
-  printf '%s' "$input" | GUARD_ROLE="$agent" COORDINATOR_CHECKOUT="$checkout" timeout -k 1 "${ROLE_GUARD_TIMEOUT:-8}" "$ROLE_GUARD_BIN" > "$df" 2>"$errf"; rc=$?; how="guard binary"
+# the dispatcher's own timeout must stay inside the hook budget (15 s in nixos-config): a hook that times out does not block
+t="${ROLE_GUARD_TIMEOUT:-12}"; [[ "$t" =~ ^[0-9]+$ ]] && [ "$t" -le 12 ] || t=12
+if [ -n "${ROLE_GUARD_BIN:-}" ]; then
+  # installed guard: the library built into the Nix store, so the checkout only supplies ROLE.md and .integrity.
+  # A set but unusable path refuses rather than silently falling back to the checkout's own guard
+  [[ "$ROLE_GUARD_BIN" == /* ]] && [ -x "$ROLE_GUARD_BIN" ] || { echo "$agent: ROLE_GUARD_BIN is set but not an executable absolute path ($ROLE_GUARD_BIN); refusing" >&2; exit 2; }
+  printf '%s' "$input" | GUARD_ROLE="$agent" COORDINATOR_CHECKOUT="$checkout" timeout -k 1 "$t" "$ROLE_GUARD_BIN" > "$df" 2>"$errf"; rc=$?; how="guard binary"
 else
   [ -f "$checkout/devenv.nix" ] || { echo "$agent: $checkout has no devenv.nix and no installed guard; refusing" >&2; exit 2; }
   payload=$(jq -cn --arg r "$agent" --argjson h "$input" --arg f "$df" '{role:$r, hook:$h, decision_file:$f}' 2>/dev/null) || { echo "$agent: hook input is not JSON; refusing" >&2; exit 2; }
-  ( cd "$checkout" && COORDINATOR_CHECKOUT="$checkout" timeout -k 1 "${ROLE_GUARD_TIMEOUT:-12}" devenv tasks run guard:check --input-json "$payload" ) >/dev/null 2>"$errf"; rc=$?; how="devenv guard:check"
+  ( cd "$checkout" && COORDINATOR_CHECKOUT="$checkout" timeout -k 1 "$t" devenv tasks run guard:check --input-json "$payload" ) >/dev/null 2>"$errf"; rc=$?; how="devenv guard:check"
 fi
 [ "$rc" -ne 124 ] || { echo "$agent: $how timed out; refusing" >&2; exit 2; }
 dec=$(jq -r '.decision // empty' "$df" 2>/dev/null); reason=$(jq -r '.reason // ""' "$df" 2>/dev/null)

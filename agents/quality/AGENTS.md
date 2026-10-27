@@ -43,11 +43,13 @@ retry with a variation.
   (nixos-config writes both at materialisation; the parity test writes them in
   its copy). Then editing or deleting a contract, task, hook, devenv or
   `devenv.local.*` file makes the guard refuse everything. The guard itself
-  must run from a path the agent cannot write: with nixos-config the dispatcher
-  runs a store-built guard binary (`ROLE_GUARD_BIN`); the parity task runs the
-  dispatcher from a read-only copy outside the checkout but, lacking that
-  binary, decides through the copy's own `guard:check`, so it proves the
-  wiring and not isolation from an agent that can edit the checkout. The check happens at hook time; an edit racing between the
+  must run from a path the agent cannot write. Today nixos-config builds the
+  store guard binary (`ROLE_GUARD_BIN`) only for Claude Code's user-scope hook;
+  **no nixos-config module registers the guard for Codex**, so a Codex session
+  decides through the checkout's own `guard:check` and an agent that can edit
+  the checkout can edit its guard. The parity task has the same limitation.
+  Until a `CODEX_HOME` hooks.json with `ROLE_GUARD_BIN` is rendered by
+  nixos-config, Codex must not be described as guarded against that. The check happens at hook time; an edit racing between the
   check and the task's evaluation is not caught. Running Codex with `--sandbox workspace-write` on
   an unmanaged clone, or without the pin, is **not enforced** and must not be
   described as such; the `.devenv/` evaluation cache is not covered either.

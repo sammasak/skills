@@ -157,7 +157,7 @@
       rc=0; out=$(_guard_inner "$role" "$input" 2>"$err") || rc=$?
       reason=$(tr '\n' ' ' <"$err" | sed -E 's/ +$//'); rm -f "$err"
       if [ "$rc" -eq 0 ]; then
-        dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null)
+        dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null) || dec=""
         case "$dec" in allow|ask) jq -cn --arg d "$dec" --arg r "$(jq -r '.hookSpecificOutput.permissionDecisionReason // ""' <<<"$out")" '{decision:$d, reason:$r}'; return 0 ;; esac
         reason="guard returned no decision"; rc=1
       fi
