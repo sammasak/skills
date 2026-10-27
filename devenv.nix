@@ -1,32 +1,38 @@
 { pkgs, lib, ... }:
 
 let
-  suites = [
-    { name = "hooks"; script = "bash tests/test-hooks.sh"; }
-    { name = "manifests"; script = "bash tests/test-plugin-manifests.sh"; }
-    { name = "policy"; script = "bash tests/test-policy.sh"; }
-    { name = "contract"; script = "bash tests/test-role-contract.sh"; }
-    { name = "negative"; script = "bash tests/test-coordinator-negative.sh"; }
-    { name = "tasks"; script = "for t in task-modules/tests/test-*.sh agents/*/tests/test-*.sh; do echo \"== $t\"; bash \"$t\" || exit 1; done"; }
-  ];
+  taskSuites = [ "evidence" "harness-session-summary" "herdr-inspect" "herdr-inventory" "herdr-message-await" "coord-brief" "coord-handoff" "quality" ];
 in
 {
   imports = [
+    ./task-modules/fixtures/fakes.nix
     ./task-modules/herdr.nix
     ./task-modules/harness.nix
     ./task-modules/evidence.nix
+    ./task-modules/guard.nix
+    ./task-modules/tests.nix
     ./agents/coordinator/tasks.nix
+    ./agents/coordinator/tests.nix
     ./agents/quality/tasks.nix
+    ./agents/quality/tests.nix
+    ./tests/suites.nix
   ];
 
   packages = [ pkgs.yq-go pkgs.shellcheck pkgs.git pkgs.openssh pkgs.fish ];
 
-  tasks = lib.listToAttrs (map (s: lib.nameValuePair "skills:test:${s.name}" { exec = s.script; }) suites)
-    // {
-      "skills:test" = {
-        description = "Every repo test suite, serially.";
-        exec = "echo skills:test green";
-        after = map (s: "skills:test:${s.name}") suites;
-      };
+  tasks = {
+    # the two pre-existing hook-framework suites keep their scripts; everything the roles added is a task
+    "skills:test:hooks".exec = "bash tests/test-hooks.sh";
+    "skills:test:manifests".exec = "bash tests/test-plugin-manifests.sh";
+    "skills:test:tasks" = {
+      description = "Aggregator for the per-module fixture suites.";
+      exec = "echo skills:test:tasks green";
+      after = map (n: "skills:test:tasks:${n}") taskSuites;
     };
+    "skills:test" = {
+      description = "Every repo test suite.";
+      exec = "echo skills:test green";
+      after = [ "skills:test:hooks" "skills:test:manifests" "skills:test:policy" "skills:test:contract" "skills:test:negative" "skills:test:tasks" ];
+    };
+  };
 }

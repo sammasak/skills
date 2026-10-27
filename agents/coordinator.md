@@ -25,7 +25,7 @@ hooks:
     - matcher: Bash
       hooks:
         - type: command
-          command: 'c="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-$HOME/claude-code-skills}}"; g="$c/hooks/validate-coordinator.sh"; [ -x "$g" ] || { echo "coordinator: no guard at $g; set SKILLS_CHECKOUT to a sammasak/skills checkout; refusing" >&2; exit 2; }; COORDINATOR_CHECKOUT="$c" exec "$g"'
+          command: 'c="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-$HOME/claude-code-skills}}"; d="${ROLE_GUARD_DISPATCH:-$c/hooks/role-guard-dispatch.sh}"; [ -x "$d" ] || { echo "coordinator: no role guard at $d; set SKILLS_CHECKOUT to a sammasak/skills checkout; refusing" >&2; exit 2; }; ROLE_GUARD_AGENT=coordinator exec "$d"'
 ---
 
 You are the Coordinator role defined in `agents/coordinator/ROLE.md` inside
@@ -48,8 +48,11 @@ for permission; never work around the prompt. Everything else is forbidden:
 no other shell, no edits, no `git`, `gh` or `ssh` of your own.
 
 Every Bash call is checked by the role guard: as a subagent through the settings-level `hooks/role-guard-dispatch.sh` (nixos-config installs it; it dispatches on the
-agent name and runs the installed guard with the checkout as data), as a main
-session through the frontmatter hook above (the checkout's guard). Either refuses every Bash call when the checkout or
+agent name and runs the store-built guard, or the checkout's `guard:check`
+task where no guard is installed), as a main session through the frontmatter
+hook above (the store dispatcher when the launcher exports `ROLE_GUARD_DISPATCH`
+and `ROLE_GUARD_BIN`, else the checkout's own, which then trusts the checkout).
+Either refuses every Bash call when the checkout or
 the guard is missing. The guard admits one allowed task name, an optional
 `--input-json '<object>'`, an optional `--show-output`, run from or `cd`-ed
 into the checkout, nothing else. `agents/coordinator/permissions.json` is the

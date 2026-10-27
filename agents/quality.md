@@ -26,7 +26,7 @@ hooks:
     - matcher: Bash
       hooks:
         - type: command
-          command: 'c="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-$HOME/claude-code-skills}}"; g="$c/hooks/validate-quality.sh"; [ -x "$g" ] || { echo "quality: no guard at $g; set SKILLS_CHECKOUT to a sammasak/skills checkout; refusing" >&2; exit 2; }; COORDINATOR_CHECKOUT="$c" exec "$g"'
+          command: 'c="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-$HOME/claude-code-skills}}"; d="${ROLE_GUARD_DISPATCH:-$c/hooks/role-guard-dispatch.sh}"; [ -x "$d" ] || { echo "quality: no role guard at $d; set SKILLS_CHECKOUT to a sammasak/skills checkout; refusing" >&2; exit 2; }; ROLE_GUARD_AGENT=quality exec "$d"'
 ---
 
 You are the Quality role defined in `agents/quality/ROLE.md` inside the skills
@@ -47,6 +47,8 @@ prefix may be dropped when the session already is in the checkout). There are
 no act-class tasks. Every Bash call is checked by the role guard: as a
 subagent through the settings-level
 `hooks/role-guard-dispatch.sh` (dispatches on the agent name and runs the
-installed guard with the checkout as data), as a main session through the
-frontmatter hook above (the checkout's guard); either refuses every Bash call
+store-built guard, or the checkout's `guard:check` task where no guard is
+installed), as a main session through the frontmatter hook above (the store dispatcher when the launcher exports
+`ROLE_GUARD_DISPATCH` and `ROLE_GUARD_BIN`, else the checkout's own, which then
+trusts the checkout); either refuses every Bash call
 when the checkout or the guard is missing.

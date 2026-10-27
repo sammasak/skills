@@ -21,18 +21,19 @@ other roles may share. Nothing here needs a new script runner.
 3. **Permissions** — `agents/<role>/permissions.json`: exact `Bash(devenv
    tasks run <inputless task>)` forms in `allow` (no wildcards), `ask` for act
    tasks, the shared deny list, `Read(./**)` plus `Read(~/.local/state/<role>/**)`.
-4. **Guard** — `hooks/validate-<role>.sh` is two lines:
-   `ROLE=<role> exec "$(dirname "$(readlink -f "$0")")/validate-role.sh"`.
+4. **Guard** — nothing to write: the settings-level dispatcher routes by agent
+   name to the `guard:check` task, and the role's `ROLE.md` task lists are the
+   whole guard configuration.
 5. **Adapters** — `agents/<role>.md` (Claude: `tools: [Bash, Read]`,
    `disallowedTools`, `permissionMode: default`, `skills:` = the contract's
    list, the fail-closed `hooks.PreToolUse` command) and
    `agents/<role>/AGENTS.md` (Codex: the contract pointer, the single allowed
    command form, and the harness differences spelled out).
-6. **Tests** — fixture suite under `agents/<role>/tests/` driving the real
+6. **Tests** — fixture suite as a task in `agents/<role>/tests.nix` driving the real
    tasks with `--option coordinator.*` overrides; the contract and negative
-   suites pick the role up automatically (`tests/test-role-contract.sh`
+   suites pick the role up automatically (the `skills:test:contract` task
    iterates `agents/*/ROLE.md`; add the role's allow/block cases to
-   `tests/test-coordinator-negative.sh`).
+   the `skills:test:negative` task).
 7. **Host** — nothing to do: nixos-config `skills.nix` links every
    `agents/*.md` as a subagent, and the settings-level dispatcher
    (`hooks/role-guard-dispatch.sh`) picks the role up by name because

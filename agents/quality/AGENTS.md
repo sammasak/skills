@@ -4,9 +4,9 @@ Codex has no per-agent definition files, preloaded skills or agent-scoped
 hooks. This file is the whole adapter: pass it as the system context from the
 skills checkout (`codex exec --cd "${SKILLS_CHECKOUT:-$HOME/claude-code-skills}"
 --sandbox workspace-write "$(cat agents/quality/AGENTS.md)"$'\n\n'"<owner
-request>"`), and register the same `hooks/validate-quality.sh` guard in a
+request>"`), and register the same dispatcher (`hooks/role-guard-dispatch.sh`) as the guard in a
 dedicated `CODEX_HOME`'s `hooks.json` (never the user's global
-`~/.codex/hooks.json`); `agents/quality/tests/two-harness.sh` shows the exact
+`~/.codex/hooks.json`); `quality:two-harness` shows the exact
 invocation. Where Codex differs from Claude Code, the difference is noted here
 instead of hidden.
 
@@ -43,10 +43,13 @@ retry with a variation.
   (nixos-config writes both at materialisation; the parity test writes them in
   its copy). Then editing or deleting a contract, task, hook, devenv or
   `devenv.local.*` file makes the guard refuse everything. The guard itself
-  must run from a path the agent cannot write (nixos-config installs it from
-  the store; the parity test runs it from a read-only copy outside the
-  checkout and outside `/tmp`), otherwise an agent that can edit its own hook
-  has no guard. The check happens at hook time; an edit racing between the
+  must run from a path the agent cannot write. Today nixos-config builds the
+  store guard binary (`ROLE_GUARD_BIN`) only for Claude Code's user-scope hook;
+  **no nixos-config module registers the guard for Codex**, so a Codex session
+  decides through the checkout's own `guard:check` and an agent that can edit
+  the checkout can edit its guard. The parity task has the same limitation.
+  Until a `CODEX_HOME` hooks.json with `ROLE_GUARD_BIN` is rendered by
+  nixos-config, Codex must not be described as guarded against that. The check happens at hook time; an edit racing between the
   check and the task's evaluation is not caught. Running Codex with `--sandbox workspace-write` on
   an unmanaged clone, or without the pin, is **not enforced** and must not be
   described as such; the `.devenv/` evaluation cache is not covered either.

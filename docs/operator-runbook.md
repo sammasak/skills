@@ -6,7 +6,7 @@
 |---|---|---|
 | Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex) | this repo | nixos-config `skills.nix` links every `agents/*.md` into `~/.claude/agents` on devTools hosts, so the roles are ordinary subagents |
 | Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from one writable skills checkout: `$SKILLS_CHECKOUT`, default `~/claude-code-skills` |
-| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers), dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the installed guard for role agents only, with the checkout as data |
+| Guard library `task-modules/guard-lib.nix` (tasks `guard:check`, `guard:integrity` in `guard.nix`) behind the dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook and builds the library into a store binary it hands over as `ROLE_GUARD_BIN`; without that, the dispatcher runs `guard:check` in the checkout |
 | `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | you (schema in the RFC); an absent file is an empty fleet |
 | State (snapshots, drafts, `audit.jsonl`, `brief/latest.json`) | `~/.local/state/coordinator/` | the tasks |
 
@@ -76,7 +76,7 @@ Claude's Bash timeout (`BASH_MAX_TIMEOUT_MS`) if a long gate must report.
 
 ## Operating the guard
 
-`hooks/validate-role.sh` reads `agents/$ROLE/ROLE.md` in the skills checkout
+`guard:check` (`task-modules/guard.nix`) reads `agents/<role>/ROLE.md` in the skills checkout
 and allows exactly `[cd <checkout> && ]devenv tasks run <read|run task>
 [--input-json '<object>'] [--show-output]`, run from the checkout or `cd`-ed
 into exactly its plain absolute path; `act` tasks return `ask`. It is wired at
@@ -84,10 +84,18 @@ settings level by `hooks/role-guard-dispatch.sh` (nixos-config installs it
 with the other user-scope hooks): the dispatcher reads the hook input's
 `agent_type` and runs the guard only for role agents (a role is one whose
 `agents/<name>/ROLE.md` ships in the installed copy, or is present in the
-checkout); other agents and the main session are untouched. The guard logic
-comes from the installed copy next to the dispatcher; the checkout only
-supplies the task lists and the devenv project, and its path must be plain
-(`[A-Za-z0-9_./-]`, no `..`, spaces or unicode). A subagent's
+checkout); other agents and the main session are untouched. Where the guard
+logic runs matters: with nixos-config's install, Claude Code's user-scope hook
+runs a store-built binary of `task-modules/guard-lib.nix` (`ROLE_GUARD_BIN`),
+so an agent that can write the checkout cannot change the guard *code*. The
+policy (`ROLE.md` task lists) and the task bodies still come from the
+checkout; they are protected only in hardened mode (`COORDINATOR_REQUIRE_INTEGRITY`
+with a pin). Without the install, in a `claude --agent <role>` main session
+without the launcher, and under Codex, the dispatcher falls back to
+`devenv tasks run guard:check` in the checkout under its own timeout; then the
+checkout's guard is trusted as-is, so keep it pulled. The
+checkout path must be plain (`[A-Za-z0-9_./-]`, no `..`, spaces or unicode).
+A subagent's
 frontmatter hooks never run (verified 2026-10-27), so the frontmatter hook in
 each adapter only covers the `claude --agent <role>` main-session case. A
 host with the adapters linked but no checkout refuses every role Bash call.
@@ -95,7 +103,7 @@ Installing this repo as a plugin does not install the dispatcher. Optional
 hardened mode: with
 `COORDINATOR_REQUIRE_INTEGRITY=1` and a 64-hex pin in
 `COORDINATOR_INTEGRITY_SHA256`, the guard also verifies the checkout's
-`.integrity` manifest (`hooks/lib/integrity-check.sh`) on every call; the
+`.integrity` manifest (the `guard:integrity` task) on every call; the
 nixos-config `coordinator` launcher module does this with a materialised copy,
 and is disabled by default.
 
@@ -103,5 +111,5 @@ and is disabled by default.
 
 ```bash
 devenv tasks run skills:test            # policy, manifests, contract, negative, hooks, tasks suites
-bash agents/quality/tests/two-harness.sh  # LIVE, costs tokens: same role through Claude and Codex
+devenv tasks run quality:two-harness   # LIVE, costs tokens: same role through Claude and Codex
 ```
