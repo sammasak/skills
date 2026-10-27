@@ -39,8 +39,9 @@ tmpd="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
 df=$(mktemp -p "$tmpd" 2>/dev/null || mktemp) || { echo "$agent: cannot create a decision file; refusing" >&2; exit 2; }
 errf=$(mktemp -p "$tmpd" 2>/dev/null || mktemp) || { rm -f "$df"; echo "$agent: cannot create a temp file; refusing" >&2; exit 2; }
 trap 'rm -f "$df" "$errf"' EXIT
-# the dispatcher's own timeout must stay inside the hook budget (15 s in nixos-config): a hook that times out does not block
-t="${ROLE_GUARD_TIMEOUT:-12}"; [[ "$t" =~ ^[0-9]+$ ]] && [ "$t" -le 12 ] || t=12
+# the dispatcher's own timeout must stay inside the hook budget (15 s user-scope, 20 s launcher in nixos-config): a hook
+# that times out does not block, and `timeout 0` would disable the limit, so the value is clamped to 1..12
+t="${ROLE_GUARD_TIMEOUT:-12}"; [[ "$t" =~ ^[0-9]+$ ]] && [ "$t" -ge 1 ] && [ "$t" -le 12 ] || t=12
 if [ -n "${ROLE_GUARD_BIN:-}" ]; then
   # installed guard: the library built into the Nix store, so the checkout only supplies ROLE.md and .integrity.
   # A set but unusable path refuses rather than silently falling back to the checkout's own guard
