@@ -105,7 +105,22 @@ hook block "devenv tasks run coord:brief --input-json '{} {}'"
 hook block "devenv tasks run coord:brief" "/tmp"
 hook block "devenv tasks run coord:handoff --input-json '{\"scope\":\"don'\"'\"'t\"}'"  # apostrophes need \u0027 in the body
 hook allow "devenv tasks run coord:handoff --input-json '{\"scope\":\"A & B | \$HOME; <x>\"}'"
-( unset COORDINATOR_CHECKOUT; jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): unset COORDINATOR_CHECKOUT must block"; }
+# no checkout anywhere (env unset, default path absent) must block; the default resolves when nothing is set
+( unset COORDINATOR_CHECKOUT SKILLS_CHECKOUT; HOME=/nonexistent jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | HOME=/nonexistent "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): no checkout at all must block"; }
+( unset COORDINATOR_CHECKOUT; jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | SKILLS_CHECKOUT="$ROOT" "$HOOK" 2>/dev/null | jq -e '.hookSpecificOutput.permissionDecision=="allow"' >/dev/null ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): SKILLS_CHECKOUT fallback must allow"; }
+# subagent form: cd into exactly the checkout from any cwd, joined with && only
+hook allow "cd $ROOT && devenv tasks run coord:brief" /tmp
+hook allow "cd $ROOT && devenv tasks run coord:brief --input-json '{}' --show-output" /tmp
+hook block "devenv tasks run coord:brief" /tmp
+hook block "cd /tmp && devenv tasks run coord:brief" /tmp
+hook block "cd $ROOT; devenv tasks run coord:brief" /tmp
+hook block "cd $ROOT || devenv tasks run coord:brief" /tmp
+hook block "cd $ROOT && devenv tasks run coord:brief && ssh lenovo id" /tmp
+hook block "cd $ROOT && cd /tmp && devenv tasks run coord:brief" /tmp
+hook block "cd \"$ROOT\" && devenv tasks run coord:brief" /tmp
+hook block "cd $ROOT/tests && devenv tasks run coord:brief" /tmp
+hook block "cd $ROOT/../$(basename "$ROOT")/tests && devenv tasks run coord:brief" /tmp
+hook allow "cd $ROOT/../$(basename "$ROOT") && devenv tasks run coord:brief" /tmp
 ( jq -cn '{tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): missing cwd must block"; }
 ( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\u0000; ssh x"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): NUL byte must block"; }
 # a per-call working directory (Codex workdir) outside the checkout must block even when the session cwd is right

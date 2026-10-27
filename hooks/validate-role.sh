@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash) guard shared by every role (epic #16). ROLE names the role
-# whose contract is read from agents/$ROLE/ROLE.md inside $COORDINATOR_CHECKOUT:
+# whose contract is read from agents/$ROLE/ROLE.md inside the skills checkout
+# ($COORDINATOR_CHECKOUT, else $SKILLS_CHECKOUT, else ~/claude-code-skills):
 # the `tasks.read`/`tasks.run` lists are allowed, `tasks.act` asks, everything
 # else is blocked. The whole command must match one strict form:
-#   devenv tasks run <task> [--input-json '<json object>'] [--show-output]
-# and the call must come from the checkout. Text matching is a guardrail; the OS
-# boundary is nixos-config's job. The adapter's hook command refuses every Bash
-# call when this file is missing (fail closed).
+#   [cd <checkout> && ]devenv tasks run <task> [--input-json '<json object>'] [--show-output]
+# where the call runs from the checkout (session cwd) or cds into exactly it
+# first, so the role works as a subagent from any directory. Text matching is a
+# guardrail; the OS boundary is the host's job. The adapter's hook command
+# refuses every Bash call when this file is missing (fail closed).
 set -uo pipefail
 ROLE="${ROLE:-coordinator}"
 [[ "$ROLE" =~ ^[a-z][a-z-]*$ ]] || { echo "guard: ROLE must be a lowercase role name" >&2; exit 2; }
@@ -23,10 +25,19 @@ cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null) || cwd=""
 [ -n "$cmd" ] || { echo "$ROLE: empty Bash command" >&2; exit 2; }
 [ -n "$cwd" ] || { echo "$ROLE: hook input carries no cwd" >&2; exit 2; }
 
-[ -n "${COORDINATOR_CHECKOUT:-}" ] || { echo "$ROLE: COORDINATOR_CHECKOUT is not set; refusing to run tasks from an unknown checkout" >&2; exit 2; }
-want=$(readlink -e "$COORDINATOR_CHECKOUT" 2>/dev/null) || { echo "$ROLE: COORDINATOR_CHECKOUT does not exist" >&2; exit 2; }
-if [ "$(readlink -e "$cwd" 2>/dev/null)" != "$want" ]; then
-  echo "$ROLE: tasks may only run from $COORDINATOR_CHECKOUT (cwd: ${cwd:-unknown})" >&2; exit 2
+COORDINATOR_CHECKOUT="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-$HOME/claude-code-skills}}"
+want=$(readlink -e -- "$COORDINATOR_CHECKOUT" 2>/dev/null) || { echo "$ROLE: skills checkout $COORDINATOR_CHECKOUT does not exist (set SKILLS_CHECKOUT to a sammasak/skills checkout)" >&2; exit 2; }
+# a subagent inherits the parent session's cwd, so `cd <checkout> && <task call>` is the normal form; the cd target
+# must be exactly the checkout (no quotes or spaces, ~ allowed) and `&&` is the only join accepted
+effective_dir="$cwd"
+if [[ "$cmd" =~ ^cd[[:space:]]+([A-Za-z0-9_./~-]+)[[:space:]]+\&\&[[:space:]]+(.+)$ ]]; then
+  cdpath="${BASH_REMATCH[1]}"; rest="${BASH_REMATCH[2]}"
+  # shellcheck disable=SC2088  # a literal ~ from the agent's command is matched here, then expanded
+  case "$cdpath" in "~") cdpath="$HOME" ;; "~/"*) cdpath="$HOME/${cdpath#\~/}" ;; /*) ;; *) cdpath="$cwd/$cdpath" ;; esac
+  effective_dir="$cdpath"; cmd="$rest"
+fi
+if [ "$(readlink -e -- "$effective_dir" 2>/dev/null)" != "$want" ]; then
+  echo "$ROLE: tasks run only from the skills checkout $COORDINATOR_CHECKOUT: run from it, or prefix the call with 'cd $COORDINATOR_CHECKOUT && ' (cwd: ${cwd:-unknown})" >&2; exit 2
 fi
 # a harness may run one call from another directory (Codex's per-call workdir); a planted devenv.nix in a
 # subdirectory would then evaluate instead of the checkout's, so any such field must name the checkout too
@@ -64,7 +75,7 @@ allow_re="${READ}${RUN:+${READ:+|}$RUN}"
 
 re="^devenv tasks run (${allow_re}${ACT:+|$ACT})( --input-json '([^']*)')?( --show-output)?\$"
 if [[ ! "$cmd" =~ $re ]]; then
-  echo "$ROLE: only 'devenv tasks run <allowed task> [--input-json '<json>'] [--show-output]' is permitted" >&2; exit 2
+  echo "$ROLE: only '[cd <checkout> && ]devenv tasks run <allowed task> [--input-json '<json>'] [--show-output]' is permitted" >&2; exit 2
 fi
 # The anchored regex leaves no room for metacharacters outside the quoted body.
 task="${BASH_REMATCH[1]}"; input_arg="${BASH_REMATCH[2]:-}"; body="${BASH_REMATCH[3]:-}"

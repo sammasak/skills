@@ -1,12 +1,14 @@
 # Quality role — Codex adapter
 
 Codex has no per-agent definition files, preloaded skills or agent-scoped
-hooks. This file is the whole adapter: the launcher passes it as the system
-context (`codex exec --cd "$COORDINATOR_CHECKOUT" --sandbox workspace-write
-"$(cat agents/quality/AGENTS.md)"$'\n\n'"<owner request>"`), and the same
-`hooks/validate-quality.sh` guard is registered in a dedicated `CODEX_HOME`'s
-`hooks.json` by the launcher (never the user's global `~/.codex/hooks.json`). Where Codex differs from Claude Code, the difference is noted
-here instead of hidden.
+hooks. This file is the whole adapter: pass it as the system context from the
+skills checkout (`codex exec --cd "${SKILLS_CHECKOUT:-$HOME/claude-code-skills}"
+--sandbox workspace-write "$(cat agents/quality/AGENTS.md)"$'\n\n'"<owner
+request>"`), and register the same `hooks/validate-quality.sh` guard in a
+dedicated `CODEX_HOME`'s `hooks.json` (never the user's global
+`~/.codex/hooks.json`); `agents/quality/tests/two-harness.sh` shows the exact
+invocation. Where Codex differs from Claude Code, the difference is noted here
+instead of hidden.
 
 ## Contract
 

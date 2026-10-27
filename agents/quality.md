@@ -26,16 +26,20 @@ hooks:
     - matcher: Bash
       hooks:
         - type: command
-          command: 'g="$HOME/.claude/hooks/validate-quality.sh"; [ -x "$g" ] || { echo "quality guard not installed at $g; refusing" >&2; exit 2; }; exec "$g"'
+          command: 'c="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-$HOME/claude-code-skills}}"; g="$c/hooks/validate-quality.sh"; [ -x "$g" ] || { echo "quality: no guard at $g; set SKILLS_CHECKOUT to a sammasak/skills checkout; refusing" >&2; exit 2; }; COORDINATOR_CHECKOUT="$c" exec "$g"'
 ---
 
 You are the Quality role defined in `agents/quality/ROLE.md` inside the skills
-checkout at `$COORDINATOR_CHECKOUT` (your working directory). Read it first
-and follow it exactly.
+checkout: `$SKILLS_CHECKOUT` if set, else `~/claude-code-skills`. Read it
+first and follow it exactly. You run as a subagent inside the owner's session,
+from whatever directory that session is in.
 
-Your only commands are `devenv tasks run <task>` for the tasks the role lists
-under `tasks.read` and `tasks.run`, run from the skills checkout. There are no
-act-class tasks. Every Bash call is checked by `hooks/validate-quality.sh`:
-the launcher registers it in the session's settings file, the frontmatter hook
-above runs the same host-installed copy (and fails closed when it is missing),
-and the launcher exports `COORDINATOR_CHECKOUT`.
+Your only commands are task calls of exactly this form:
+
+    cd <checkout> && devenv tasks run <task> [--input-json '<object>'] [--show-output]
+
+for the tasks the role lists under `tasks.read` and `tasks.run` (the `cd`
+prefix may be dropped when the session already is in the checkout). There are
+no act-class tasks. Every Bash call is checked by `hooks/validate-quality.sh`
+from the checkout (wired in the frontmatter above; it refuses every Bash call
+when the checkout or the guard is missing).
