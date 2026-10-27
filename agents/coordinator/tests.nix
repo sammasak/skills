@@ -105,6 +105,12 @@
         run coord:brief "$TMP/down.json"
         [ "$CODE" -ne 0 ] && ok || bad "herdr down: brief must fail"
         grep -q 'herdr:inventory:gone: unreachable' "$TMP/run.log" && ok || bad "herdr down: the real reason (unreachable) is surfaced, not 'missing'"
+        # an empty fleet is a configuration state: the brief says so, names the fleet file, and exits 0
+        run coord:brief "$FX/fleet-empty.json"
+        [ "$CODE" -eq 0 ] && ok || bad "empty fleet: brief must exit 0 (exit $CODE)"
+        [ "$(jqr .hosts_configured)" = 0 ] && [ "$(jqr .answered_hosts)" = 0 ] && ok || bad "empty fleet: hosts_configured 0 / answered 0 ($OUT)"
+        grep -q 'Fleet is empty' "$TMP/run.log" && grep -q 'fleet-empty.json' "$TMP/run.log" && ok || bad "empty fleet: Markdown must say so and name the fleet file"
+        grep -q 'hosts_configured' <<<"$(jq -c '{hosts_configured}' "$TMP/state/brief/latest.json")" && ok || bad "empty fleet: hosts_configured saved in latest.json"
         # one host down, one answering with zero agents: observed, so the brief succeeds (partial)
         printf '{"schema_version":1,"hosts":[{"name":"gone","ssh":"lukas@down.lan"},{"name":"acer-swift","ssh":null}],"repos":[]}' > "$TMP/mixed.json"
         printf '{"id":"cli:agent:list","result":{"agents":[]}}' > "$TMP/empty.json"
