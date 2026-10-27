@@ -1,27 +1,29 @@
-# gh:* and git:* tasks: durable engineering evidence. One gh:work:<repo> and one
-# git:recent:<repo> per fleet repo; gh:work and git:recent aggregate them with
-# @completed. Every task here exits 0 once it has produced a record; failures are
-# data (`error`, `failed_sources`), and only coord:brief decides the final exit.
+# gh:* and git:* tasks: durable engineering evidence on demand, one repo per call (no repo registry): gh:work
+# takes OWNER/REPO (usually named in an agent's title), git:recent a local checkout path. Observations exit 0
+# once they produced a record; failures are data (`error`); only coord:brief decides the final exit.
 { lib, config, ... }:
-
 let
   cfg = config.coordinator;
-  t = lib.types;
   ts = toString cfg.timeoutSeconds;
-  ghRepos = lib.filter (r: r.gh != null) cfg.repos;
-  coRepos = lib.filter (r: r.checkout != null) cfg.repos;
-  ghTask = r: lib.nameValuePair "gh:work:${r.name}" {
-    description = "Open issues and recent PRs of ${r.gh} (bounded, raw).";
+in
+{
+  imports = [ ./common.nix ];
+
+  tasks = {
+    "gh:work" = {
+      description = "Open issues and recent open/merged PRs of one GitHub repo (bounded, raw).";
+      input = { repo = null; };
     exec = ''
       ${cfg.prelude}
-      ctx=$(jq -cn --arg n ${lib.escapeShellArg r.name} --arg g ${lib.escapeShellArg r.gh} '{task:"gh:work",repo:$n,gh:$g}')
+      gh=$(input .repo); ctx=$(jq -cn --arg g "$gh" '{task:"gh:work",repo:$g,gh:$g}')
+      [[ "$gh" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail 3 invalid_input "repo must be OWNER/REPO" "$ctx"
       at=$(now_iso); rc=0
-      issues=$(timeout -k 1 ${ts} ${cfg.ghCommand} issue list -R ${lib.escapeShellArg r.gh} --state open --limit ${toString cfg.ghLimit} --json number,title,state,updatedAt,labels,url 2>/dev/null) || rc=$?
+      issues=$(timeout -k 1 ${ts} ${cfg.ghCommand} issue list -R "$gh" --state open --limit ${toString cfg.ghLimit} --json number,title,state,updatedAt,labels,url 2>/dev/null) || rc=$?
       [ "$rc" -eq 0 ] || { observe_error gh_error "gh issue list exited $rc" "$ctx"; exit 0; }
       fields=number,title,state,isDraft,reviewDecision,mergedAt,updatedAt,headRefName,url,statusCheckRollup,closingIssuesReferences
-      open_prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R ${lib.escapeShellArg r.gh} --state open --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || rc=$?
+      open_prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R "$gh" --state open --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || rc=$?
       [ "$rc" -eq 0 ] || { observe_error gh_error "gh pr list (open) exited $rc" "$ctx"; exit 0; }
-      merged_prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R ${lib.escapeShellArg r.gh} --state merged --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || rc=$?
+      merged_prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R "$gh" --state merged --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || rc=$?
       [ "$rc" -eq 0 ] || { observe_error gh_error "gh pr list (merged) exited $rc" "$ctx"; exit 0; }
       prs=$(jq -cn --argjson o "$open_prs" --argjson m "$merged_prs" '$o + $m') || { observe_error malformed "gh returned unexpected JSON" "$ctx"; exit 0; }
       out=$(jq -cn --arg at "$at" --argjson c "$ctx" --argjson i "$issues" --argjson p "$prs" --argjson no "$(jq 'length' <<<"$open_prs")" '
@@ -34,12 +36,13 @@ let
       emit "$out"
     '';
   };
-  gitTask = r: lib.nameValuePair "git:recent:${r.name}" {
-    description = "Recent commits, dirty tree and unpushed work in ${r.checkout}.";
+    "git:recent" = {
+      description = "Recent commits, dirty tree and unpushed work in one local checkout.";
+      input = { checkout = null; };
     exec = ''
       ${cfg.prelude}
-      co=${lib.escapeShellArg r.checkout}
-      ctx=$(jq -cn --arg n ${lib.escapeShellArg r.name} --arg c "$co" '{task:"git:recent",repo:$n,checkout:$c}')
+      co=$(input .checkout); ctx=$(jq -cn --arg c "$co" '{task:"git:recent",repo:(($c|split("/"))[-1]),checkout:$c}')
+      [[ "$co" =~ ^/[A-Za-z0-9_./-]+$ ]] && [[ "/$co/" != *"/../"* ]] || fail 3 invalid_input "checkout must be a plain absolute path" "$ctx"
       at=$(now_iso)
       g() { timeout -k 1 ${ts} git -C "$co" "$@" 2>/dev/null; }
       [ -e "$co/.git" ] || { observe_error not_found "no git checkout at $co" "$ctx"; exit 0; }
@@ -59,33 +62,5 @@ let
         '$c + {schema_version:1, observed_at:$at, error:null, head:$head, branch:$br, upstream:(if $up == "" then null else $up end), dirty_files:$dirty, ahead:$ahead, behind:$behind, unpushed:$u, commits:$cm}')"
     '';
   };
-  aggregate = name: items: {
-    description = "Aggregate of ${name}:<repo>; partial on failures, never fails itself.";
-    after = map (n: "${name}:${n}@completed") items;
-    exec = ''
-      ${cfg.prelude}
-      at=$(now_iso); out="[]"; failed="[]"
-      for name in ${lib.concatStringsSep " " items}; do
-        up=$(upstream "${name}:$name")
-        if [ "$up" = null ]; then failed=$(jq -c --arg n "$name" '. + [{repo:$n, error:{kind:"missing", message:"task produced no output"}}]' <<<"$failed")
-        elif [ "$(jq -r '.error' <<<"$up")" != null ]; then failed=$(jq -c --argjson u "$up" '. + [{repo:$u.repo, error:$u.error}]' <<<"$failed")
-        else out=$(jq -c --argjson u "$up" '. + [$u]' <<<"$out"); fi
-      done
-      emit "$(jq -cn --arg at "$at" --argjson r "$out" --argjson f "$failed" '{schema_version:1, task:"${name}", observed_at:$at, partial:(($f|length) > 0), failed_sources:$f, repos:$r}')"
-    '';
-  };
-in
-{
-  imports = [ ./fleet.nix ];
-
-  options.coordinator = {
-    ghCommand = lib.mkOption { type = t.str; default = "gh"; };
-    ghLimit = lib.mkOption { type = t.int; default = 20; };
-    gitSince = lib.mkOption { type = t.str; default = "48 hours ago"; };
-  };
-
-  config.tasks = lib.listToAttrs (map ghTask ghRepos) // lib.listToAttrs (map gitTask coRepos) // {
-    "gh:work" = aggregate "gh:work" (map (r: r.name) ghRepos);
-    "git:recent" = aggregate "git:recent" (map (r: r.name) coRepos);
   };
 }

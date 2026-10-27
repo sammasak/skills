@@ -1,34 +1,14 @@
-# Test doubles for the task suites, built by Nix instead of shipped as scripts: a fake ssh (runs the remote
-# argv through fish like the fleet's login shell), herdr, gh and devenv, all logging their calls to $FAKE_LOG.
+# Test doubles for the task suites, built by Nix instead of shipped as scripts: a fake herdr (local server plus
+# saved machines via --machine), gh and devenv, all logging their calls to $FAKE_LOG.
 { lib, pkgs, ... }:
 {
   options.coordinator.fakes = lib.mkOption {
     type = lib.types.package;
     readOnly = true;
-    description = "bin/{ssh,herdr,gh,devenv} fakes for the test tasks; FAKE_* variables drive their behaviour.";
+    description = "bin/{herdr,gh,devenv} fakes for the test tasks; FAKE_* variables drive their behaviour.";
     default = pkgs.symlinkJoin {
       name = "coordinator-fakes";
       paths = [
-      (pkgs.writeShellScriptBin "ssh" ''
-        # Fake ssh for task tests. The target decides the behaviour:
-        #   *timeout*  -> hang until killed;  *down* -> exit 255 like a refused connection;
-        #   otherwise  -> like real ssh, join the remote argv into ONE string and run it through a shell,
-        #                 with the sibling fake herdr first on PATH.
-        echo "ssh $*" >> "''${FAKE_LOG:-/dev/null}"
-        while [ $# -gt 0 ]; do case "$1" in -o|-p|-i|-l|-F) shift 2 ;; --) shift; break ;; -*) shift ;; *) break ;; esac; done
-        target="$1"; shift
-        case "$target" in
-          *timeout*) exec sleep 60 ;;
-          *down*) echo "ssh: connect to host $target port 22: Connection refused" >&2; exit 255 ;;
-        esac
-        here=$(dirname "$0"); export PATH="$here:$PATH" FAKE_HERDR_LIST="''${FAKE_REMOTE_LIST:-''${FAKE_HERDR_LIST:-}}"
-        # the remote login shell is fish on the fleet; the task ships `bash -c '<runner>' _ <b64>`, which any shell runs.
-        # Log the decoded argv (NUL-separated words joined by spaces) so tests can assert on the real remote command.
-        b64=$(sed -nE "s/^bash -c '.*' _ ([A-Za-z0-9+\/=]+)$/\1/p" <<<"$*")
-        [ -n "$b64" ] && { printf '%s' "$b64" | base64 -d | tr '\0' ' ' >> "''${FAKE_LOG:-/dev/null}"; echo >> "''${FAKE_LOG:-/dev/null}"; }
-        command -v fish >/dev/null || { echo "fake ssh: fish required to emulate the fleet's login shell" >&2; exit 2; }
-        exec fish --no-config -c "$*"
-      '')
       (pkgs.writeShellScriptBin "herdr" ''
         # Fake herdr for task tests. FAKE_HERDR_LIST=<file> is what `agent list` prints; FAKE_HERDR_READ=<file>
         # what `agent read` prints; FAKE_HERDR_EXIT forces an exit code; FAKE_HERDR_SLEEP delays.
@@ -38,6 +18,18 @@
         # the get output; FAKE_HERDR_PROMPT=ok|blocked|stalled|timeout drives `agent prompt` and FAKE_PROMPT_OUT
         # captures the prompt text; FAKE_HERDR_WAIT=timeout / FAKE_HERDR_WAIT_SLEEP shape `agent wait`.
         echo "herdr $*" >> "''${FAKE_LOG:-/dev/null}"
+        # saved machines: FAKE_HERDR_MACHINES is the `machine list --json` answer; `--machine <L>` selects FAKE_HERDR_LIST_<L>
+        # (and FAKE_HERDR_EXIT_<L>) for that machine, like herdr forwarding to another server; `*down*` labels are unreachable
+        if [ "$1" = --machine ]; then
+          m="$2"; shift 2; echo "herdr(machine=$m) $*" >> "''${FAKE_LOG:-/dev/null}"
+          # like herdr 0.9.5: a connection failure is exit 1 with one stderr line, an unknown machine is exit 2
+          case "$m" in *down*) echo "error: failed to connect to machine '$m': ssh exited 255" >&2; exit 1 ;; esac
+          jq -e --arg m "$m" 'any(.[]?; .label == $m and .enabled == true)' <<<"''${FAKE_HERDR_MACHINES:-[]}" >/dev/null 2>&1 || { echo "error: unknown machine '$m'; use \`herdr machine list\`" >&2; exit 2; }
+          lv="FAKE_HERDR_LIST_''${m//-/_}"; [ -n "''${!lv:-}" ] && export FAKE_HERDR_LIST="''${!lv}"
+          ev="FAKE_HERDR_EXIT_''${m//-/_}"; [ -n "''${!ev:-}" ] && export FAKE_HERDR_EXIT="''${!ev}"
+          mv_="FAKE_HERDR_MISSING_''${m//-/_}"; [ -n "''${!mv_:-}" ] && export FAKE_HERDR_MISSING="''${!mv_}"
+        fi
+        if [ "$1 $2" = "machine list" ]; then [ -n "''${FAKE_HERDR_MACHINES_EXIT:-}" ] && exit "$FAKE_HERDR_MACHINES_EXIT"; printf '%s\n' "''${FAKE_HERDR_MACHINES:-[]}"; exit 0; fi
         [ -n "''${FAKE_HERDR_SLEEP:-}" ] && sleep "$FAKE_HERDR_SLEEP"
         state() {
           if [ -n "''${FAKE_HERDR_STATE_SEQ:-}" ]; then

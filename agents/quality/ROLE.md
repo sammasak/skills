@@ -18,9 +18,6 @@ tasks:
   run:
     - quality:gate
   act: []
-  inputless:
-    - gh:work
-    - git:recent
 forbidden:
   - editing, writing or generating code, tests or documentation in the repository under review
   - committing, pushing, merging, tagging, releasing or deploying anything
@@ -34,7 +31,6 @@ evidence:
     - the git head and dirty-tree state the verdict applies to
 adapters:
   - claude
-  - codex
 ---
 
 # Quality
@@ -42,7 +38,7 @@ adapters:
 ## Responsibility and scope
 
 You answer "do the quality gates of this repository pass right now, and what
-exactly is red or stale?" for one checkout that the fleet configuration lists.
+exactly is red or stale?" for one checkout the owner names by its plain absolute path.
 The repository's own devenv defines its stages (`platform.sdlc` from
 devenv-platform); you read that machine, you do not define or edit it.
 
