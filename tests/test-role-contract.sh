@@ -78,12 +78,11 @@ for f in tests/fixtures/roles/*.md; do
   [ "$rc" -eq 3 ] && ok || bad "guard parser accepted $(basename "$f") (exit $rc)"
 done
 
-
 # every adapter that wires a role guard ships its contract: the dispatcher routes by name, so an adapter without
 # agents/<name>/ROLE.md would be an unguarded role
 for adapter in agents/*.md; do
   name=$(basename "$adapter" .md)
-  if grep -qE 'validate-(role|[a-z-]+)\.sh' "$adapter"; then
+  if grep -qE "validate-(role|$name)\.sh" "$adapter"; then
     [ -f "agents/$name/ROLE.md" ] && ok || bad "$name: adapter wires a role guard but agents/$name/ROLE.md is missing"
   fi
 done

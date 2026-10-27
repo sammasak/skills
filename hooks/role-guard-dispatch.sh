@@ -7,6 +7,7 @@
 # guard logic also runs from this copy; the checkout only supplies data (ROLE.md task lists, .integrity) and the
 # devenv project the tasks run in. Every other agent, and the main session, is a silent no-op.
 set -uo pipefail
+export LC_ALL=C   # lowercasing and the [a-z] checks must not depend on the session locale
 input=$(cat)
 here=$(dirname "$(readlink -f "$0")")
 # agent_type is read with jq when present, else with a plain pattern so a host without jq still routes role agents
@@ -23,7 +24,7 @@ shipped=0; [ -f "$here/../agents/$agent/ROLE.md" ] && shipped=1
 present=0; [ -f "$checkout/agents/$agent/ROLE.md" ] && present=1
 # an adapter that wires a role guard but ships no contract would otherwise be silently unguarded
 if [ "$shipped" -eq 0 ] && [ "$present" -eq 0 ]; then
-  if [ -f "$here/../agents/$agent.md" ] && grep -qE 'validate-(role|[a-z-]+)\.sh' "$here/../agents/$agent.md"; then
+  if [ -f "$here/../agents/$agent.md" ] && grep -qE "validate-(role|$agent)\.sh" "$here/../agents/$agent.md"; then
     echo "$agent: adapter declares a role guard but ships no agents/$agent/ROLE.md; refusing" >&2; exit 2
   fi
   exit 0

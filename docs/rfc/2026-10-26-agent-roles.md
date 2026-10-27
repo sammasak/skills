@@ -88,9 +88,11 @@ Two facts fix where the guard must live:
 
 So the guard is a settings-level hook, `hooks/role-guard-dispatch.sh`, installed
 by nixos-config next to the other user-scope hooks: it reads `agent_type`,
-and only when `agents/<agent_type>/ROLE.md` exists in the skills checkout does
-it run `validate-role.sh`; for every other agent and for the main session it
-is a silent no-op. The frontmatter hook in each adapter stays as the
+and when that role ships next to it (`agents/<agent_type>/ROLE.md` in the
+installed copy) or is present in the skills checkout, it runs the installed
+`validate-role.sh` with the checkout as data; a shipped role whose checkout
+lacks the contract is refused; for every other agent and for the main session
+it is a silent no-op. The frontmatter hook in each adapter stays as the
 main-session backstop. Installing this repo as a Claude Code plugin loads the
 adapters without that settings hook, so a plugin-installed role is unguarded
 unless the dispatcher is registered separately; the nixos-config install path
@@ -119,8 +121,8 @@ per-agent hook, so the same guard is registered in a dedicated `CODEX_HOME`'s
   `--from`, `--override-input`; every call that carries input is allowed only
   by the guard hook, which returns `allow` after validating the grammar, the
   JSON body and the working directory. Both the dispatcher and the adapter's
-  hook command refuse every Bash call when the skills checkout or the guard is
-  missing (fail closed).
+  hook command refuse every role-agent Bash call when the skills checkout or
+  the guard is missing (fail closed).
 - `Read(~/...)` and `Read(./**)` rules are checked as rule text; the emulator
   does not expand `~` or `./`. The launcher renders the real state directory
   (`$XDG_STATE_HOME/coordinator`) in place of the portable default.
