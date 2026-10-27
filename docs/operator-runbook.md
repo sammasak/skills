@@ -4,50 +4,55 @@
 
 | Piece | Lives in | Installed by |
 |---|---|---|
-| Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex), `agents/<role>/permissions.json` | this repo | nixos-config links the Claude adapter on devTools hosts; the launcher project-scopes it inside the checkout |
-| Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from a writable checkout with `devenv tasks run …` |
-| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers) | this repo | nixos-config: `~/.claude/hooks/validate-<role>.sh` and the settings-level hook in the launcher's settings file |
-| `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | nixos-config from `sam.coordinator.fleet` |
+| Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex) | this repo | nixos-config `skills.nix` links every `agents/*.md` into `~/.claude/agents` on devTools hosts, so the roles are ordinary subagents |
+| Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from one writable skills checkout: `$SKILLS_CHECKOUT`, default `~/claude-code-skills` |
+| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers), dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the installed guard for role agents only, with the checkout as data |
+| `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | you (schema in the RFC); an absent file is an empty fleet |
 | State (snapshots, drafts, `audit.jsonl`, `brief/latest.json`) | `~/.local/state/coordinator/` | the tasks |
 
 ## Daily use
 
+Open Claude Code in any directory and talk to the subagent: "ask the
+coordinator what my agents are doing", "is #16 really done", "hand the
+docs fix to the agent in pane wF:p2". Claude delegates to `coordinator`
+(or pick it explicitly with `/agents`); it runs
+
 ```bash
-coordinator                                   # launcher on the coordinator host (lenovo): Claude as the Coordinator role
-devenv tasks run coord:brief --show-output    # the same picture without an LLM, from the checkout
-tail -n 5 ~/.local/state/coordinator/audit.jsonl   # every herdr:message attempt and outcome
+cd ~/claude-code-skills && devenv tasks run coord:brief --show-output
 ```
 
-Ask the Coordinator "what are my agents doing / what needs me / is #N done". It
-answers from `coord:brief` and must keep `herdr_state` and `work_verdict`
-separate. To hand work over: it drafts (`coord:handoff`), you confirm the
-`handoff_id` and target in the conversation, it sends (`herdr:message` prompts
-for permission every time), awaits (`herdr:await`), and verifies with
+and answers from the brief, keeping `herdr_state` and `work_verdict`
+separate. The same tasks work without an LLM from the checkout:
+
+```bash
+cd ~/claude-code-skills
+devenv tasks run coord:brief --show-output          # the fleet picture
+tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message attempt and outcome
+```
+
+To hand work over: the coordinator drafts (`coord:handoff`), you confirm the
+`handoff_id` and target in the conversation, it sends (`herdr:message`
+prompts for permission every time), awaits (`herdr:await`), and verifies with
 `work:status`. "delivered" is not "done"; only a merged PR for the agent's
 `#N` in its own repo makes `work_verdict: verified`.
 
+Keep the checkout current (`git -C ~/claude-code-skills pull`): the tasks and
+contracts the subagent uses are the ones in that working tree. Point
+`SKILLS_CHECKOUT` elsewhere if yours lives elsewhere.
+
 ## Running the quality role
 
-Claude: from the checkout, `claude --agent quality --permission-mode default
---setting-sources project,local --settings <file with the guard hook and the
-role's permissions.json rules>` (the same shape the coordinator launcher
-uses). Codex: `codex exec --cd "$COORDINATOR_CHECKOUT" "$(cat
+Claude: "ask the quality agent whether devenv-platform's gates pass"; it runs
+`quality:report` (and `quality:gate` only when asked) from the checkout against
+the consumer's own `platform.sdlc` machine. Codex: `codex exec --cd
+"${SKILLS_CHECKOUT:-$HOME/claude-code-skills}" "$(cat
 agents/quality/AGENTS.md)"$'\n\n'"<request>"` with the guard in a dedicated
 `CODEX_HOME/hooks.json` and `--sandbox workspace-write`; see
 `agents/quality/AGENTS.md` for what Codex cannot enforce, and note that its
 sandbox cannot write fleet checkouts, so a real `quality:report` (the
 consumer's `devenv shell` writes `.devenv/`) or `quality:gate` needs each
-checkout added as a writable root. A guarded session
-exports `COORDINATOR_REQUIRE_INTEGRITY=1` and `COORDINATOR_INTEGRITY_SHA256`
-(the manifest's hash kept outside the checkout; the launcher does this), so a
-missing manifest, a missing pin, a rewritten manifest, a changed listed file, or
-an unlisted `devenv.local.nix`, `devenv.local.yaml`, `.claude/settings.json`,
-`.claude/settings.local.json`, `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
-`.mcp.json`, `.codex/config.toml` or `.codex/hooks.json` blocks every call. Not
-covered: the `.devenv/` evaluation cache, and clones nobody materialised with a
-manifest and pin. `quality:gate` is
-bounded to 540 s and the launcher settings raise Claude's Bash timeout to
-600 s so a long gate still reports.
+checkout added as a writable root. `quality:gate` is bounded to 540 s; raise
+Claude's Bash timeout (`BASH_MAX_TIMEOUT_MS`) if a long gate must report.
 
 ## Reading failures
 
@@ -61,27 +66,38 @@ bounded to 540 s and the launcher settings raise Claude's Bash timeout to
   not resend blindly); `agent_blocked`/`agent_busy`/`agent_changed`/
   `agent_not_found` (nothing sent).
 - A guard refusal shows up in Claude as a blocked Bash call with the guard's
-  reason on stderr; in `-p` mode a permission prompt is denied, so make sure
-  the settings-level guard is in place (the launcher does this). A refusal
-  "checkout integrity check failed" means a guarded file in the copy changed:
-  rebuild the copy (re-run the activation) rather than editing it back.
+  reason on stderr. "tasks run only from the skills checkout" means the
+  subagent used another directory or path form; "has no agents/<role>/ROLE.md
+  (missing or stale …)" means `~/claude-code-skills` is absent or behind the
+  installed skills revision (clone or `git pull` it, or set `SKILLS_CHECKOUT`);
+  the role is refused, never let through. In hardened mode, "checkout integrity check failed"
+  means a guarded file in the materialised copy changed: let the activation
+  rebuild it rather than editing it back.
 
 ## Operating the guard
 
-`hooks/validate-role.sh` reads `agents/$ROLE/ROLE.md` under
-`$COORDINATOR_CHECKOUT` and allows exactly
-`devenv tasks run <read|run task> [--input-json '<object>'] [--show-output]`
-from that directory; `act` tasks return `ask`. Register it at **settings
-level** (verified: an agent-frontmatter hook alone is not honoured for allow
-decisions when the agent is the main session) and keep the frontmatter hook
-as the fail-closed backstop.
-
-## Rotating the checkout
-
-A skills bump creates `~/.local/share/coordinator/skills-<rev>`; `current`
-follows the active generation; two older copies are kept. Rollback of the
-NixOS generation re-points `current`. State under `~/.local/state/coordinator`
-is shared across revisions.
+`hooks/validate-role.sh` reads `agents/$ROLE/ROLE.md` in the skills checkout
+and allows exactly `[cd <checkout> && ]devenv tasks run <read|run task>
+[--input-json '<object>'] [--show-output]`, run from the checkout or `cd`-ed
+into exactly its plain absolute path; `act` tasks return `ask`. It is wired at
+settings level by `hooks/role-guard-dispatch.sh` (nixos-config installs it
+with the other user-scope hooks): the dispatcher reads the hook input's
+`agent_type` and runs the guard only for role agents (a role is one whose
+`agents/<name>/ROLE.md` ships in the installed copy, or is present in the
+checkout); other agents and the main session are untouched. The guard logic
+comes from the installed copy next to the dispatcher; the checkout only
+supplies the task lists and the devenv project, and its path must be plain
+(`[A-Za-z0-9_./-]`, no `..`, spaces or unicode). A subagent's
+frontmatter hooks never run (verified 2026-10-27), so the frontmatter hook in
+each adapter only covers the `claude --agent <role>` main-session case. A
+host with the adapters linked but no checkout refuses every role Bash call.
+Installing this repo as a plugin does not install the dispatcher. Optional
+hardened mode: with
+`COORDINATOR_REQUIRE_INTEGRITY=1` and a 64-hex pin in
+`COORDINATOR_INTEGRITY_SHA256`, the guard also verifies the checkout's
+`.integrity` manifest (`hooks/lib/integrity-check.sh`) on every call; the
+nixos-config `coordinator` launcher module does this with a materialised copy,
+and is disabled by default.
 
 ## Verifying a change to this repo
 
