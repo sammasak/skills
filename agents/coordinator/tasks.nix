@@ -74,11 +74,13 @@ in
         ws=$(upstream "work:status")
         [ "$ws" != null ] || fail 2 missing "work:status produced no output" '{"task":"coord:brief"}'
         dir="${cfg.stateDir}/brief"; mkdir -p "$dir"
-        brief=$(jq -c '. + {task:"coord:brief"}' <<<"$ws")
+        # an empty fleet (no hosts in the fleet file, or no file at all) is a configuration state, not a failure: say so
+        brief=$(jq -c --argjson n ${toString (builtins.length cfg.hosts)} --arg ff ${lib.escapeShellArg (toString cfg.fleetFile)} '. + {task:"coord:brief", hosts_configured:$n, fleet_file:$ff}' <<<"$ws")
         printf '%s\n' "$brief" > "$dir/latest.json.tmp" && mv "$dir/latest.json.tmp" "$dir/latest.json"
         printf '%s\n' "$brief" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
         jq -r --arg f "$dir/latest.json" '
           "# Fleet brief (\(.observed_at))",
+          (if .hosts_configured == 0 then "", "**Fleet is empty:** no hosts in \(.fleet_file) (an absent file is an empty fleet). Add hosts there to see agents; nothing below can be observed." else empty end),
           (if .partial then "", "**Partial:** " + ([.failed_sources[] | "\(.source): \(.error.kind) — \(.error.message)"] | join("; ")) else empty end),
           "", "## Needs you",
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else (.[0:10] | map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))")) + (if length > 10 then ["… \(length - 10) more needing you in the JSON"] else [] end) end)[]),
@@ -86,8 +88,9 @@ in
           (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) (\(.state_age_s)s\(if .stale then ", stale" else "" end)) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
         ' <<<"$brief"
-        # the brief is the one task whose exit says something: no host answered and nothing stale to show is a failure
-        [ "$(jq -r '((.items|length) > 0) or (.answered_hosts > 0)' <<<"$brief")" = true ] || exit 2
+        # the brief is the one task whose exit says something: hosts configured but none answered and nothing stale to
+        # show is a failure; an empty fleet is reported above and exits 0
+        [ "$(jq -r '(.hosts_configured == 0) or ((.items|length) > 0) or (.answered_hosts > 0)' <<<"$brief")" = true ] || exit 2
       '';
     };
 
