@@ -34,9 +34,12 @@ other roles may share. Nothing here needs a new script runner.
    iterates `agents/*/ROLE.md`; add the role's allow/block cases to
    `tests/test-coordinator-negative.sh`).
 7. **Host** — nothing to do: nixos-config `skills.nix` links every
-   `agents/*.md` as a subagent, and the adapter's frontmatter hook finds the
-   guard in the skills checkout. (`permissions.json` only matters for the
-   optional hardened launcher mode in `nixos-config/docs/coordinator.md`.)
+   `agents/*.md` as a subagent, and the settings-level dispatcher
+   (`hooks/role-guard-dispatch.sh`) picks the role up by name because
+   `agents/<name>/ROLE.md` ships next to it. The name must match
+   `^[a-z][a-z-]*$` (no digits or underscores), or the dispatcher will not
+   recognise it. (`permissions.json` only matters for the optional hardened
+   launcher mode in `nixos-config/docs/coordinator.md`.)
 
 The quality role (`agents/quality/`) is the worked example: three existing
 skills, two shared tasks, two new tasks, 26 fixture assertions, and the same

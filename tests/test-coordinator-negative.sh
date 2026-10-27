@@ -146,6 +146,30 @@ DISPATCH="$ROOT/hooks/role-guard-dispatch.sh"
 dcase() { local label="$1" want_code="$2" want_dec="$3" payload="$4" out code dec; out=$(printf '%s' "$payload" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$DISPATCH" 2>/dev/null); code=$?; dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null); [ "$code" -eq "$want_code" ] && [ "$dec" = "$want_dec" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): $label -> $code/'$dec' (want $want_code/'$want_dec')"; }; }
 dcase "coordinator subagent, allowed task" 0 allow "$(jq -cn --arg c "cd $ROOT && devenv tasks run coord:brief" '{cwd:"/tmp",agent_type:"coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
 dcase "coordinator subagent, forbidden command" 2 "" "$(jq -cn '{cwd:"/tmp",agent_type:"coordinator",tool_name:"Bash",tool_input:{command:"echo hi"}}')"
+derr() { local label="$1" want="$2" payload="$3"; shift 3; local err code; err=$(printf '%s' "$payload" | env -u COORDINATOR_CHECKOUT -u SKILLS_CHECKOUT "$@" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q -- "$want" <<<"$err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): $label -> $code '$err' (want 2 + '$want')"; }; }
+FORBID="$(jq -cn --arg d "$ROOT" '{cwd:$d,agent_type:"coordinator",tool_name:"Bash",tool_input:{command:"echo hi"}}')"
+ALLOWED="$(jq -cn --arg c "cd $ROOT && devenv tasks run coord:brief" '{cwd:"/tmp",agent_type:"coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
+derr "forbidden command is refused by the grammar, not by a missing guard" "only '\[cd <checkout> && \]devenv tasks run" "$FORBID" SKILLS_CHECKOUT="$ROOT"
+# a shipped role with no checkout, or a stale checkout without the contract, must REFUSE (never silently un-guard)
+derr "shipped role, no checkout at all" "has no agents/coordinator/ROLE.md" "$ALLOWED" HOME=/nonexistent
+STALE=$(mktemp -d); mkdir -p "$STALE/hooks" "$STALE/agents"; cp "$ROOT/hooks/validate-role.sh" "$STALE/hooks/"
+derr "shipped role, stale checkout without the contract" "missing or stale" "$ALLOWED" SKILLS_CHECKOUT="$STALE"
+derr "checkout path with .. is refused" "must be absolute and plain" "$ALLOWED" SKILLS_CHECKOUT="$ROOT/../$(basename "$ROOT")"
+rm -rf "$STALE"
+# the dispatcher's own copy of the guard is what runs; a crashing guard (exit 1) still blocks
+CRASH=$(mktemp -d); cp -r "$ROOT/hooks/." "$CRASH/"; mkdir -p "$CRASH/../agents" 2>/dev/null; printf '#!/usr/bin/env bash\nexit 1\n' > "$CRASH/validate-role.sh"; chmod +x "$CRASH/validate-role.sh"
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$CRASH/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard failed (rc=1)' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): crashing guard must map to exit 2"; }
+chmod -x "$CRASH/validate-role.sh"
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$CRASH/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard missing next to the dispatcher' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): non-executable guard must refuse"; }
+rm -rf "$CRASH"
+# without jq the routing still happens (grep fallback) and the guard fails closed on its own missing jq
+NOJQ=$(mktemp -d); for b in bash grep sed head dirname readlink cat printf env; do ln -s "$(command -v $b)" "$NOJQ/$b" 2>/dev/null; done
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$NOJQ" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): role agent without jq must refuse (fail closed)"; }
+( out=$(printf '%s' "$(jq -cn '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:"echo hi"}}')" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$NOJQ" "$DISPATCH" 2>&1); code=$?; [ "$code" -eq 0 ] && [ -z "$out" ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): main session without jq must stay a silent no-op"; }
+rm -rf "$NOJQ"
+dcase "namespaced agent_type routes by its tail" 0 allow "$(jq -cn --arg c "cd $ROOT && devenv tasks run coord:brief" '{cwd:"/tmp",agent_type:"sammasak-skills:coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
+( out=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT/" "$DISPATCH" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty'); [ "$out" = allow ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): checkout configured with a trailing slash must allow"; }
+( out=$(jq -cn --arg c "cd ~/x && devenv tasks run coord:brief" '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:$c}}' | HOME="/x/" COORDINATOR_CHECKOUT="$ROOT" "$HOOK" >/dev/null 2>&1; echo $?); [ "$out" = 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): HOME with a trailing slash must block (//)"; }
 dcase "coordinator subagent, act task asks" 0 ask "$(jq -cn --arg c "cd $ROOT && devenv tasks run herdr:message --input-json '{}'" '{cwd:"/tmp",agent_type:"coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
 dcase "quality subagent, allowed task" 0 allow "$(jq -cn --arg c "cd $ROOT && devenv tasks run quality:report --input-json '{}'" '{cwd:"/tmp",agent_type:"quality",tool_name:"Bash",tool_input:{command:$c}}')"
 dcase "other agent is a no-op" 0 "" "$(jq -cn '{cwd:"/tmp",agent_type:"code-reviewer",tool_name:"Bash",tool_input:{command:"echo hi"}}')"

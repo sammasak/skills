@@ -37,9 +37,9 @@ Your only commands are task calls of exactly this form:
 
     cd ~/claude-code-skills && devenv tasks run <task> [--input-json '<object>'] [--show-output]
 
-(`~/claude-code-skills` is the skills checkout unless the owner names another
-path in the conversation; write the path plainly, never through a variable,
-`..`, `~+` or quotes)
+(`~/claude-code-skills` is the skills checkout; if the host is configured with
+another path (`SKILLS_CHECKOUT`) the owner will tell you, and you use exactly
+that; write the path plainly, never through a variable, `..`, `~+` or quotes)
 
 for the tasks the role lists under `tasks.read` (the `cd` prefix may be
 dropped when the session already is in the checkout). `tasks.act` entries

@@ -67,9 +67,10 @@ Claude's Bash timeout (`BASH_MAX_TIMEOUT_MS`) if a long gate must report.
   `agent_not_found` (nothing sent).
 - A guard refusal shows up in Claude as a blocked Bash call with the guard's
   reason on stderr. "tasks run only from the skills checkout" means the
-  subagent used another directory or path form; "no guard at …" means the
-  host has no skills checkout at `~/claude-code-skills` (clone it, or set
-  `SKILLS_CHECKOUT`). In hardened mode, "checkout integrity check failed"
+  subagent used another directory or path form; "has no agents/<role>/ROLE.md
+  (missing or stale …)" means `~/claude-code-skills` is absent or behind the
+  installed skills revision (clone or `git pull` it, or set `SKILLS_CHECKOUT`);
+  the role is refused, never let through. In hardened mode, "checkout integrity check failed"
   means a guarded file in the materialised copy changed: let the activation
   rebuild it rather than editing it back.
 
@@ -82,7 +83,10 @@ into exactly its plain absolute path; `act` tasks return `ask`. It is wired at
 settings level by `hooks/role-guard-dispatch.sh` (nixos-config installs it
 with the other user-scope hooks): the dispatcher reads the hook input's
 `agent_type` and runs the guard only for agents that have a ROLE.md in the
-checkout, so other agents and the main session are untouched. A subagent's
+checkout, so other agents and the main session are untouched. The set of
+roles and the guard logic come from the installed copy next to the dispatcher;
+the checkout only supplies the task lists and the devenv project, and its
+path must be plain (`[A-Za-z0-9_./-]`, no `..`, spaces or unicode). A subagent's
 frontmatter hooks never run (verified 2026-10-27), so the frontmatter hook in
 each adapter only covers the `claude --agent <role>` main-session case. A
 host with the adapters linked but no checkout refuses every role Bash call.
