@@ -210,7 +210,7 @@ Owner, verbatim: "we dont need to over engineer this part … We should just pro
 
 - [x] Removed: `hooks/role-guard-dispatch.sh`, `task-modules/guard-lib.nix`, `task-modules/guard.nix`, `hooks/lib/integrity-paths`, `agents/*/permissions.json`, `tests/fixtures/roles/`, the `skills:test:negative` suite, the Codex adapter `agents/quality/AGENTS.md` and the live `quality:two-harness` task.
 - [x] Adapters are plain role prompts (`permissionMode: default`, no hooks); the contract suite asserts exactly that. Runbook, RFC, adding-a-role rewritten.
-- [ ] nixos-config: drop `role-guard.nix`, the hook registration in `mcp.nix`, the `skills.nix` dispatcher assertion (PR #108).
+- [x] nixos-config PR #108 (a1e2c76): `role-guard.nix`, the hook registration in `mcp.nix` and the `skills.nix` dispatcher assertion dropped; only the two framework hooks (`validate-bash.sh`, `check-loop.sh`) remain on PreToolUse; both hosts evaluate.
 
 ---
 
