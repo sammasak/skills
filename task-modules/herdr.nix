@@ -25,10 +25,12 @@ in
                task_ref:((.terminal_title_stripped // "") | capture("(?<r>#[0-9]+)")?.r // null), evidence_ref:null,
                approval_required:(.agent_status == "blocked"), error:null})' <<<"$3" 2>/dev/null; }
         observe() { # <host-label> <machine-or-empty>
-          local host="$1" m="$2" rc=0 raw records
-          raw=$(herdr_at ${t} "$m" agent list 2>/dev/null) || rc=$?
+          local host="$1" m="$2" rc=0 raw records errf herr
+          errf=$(mktemp); raw=$(herdr_at ${t} "$m" agent list 2>"$errf") || rc=$?
+          # herdr's own first stderr line (connection refused, unknown machine, ssh failure) is the useful message
+          herr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
           if [ "$rc" -ne 0 ]; then
-            hosts_out=$(jq -c --arg h "$host" --arg m "$m" --arg k "$(rc_kind $rc)" --argjson rc "$rc" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:$k, message:("herdr agent list: " + $k + " (exit " + ($rc|tostring) + ")")}, agents:[]}]' <<<"$hosts_out"); return; fi
+            hosts_out=$(jq -c --arg h "$host" --arg m "$m" --arg k "$(rc_kind $rc)" --argjson rc "$rc" --arg e "$herr" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:$k, message:("herdr agent list: " + $k + " (exit " + ($rc|tostring) + ")" + (if $e == "" then "" else ": " + $e end) + ")")}, agents:[]}]' <<<"$hosts_out"); return; fi
           records=$(normalise "$host" "$m" "$raw") && [ -n "$records" ] \
             || { hosts_out=$(jq -c --arg h "$host" --arg m "$m" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:"malformed", message:"herdr agent list did not return an agent_list"}, agents:[]}]' <<<"$hosts_out"); return; }
           answered=$((answered+1))
@@ -37,8 +39,13 @@ in
         observe "$(local_host)" ""
         while IFS= read -r label; do
           [ -n "$label" ] || continue
-          valid_machine "$label" || continue
-          total=$((total+1)); observe "$label" "$label"
+          total=$((total+1))
+          # a label the coordinator cannot pass safely is still a host the owner has: shown, counted, never forwarded
+          if ! valid_machine "$label"; then
+            hosts_out=$(jq -c --arg l "$label" '. + [{host:$l, machine:$l, reachable:false, error:{kind:"invalid_label", message:("saved machine label has characters the coordinator refuses (allowed: [A-Za-z0-9_.-]); rename it with herdr machine rename")}, agents:[]}]' <<<"$hosts_out")
+            continue
+          fi
+          observe "$label" "$label"
         done < <(jq -r '.[].label' <<<"$machines")
         emit "$(jq -cn --arg at "$at" --argjson hosts "$hosts_out" --argjson n "$answered" --argjson total "$total" --argjson nm "$(jq 'length' <<<"$machines")" --argjson me "$machines_error" \
           '{schema_version:1, task:"herdr:inventory", observed_at:$at, partial:($n < $total or $me != null), answered_hosts:$n, hosts_total:$total, machines_configured:$nm, machines_error:$me, hosts:$hosts}')"
@@ -46,7 +53,7 @@ in
     };
 
     "herdr:inspect" = {
-      description = "Bounded terminal excerpt of one agent (<= 200 lines, <= 64 KiB) on this host or a saved machine.";
+      description = "Bounded terminal excerpt of one agent (<= 200 lines, <= 65536 characters) on this host or a saved machine.";
       input = { machine = null; agent_id = null; lines = 40; source = "visible"; };
       exec = ''
         ${cfg.prelude}
@@ -63,10 +70,11 @@ in
         # herdr 0.9.5 parses <TARGET> first and rejects options before it ("unknown option"); valid_id excludes a leading '-'
         text=$(herdr_at ${t} "$m" agent read "$agent" --lines "$lines" --source "$source" --format text 2>/dev/null) || rc=$?
         [ "$rc" -eq 0 ] || fail 2 "$(rc_kind $rc)" "herdr agent read: $(rc_kind $rc) (exit $rc; unknown agent or machine?)" "$ctx"
-        cut=$(printf '%s\n' "$text" | head -n 200 | LC_ALL=C head -c 65536); truncated=false; capped=false
-        [ "$cut" = "$text" ] || truncated=true; [ "$requested" -le 200 ] || capped=true
-        emit "$(jq -cn --argjson c "$ctx" --arg at "$at" --arg t "$cut" --arg src "$source" --argjson req "$requested" --argjson tr "$truncated" --argjson cap "$capped" \
-          '{schema_version:1} + $c + {observed_at:$at, source:$src, lines_requested:$req, lines_returned:($t | split("\n") | length), truncated:$tr, capped:$cap, excerpt:$t, error:null}')"
+        capped=false; [ "$requested" -le 200 ] || capped=true
+        # bounded inside jq (no head pipeline: under pipefail a cut-off writer would SIGPIPE and lose the record)
+        emit "$(jq -cn --argjson c "$ctx" --arg at "$at" --arg t "$text" --arg src "$source" --argjson req "$requested" --argjson cap "$capped" \
+          '($t | split("\n") | .[:200] | join("\n") | .[:65536]) as $cut
+           | {schema_version:1} + $c + {observed_at:$at, source:$src, lines_requested:$req, lines_returned:($cut | split("\n") | length), truncated:($cut != $t), capped:$cap, excerpt:$cut, error:null}')"
       '';
     };
     "herdr:message" = {
@@ -82,9 +90,10 @@ in
         host=$(jq -r '.host // empty' "$draft"); m=$(jq -r '.machine // empty' "$draft"); agent=$(jq -r '.agent_id // empty' "$draft"); text=$(jq -r '.text // empty' "$draft"); ref=$(jq -r '.task_ref // empty' "$draft"); want_session=$(jq -r '.session_id // empty' "$draft")
         [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] || fail 3 invalid_input "draft $id is incomplete" "$ctx"
         # the id is content-addressed: re-derive it so the text sent is the text the owner confirmed
-        [ "$(printf '%s|%s|%s|%s|%s' "$host" "$agent" "$want_session" "$ref" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
+        [ "$(printf '%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
         [ "$confirm" = "$host/$agent" ] || fail 3 not_confirmed "confirm must equal the draft target '$host/$agent' (got '$confirm')" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$ctx"
+        [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "draft machine label has unsafe characters" "$ctx"
                 audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
         exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another herdr:message holds the audit lock" "$ctx"
         [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 \

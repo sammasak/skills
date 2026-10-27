@@ -39,12 +39,17 @@ The guard also admits Herdr's own read verbs as typed, without a task:
 `herdr [--machine <label>] machine list [--json]`, `machine status [<label>]
 [--json]`, `agent list`, `pane list`, `agent get|read|wait <target> …` and
 `herdr --skill`. Use them to answer a Herdr-specific question the tasks do not
-cover; `herdr agent prompt` is act-class and prompts like `herdr:message`.
+cover; `herdr agent prompt` is act-class and prompts like `herdr:message`. A
+raw `herdr agent read` is not bounded and `--lines` beyond the viewport may
+scroll an idle agent's pane; prefer `herdr:inspect` for excerpts.
 
 `machine`, `agent_id`, `session_id` and `cwd` come from `herdr:inventory`
 records; never guess them. `machine: null` means this host. A label Herdr does
-not know makes Herdr itself fail (`error.kind: command_failed`, exit 1 inside
-the record); an unsafe label or id is refused as `invalid_input`.
+not know makes Herdr itself fail (`error.kind: command_failed`, exit 2 and
+Herdr's own message inside the record); an unsafe label or id you pass is
+refused as `invalid_input`, and a saved machine whose label the coordinator
+cannot pass safely (Herdr's default `host/session` form) appears in the
+inventory as `error.kind: invalid_label` until it is renamed.
 
 ## Reading the output
 
@@ -67,8 +72,9 @@ the record); an unsafe label or id is refused as `invalid_input`.
 - `blocked`: the agent shows an approval or question UI. It needs a human;
   never prompt a blocked agent.
 - `unknown`: an agent is present but unclassified. Treat as "no information".
-- Host `error.kind` of `timeout`, `unreachable` or `command_failed`: say so;
-  do not guess what the host is doing.
+- Host `error.kind` of `timeout` or `command_failed` (Herdr's own message,
+  e.g. a failed ssh connection, follows in `error.message`): say so; do not
+  guess what the host is doing.
 
 ## Freshness
 

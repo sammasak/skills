@@ -14,7 +14,7 @@
     /^tasks:[ \t]*$/ { if (seen_tasks) { print "role-list: duplicate tasks: key" > "/dev/stderr"; exit 3 }; seen_tasks = 1; intasks = 1; cur = ""; next }
     intasks && /^[^ \t]/ { intasks = 0; cur = "" }
     !intasks { next }
-    /^  (read|run|act|inputless):[ \t]*(\[\])?[ \t]*$/ { cur = $1; sub(":", "", cur); if (seen[cur]++) { print "role-list: duplicate sub-key " cur > "/dev/stderr"; exit 3 }; closed = ($0 ~ /\[\]/); next }
+    /^  (read|run|act|inputless|direct):[ \t]*(\[\])?[ \t]*$/ { cur = $1; sub(":", "", cur); if (seen[cur]++) { print "role-list: duplicate sub-key " cur > "/dev/stderr"; exit 3 }; closed = ($0 ~ /\[\]/); next }
     closed && /^    - / { print "role-list: items after an inline [] list" > "/dev/stderr"; exit 3 }
     /^  [A-Za-z_"'][^:]*:/ { print "role-list: unknown key under tasks: " $0 > "/dev/stderr"; exit 3 }
     /^    - / {
@@ -29,7 +29,7 @@
     END { if (fm < 2) { print "role-list: frontmatter not closed" > "/dev/stderr"; exit 3 } }
     AWK
     )
-    # role_list_awk <key> <ROLE.md>: one task per line for read|run|act|inputless; exit 3 on anything not understood
+    # role_list_awk <key> <ROLE.md>: one task per line for read|run|act|inputless|direct; exit 3 on anything not understood
     role_list_awk() { awk -v key="$1" "$ROLE_LIST_AWK" "$2"; }
     # integrity_check <dir> <pin|-> [role...]: 0 intact; 1 refused with the reason on stderr; 2 bad call
     integrity_check() (
@@ -131,22 +131,24 @@
       READ=$(role_list read) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
       RUN=$(role_list run) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
       ACT=$(role_list act) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
+      DIRECT=$(role_list direct) || { echo "$ROLE: role contract rejected by the guard parser" >&2; exit 2; }
       allow_re="''${READ}''${RUN:+''${READ:+|}$RUN}"
       [ -n "$allow_re" ] || { echo "$ROLE: role contract lists no tasks" >&2; exit 2; }
 
-      # herdr's own read verbs are allowed directly (the fleet is herdr's: machines, agents, panes); `agent prompt` asks
+      # a role that lists herdr:read / herdr:prompt under tasks.direct may use herdr's own verbs as typed (the fleet is
+      # herdr's: machines, agents, panes); read verbs are allowed, `agent prompt` asks; other roles get neither
       herdr_target='[A-Za-z0-9_][A-Za-z0-9_:.@/-]*'
       herdr_free='[^;&|<>$`()\\]*'
       herdr_read="^herdr( --machine [A-Za-z0-9_][A-Za-z0-9_.-]*)? (--skill|machine list( --json)?|machine status( [A-Za-z0-9_][A-Za-z0-9_.-]*)?( --json)?|agent list|pane list|agent (get|read|wait) ''${herdr_target}''${herdr_free})\$"
       herdr_ask="^herdr( --machine [A-Za-z0-9_][A-Za-z0-9_.-]*)? agent prompt ''${herdr_target} ''${herdr_free}\$"
-      if [[ "$cmd" =~ $herdr_read ]]; then
+      if [[ "|$DIRECT|" == *"|herdr:read|"* ]] && [[ "$cmd" =~ $herdr_read ]]; then
         jq -cn '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"allow", permissionDecisionReason:("'"$ROLE"' herdr read verb")}}'; exit 0
-      elif [[ "$cmd" =~ $herdr_ask ]]; then
+      elif [[ "|$DIRECT|" == *"|herdr:prompt|"* ]] && [[ "$cmd" =~ $herdr_ask ]]; then
         jq -cn '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"ask", permissionDecisionReason:("'"$ROLE"' herdr agent prompt (owner confirms)")}}'; exit 0
       fi
       re="^devenv tasks run (''${allow_re}''${ACT:+|$ACT})( --input-json '([^']*)')?( --show-output)?\$"
       if [[ ! "$cmd" =~ $re ]]; then
-        echo "$ROLE: only '[cd <checkout> && ]devenv tasks run <allowed task> [--input-json '<json>'] [--show-output]' or a herdr read verb (herdr [--machine L] machine list|status, agent list|get|read|wait, pane list, --skill) is permitted" >&2; exit 2
+        echo "$ROLE: only '[cd <checkout> && ]devenv tasks run <allowed task> [--input-json '<json>'] [--show-output]' or, for a role with tasks.direct herdr:read, a herdr read verb (herdr [--machine L] machine list|status, agent list|get|read|wait, pane list, --skill) is permitted" >&2; exit 2
       fi
       # The anchored regex leaves no room for metacharacters outside the quoted body.
       task="''${BASH_REMATCH[1]}"; input_arg="''${BASH_REMATCH[2]:-}"; body="''${BASH_REMATCH[3]:-}"

@@ -40,17 +40,19 @@
         [ "$CODE" -eq 0 ] && ok || bad "machines: exit $CODE"
         [ "$(jqr .machines_configured)" = 2 ] && [ "$(jqr .hosts_total)" = 3 ] && [ "$(jqr .answered_hosts)" = 2 ] && [ "$(jqr .partial)" = true ] && ok || bad "machines: counts ($OUT)"
         [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0].agent_id')" = "wA:p2" ] && [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0].machine')" = acer-swift ] && [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0].approval_required')" = true ] && ok || bad "machines: remote blocked agent via --machine"
-        [ "$(jqr '.hosts[] | select(.machine=="pi-down") | .reachable')" = false ] && [ "$(jqr '.hosts[] | select(.machine=="pi-down") | .error.kind')" = unreachable ] && ok || bad "machines: down machine reported, not hidden"
+        [ "$(jqr '.hosts[] | select(.machine=="pi-down") | .reachable')" = false ] && [ "$(jqr '.hosts[] | select(.machine=="pi-down") | .error.kind')" = command_failed ] && [[ "$(jqr '.hosts[] | select(.machine=="pi-down") | .error.message')" == *"failed to connect"* ]] && ok || bad "machines: down machine reported, not hidden"
         grep -q '^herdr(machine=acer-swift) agent list' "$FAKE_LOG" && grep -q '^herdr(machine=pi-down) agent list' "$FAKE_LOG" && ! grep -q 'machine=old' "$FAKE_LOG" && ok || bad "machines: forwarded to enabled machines only"
         # 3. herdr machine list itself failing: this host still answers, the failure is data
         : > "$FAKE_LOG"; export FAKE_HERDR_MACHINES_EXIT=1
         run herdr:inventory
         [ "$CODE" -eq 0 ] && [ "$(jqr .answered_hosts)" = 1 ] && [ "$(jqr .partial)" = true ] && [ "$(jqr .machines_error.kind)" = herdr_error ] && ok || bad "machine list down: local answered, error as data ($OUT)"
         unset FAKE_HERDR_MACHINES_EXIT
-        # 4. a machine label with unsafe characters is skipped, never passed to herdr
-        : > "$FAKE_LOG"; export FAKE_HERDR_MACHINES='[{"id":"x","label":"a;rm -rf x","target":"t","enabled":true}]'
+        # 4. a machine label with unsafe characters (herdr's default `host/session` label, or worse) is shown as a
+        #    host the coordinator refuses to forward to, counted in hosts_total and partial, never passed to herdr
+        : > "$FAKE_LOG"; export FAKE_HERDR_MACHINES='[{"id":"x","label":"a;rm -rf x","target":"t","enabled":true},{"id":"y","label":"acer/main","target":"acer","enabled":true}]'
         run herdr:inventory
-        [ "$CODE" -eq 0 ] && ! grep -q 'rm -rf' "$FAKE_LOG" && ok || bad "unsafe label must be skipped"
+        [ "$CODE" -eq 0 ] && ! grep -q 'rm -rf\|acer/main' "$FAKE_LOG" && ok || bad "unsafe label must never reach herdr"
+        [ "$(jqr .hosts_total)" = 3 ] && [ "$(jqr .answered_hosts)" = 1 ] && [ "$(jqr .partial)" = true ] && [ "$(jqr '[.hosts[] | select(.error.kind=="invalid_label")] | length')" = 2 ] && [ "$(jqr '.hosts[] | select(.machine=="acer/main") | .reachable')" = false ] && ok || bad "unsafe labels are visible as invalid_label hosts ($OUT)"
         # 5. the local server down -> unreachable local, exit 0 (observations never fail), answered 0
         unset FAKE_HERDR_MACHINES; export FAKE_HERDR_MACHINES='[]' FAKE_HERDR_EXIT=1
         run herdr:inventory

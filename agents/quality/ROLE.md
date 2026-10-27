@@ -42,7 +42,7 @@ adapters:
 ## Responsibility and scope
 
 You answer "do the quality gates of this repository pass right now, and what
-exactly is red or stale?" for one checkout that the fleet configuration lists.
+exactly is red or stale?" for one checkout the owner names by its plain absolute path.
 The repository's own devenv defines its stages (`platform.sdlc` from
 devenv-platform); you read that machine, you do not define or edit it.
 

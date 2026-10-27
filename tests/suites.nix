@@ -59,7 +59,7 @@
           [ "$(jq '.forbidden|length' <<<"$fm")" -ge 5 ] && ok || bad "$role: forbidden list too short"
 
           # the shared guard must read the same lists the contract declares (the shipped awk == yq)
-          for key in read run act inputless; do
+          for key in read run act inputless direct; do
             want=$(jq -r --arg k "$key" '(.tasks[$k] // []) | join("|")' <<<"$fm")
             have=$(role_list_awk "$key" "$role_md" | paste -sd'|' -) || { bad "$role: guard parser rejected the contract"; continue; }
             [ "$want" = "$have" ] && ok || bad "$role: guard parser reads tasks.$key as '$have', contract says '$want'"
@@ -222,8 +222,8 @@
         expect allow Bash "timeout 60 devenv tasks run work:status"
         expect allow Bash "timeout 60s devenv tasks run work:status"
         # calls that carry input are allowed only by the guard hook, so the settings rules prompt
-        expect none Bash "devenv tasks run herdr:inspect --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
-        expect none Bash "devenv tasks run herdr:await --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
+        expect none Bash "devenv tasks run herdr:inspect --input-json '{\"machine\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
+        expect none Bash "devenv tasks run herdr:await --input-json '{\"machine\":\"lenovo\",\"agent_id\":\"wF:p1\"}'"
 
         # act-class tasks always prompt
         expect ask Bash "devenv tasks run herdr:message --input-json '{}'"
@@ -284,10 +284,35 @@
         }
         hook allow "devenv tasks run coord:brief"
         hook allow "devenv tasks run coord:brief --show-output"
-        hook allow "devenv tasks run herdr:inspect --input-json '{\"host\":\"lenovo\",\"agent_id\":\"wF:p1\",\"lines\":40}'"
-        hook allow "devenv tasks run herdr:inventory --input-json '{\"host\":\"lenovo\"}' --show-output"
+        hook allow "devenv tasks run herdr:inspect --input-json '{\"machine\":\"lenovo\",\"agent_id\":\"wF:p1\",\"lines\":40}'"
+        hook allow "devenv tasks run herdr:inventory --input-json '{\"machine\":\"lenovo\"}' --show-output"
         hook ask   "devenv tasks run herdr:message --input-json '{\"handoff_id\":\"abc\"}'"
         hook block "devenv tasks run coord:brief herdr:message"
+        # herdr's own verbs: read verbs allowed as typed, `agent prompt` asks, everything else (and any shell metacharacter) blocked
+        hook allow "herdr agent list"
+        hook allow "herdr --machine acer-swift agent list"
+        hook allow "herdr machine list --json"
+        hook allow "herdr machine status acer-swift --json"
+        hook allow "herdr --skill"
+        hook allow "herdr pane list"
+        hook allow "herdr --machine acer-swift agent read wA:p2 --lines 40 --source visible"
+        hook allow "herdr agent wait wA:p2 --until idle --timeout 5000"
+        hook ask   "herdr agent prompt wA:p2 --wait --timeout 5000 hello there"
+        hook ask   "herdr --machine acer-swift agent prompt wA:p2 hi"
+        hook block "herdr machine remove acer-swift"
+        hook block "herdr machine add acer --label x"
+        hook block "herdr agent send-keys wA:p2 x"
+        hook block "herdr agent stop wA:p2"
+        hook block "herdr  agent list"
+        hook block "herdr --machine acer/main agent list"
+        hook block "herdr --machine 'a b' agent list"
+        hook block "herdr agent read -- x"
+        hook block "herdr agent read --lines 40 wA:p2"
+        hook block "herdr agent list; rm -rf /tmp/x"
+        hook block "herdr agent read wA:p2 \$(id)"
+        hook block "herdr agent read wA:p2 | tee /tmp/x"
+        hook allow "cd $ROOT && herdr agent list"   # the checked cd prefix is stripped before the verb match, like for tasks
+        hook block "herdr --remote acer agent list"
         hook block "devenv tasks run coord:brief -O 'tasks.\"coord:brief\".exec:string' 'ssh lenovo id'"
         hook block "devenv tasks run coord:brief > ~/.ssh/authorized_keys"
         hook block "devenv tasks run coord:brief \`ssh lenovo x\`"
@@ -468,6 +493,11 @@
         qhook block "devenv tasks run coord:brief"
         qhook block "devenv tasks run herdr:message --input-json '{}'"
         qhook block "devenv tasks run herdr:inspect --input-json '{}'"
+        # the quality role lists no tasks.direct, so herdr's own verbs stay closed to it
+        qhook block "herdr agent list"
+        qhook block "herdr machine list --json"
+        qhook block "herdr agent prompt wA:p2 hi"
+        qhook block "herdr --skill"
         qhook block "cargo test"
         qhook block "devenv tasks run quality:gate --input-json '{\"stage\":\"test\"}' && git push"
         ( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run gh:work"}}' | ROLE=nosuchrole guard_hook >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: unknown ROLE must block"; }

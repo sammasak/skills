@@ -32,7 +32,10 @@ in
     };
     "skills:herdr-skill-sync" = {
       description = "Refresh skills/herdr/SKILL.md from the installed `herdr --skill` (Herdr's own skill, vendored verbatim).";
-      exec = "herdr --skill > skills/herdr/SKILL.md && echo \"skills/herdr/SKILL.md <- $(herdr --version)\"";
+      exec = ''
+        type -P herdr >/dev/null || { echo "herdr is not installed here; nothing to sync" >&2; exit 1; }
+        tmp=$(mktemp); herdr --skill > "$tmp" && mv "$tmp" skills/herdr/SKILL.md && echo "skills/herdr/SKILL.md <- $(herdr --version)"
+      '';
     };
     "skills:test:herdr-skill" = {
       description = "skills/herdr/SKILL.md equals the installed `herdr --skill` byte for byte (no herdr = fail, not pass).";

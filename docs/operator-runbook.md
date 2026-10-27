@@ -61,10 +61,12 @@ Claude's Bash timeout (`BASH_MAX_TIMEOUT_MS`) if a long gate must report.
   each `hosts[].error`) or `herdr machine list` failed (`machines_error`); the
   rest of the brief is still valid. There are no snapshots: an unreachable
   machine is shown as `reachable: false`, never from memory.
-- `error.kind` on a task: `invalid_input` (unsafe id or machine label),
-  `timeout`/`unreachable`/`command_failed` (a machine Herdr does not know fails
-  as `command_failed`), `not_found`, `unsupported`. devenv itself exits 1 for
-  any failed task; the kind is in the record, not the exit code.
+- `error.kind` on a task: `invalid_input` (unsafe id or machine label you
+  passed), `invalid_label` (a saved machine whose label the coordinator will
+  not forward; rename it), `timeout`/`command_failed` (Herdr's own stderr line
+  follows in `error.message`: unknown machine, failed ssh connection, server
+  down), `not_found`, `unsupported`. devenv itself exits 1 for any failed
+  task; the kind is in the record, not the exit code.
 - `herdr:message` outcomes: `delivered`; `unknown_delivery` /
   `agent_prompt_stalled` (text may already sit in the input box: inspect, do
   not resend blindly); `agent_blocked`/`agent_busy`/`agent_changed`/

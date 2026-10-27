@@ -22,8 +22,9 @@
         # (and FAKE_HERDR_EXIT_<L>) for that machine, like herdr forwarding to another server; `*down*` labels are unreachable
         if [ "$1" = --machine ]; then
           m="$2"; shift 2; echo "herdr(machine=$m) $*" >> "''${FAKE_LOG:-/dev/null}"
-          case "$m" in *down*) echo "error: machine '$m' unreachable" >&2; exit 255 ;; esac
-          jq -e --arg m "$m" 'any(.[]?; .label == $m and .enabled == true)' <<<"''${FAKE_HERDR_MACHINES:-[]}" >/dev/null 2>&1 || { echo "error: unknown machine '$m'; use \`herdr machine list\`" >&2; exit 1; }
+          # like herdr 0.9.5: a connection failure is exit 1 with one stderr line, an unknown machine is exit 2
+          case "$m" in *down*) echo "error: failed to connect to machine '$m': ssh exited 255" >&2; exit 1 ;; esac
+          jq -e --arg m "$m" 'any(.[]?; .label == $m and .enabled == true)' <<<"''${FAKE_HERDR_MACHINES:-[]}" >/dev/null 2>&1 || { echo "error: unknown machine '$m'; use \`herdr machine list\`" >&2; exit 2; }
           lv="FAKE_HERDR_LIST_''${m//-/_}"; [ -n "''${!lv:-}" ] && export FAKE_HERDR_LIST="''${!lv}"
           ev="FAKE_HERDR_EXIT_''${m//-/_}"; [ -n "''${!ev:-}" ] && export FAKE_HERDR_EXIT="''${!ev}"
           mv_="FAKE_HERDR_MISSING_''${m//-/_}"; [ -n "''${!mv_:-}" ] && export FAKE_HERDR_MISSING="''${!mv_}"

@@ -104,7 +104,7 @@ in
         at=$(now_iso)
         text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n%s\nReply in this pane when done, naming the commit or PR. Do not merge, deploy or delete anything.\n' \
           "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
-        id=$(printf '%s|%s|%s|%s|%s' "$host" "$agent" "$ses" "$ref" "$text" | sha256sum | cut -c1-12)
+        id=$(printf '%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
         rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" \
           '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, text:$t,
