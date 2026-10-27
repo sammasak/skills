@@ -13,7 +13,8 @@ other roles may share. Nothing here needs a new script runner.
 2. **Tasks** — reuse first (`gh:work`, `git:recent`, `herdr:*`,
    `quality:report` …). New ones go in `task-modules/<family>.nix` or
    `agents/<role>/tasks.nix`: `${cfg.prelude}` first, inputs via `input .key`,
-   fleet checks via `${cfg.hostCase}` or a generated `case`, output through
+   machine labels checked with `valid_machine`, ids with `valid_id`, remote
+   reads through `herdr_at <timeout> <machine-or-empty> <args…>`, output through
    `emit` as record schema v1 (`{schema_version:1} + ctx + {...}`), failures
    as `fail <exit> <kind> <message> "$ctx"`. Remember devenv runs execs with
    errexit: no command may end a loop or pipeline with a non-zero status

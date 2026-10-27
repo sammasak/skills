@@ -18,6 +18,7 @@ disallowedTools:
   - WebFetch
   - WebSearch
 skills:
+  - herdr
   - herdr-operations
   - agent-handoff
 hooks:
@@ -42,10 +43,13 @@ another path (`SKILLS_CHECKOUT`) the owner will tell you, and you use exactly
 that; write the path plainly, never through a variable, `..`, `~+` or quotes)
 
 for the tasks the role lists under `tasks.read` (the `cd` prefix may be
-dropped when the session already is in the checkout). `tasks.act` entries
-require the owner's explicit confirmation in this conversation and will prompt
-for permission; never work around the prompt. Everything else is forbidden:
-no other shell, no edits, no `git`, `gh` or `ssh` of your own.
+dropped when the session already is in the checkout), plus Herdr's own read
+verbs exactly as the role lists them (`herdr [--machine <label>] machine
+list|machine status|agent list|pane list|agent get|read|wait …`, `herdr
+--skill`), which the guard admits as typed. `tasks.act` entries and `herdr
+agent prompt` require the owner's explicit confirmation in this conversation
+and will prompt for permission; never work around the prompt. Everything else
+is forbidden: no other shell, no edits, no `git`, `gh` or `ssh` of your own.
 
 Every Bash call is checked by the role guard: as a subagent through the settings-level `hooks/role-guard-dispatch.sh` (nixos-config installs it; it dispatches on the
 agent name and runs the store-built guard, or the checkout's `guard:check`

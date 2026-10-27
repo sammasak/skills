@@ -192,12 +192,25 @@ Epic sammasak/skills#16 is deployment-ready: every milestone checkbox is ticked 
 
 - [x] Tick #16 checkboxes only for verified items; link all PRs/SHAs/task exit codes; label activation state honestly; update this file's effort log; final comment with "what the owner must do next" list. *(2026-10-26 19:58 UTC: #16 body ticked for verified items only (M3 canary, M4 two-harness, cross-host and activation stay open with the owner step named), label "deployment-ready pending owner activation" applied, close-out comment with the PR table, grades, late changes and the six owner steps)*
 
+## Slice 9 — herdr-native rework (#25, 2026-10-27)
+
+Owner redirect (verbatim on #25): no `fleet.json`, no own abstraction; hosts are Herdr saved machines, the coordinator uses Herdr commands, this repo adds skills + devenv tasks only.
+
+- [x] `task-modules/fleet.nix` + `fixtures/fleet-empty.json` deleted; `task-modules/common.nix` holds the options and prelude (`herdr_at`, `machines_json`, `valid_machine`).
+- [x] `herdr:inventory` = this host + every enabled `herdr machine list --json` entry via `herdr --machine <label> agent list`; `herdr:inspect`/`coord:handoff`/`herdr:await` take `machine` (omit = this host); `herdr:message` forwards with `--machine`; `harness:session-summary` is local only; `gh:work {repo}` / `git:recent {checkout}` one target per call; no snapshots, no `state_age_s`/`stale`.
+- [x] Guard admits Herdr's own read verbs (`herdr [--machine L] machine list|machine status|agent list|pane list|agent get|read|wait …`, `herdr --skill`); `agent prompt` → ask.
+- [x] `skills/herdr/SKILL.md` vendored verbatim from `herdr --skill` (0.9.5) with `skills:herdr-skill-sync` and a drift test in `skills:test`; `herdr-operations` and `agent-handoff` rewritten for machines; ROLE.md, adapter, runbook, RFC, adding-a-role updated.
+- [x] Suites rewritten (fake herdr with `--machine` forwarding and `machine list`); `skills:test` green (15 suites).
+- [ ] nixos-config: delete the dormant `coordinator` launcher module and `sam.coordinator.*`; add `sam.herdr.machines` (idempotent `herdr machine add` at activation; lenovo declares `acer-swift`); bump the skills pin. Owner gate: merge + `just switch` both hosts.
+- [ ] Live check after switch: on acer `coord:brief` shows this host only; on lenovo it shows `+ 1 saved herdr machine(s)` and acer's agents.
+
 ---
 
 ## Effort log
 
 | When (UTC) | Slice / task | Commit / PR | Tasks run (exit) | Outcome / limitation |
 |---|---|---|---|---|
+| 2026-10-27 13:30 | Slice 9 herdr-native (#25) | branch `refactor/herdr-native` | skills:test (0): 15 suites | fleet.json/ssh transport/snapshots removed; machines come from `herdr machine list`; herdr skill vendored; nixos-config module deletion + `sam.herdr.machines` pending |
 | 2026-10-26 20:00 | Stop-hook check | f55c904 | — | Goal condition unmet and not reachable by an agent: remaining items are owner merges, lenovo switch, dedicated key, SSH authorization and OpenAI credentials (money). No explicit owner deferral exists in the transcript, so the label is a status, not an acceptance. Decision requested from the owner: activate now, or explicitly defer |
 | 2026-10-26 19:58 | Slice 6 close-out | m4 781893e (code), #16 comment + label | skills:test (0) final | buildable scope complete; terminal state = deployment-ready pending owner activation; owner steps listed on #16 |
 | 2026-10-26 19:53 | #20 review 9 + confirmation, #103 confirmations ×2 | m4 dd1b62e, aa4c884; nixos 5bee015 | skills:test (0); nixos:lint-comments (0); nix eval lenovo (0; `%` rejected) | #103 9.5/10 confirmed; #20 9/10 then 9/10 on the fix commit: probe keeps the role denies, manifest held in memory, `listed()` without a pipe (SIGPIPE under pipefail found by review), control-char refusals pinned by reason; both PRs "nothing blocks owner merge" |

@@ -1,12 +1,24 @@
 ---
 name: herdr-operations
-description: Use when asked what coding agents are doing, whether an agent is idle, working, blocked or done, how fresh that status is, or to read a bounded excerpt of one agent's terminal through Herdr. Not for sending prompts to agents (agent-handoff) or for running Claude on another machine (agent-orchestration).
+description: Use when asked what coding agents are doing on this host or on the saved Herdr machines, whether an agent is idle, working, blocked or done, how fresh that status is, or to read a bounded excerpt of one agent's terminal through Herdr. Not for sending prompts to agents (agent-handoff) or for running Claude on another machine (agent-orchestration).
 ---
 
 # Herdr operations (read-only)
 
-Herdr 0.9.5 is the live source for pane and agent state. Durable engineering
-status comes from GitHub and git, never from Herdr.
+Herdr 0.9.5 is the live source for pane and agent state; its own skill
+(`herdr`, vendored verbatim from `herdr --skill`) documents the CLI. Durable
+engineering status comes from GitHub and git, never from Herdr.
+
+## Where the agents are
+
+There is no fleet file. This host's agents come from its own Herdr server.
+Other hosts are Herdr **saved machines** (`herdr machine list --json`) and are
+read through Herdr's command forwarding (`herdr --machine <label> …`). On a
+worker the machine list is empty, so you see that host only; on the
+coordinator host you see every enabled saved machine. A worker is added with
+Herdr's own `herdr machine add <ssh-target> --label <name>` on the coordinator
+host (nixos-config declares them as `sam.herdr.machines`); nothing in this repo
+knows hosts by name.
 
 ## Commands
 
@@ -16,25 +28,35 @@ is JSON with `schema_version: 1`; `coord:brief` also prints Markdown.
 | Need | Run |
 |---|---|
 | The whole picture: who needs you, every agent with `herdr_state` and `work_verdict` | `devenv tasks run coord:brief --show-output` |
-| Every agent on every configured host (`state_age_s`, `stale`, per-host `error`) | `devenv tasks run herdr:inventory --show-output` |
-| Bounded terminal excerpt of one agent (cap 200 lines) | `devenv tasks run herdr:inspect --input-json '{"host":"<host>","agent_id":"<id>","lines":40}'` |
-| What a session was last doing, from the harness's own store (last prompt, last answer, tools, `awaiting_input`) | `devenv tasks run harness:session-summary --input-json '{"host":"<host>","harness":"claude","session_id":"<id>","cwd":"<cwd>"}'` |
-| Open issues and recent PRs per fleet repo | `devenv tasks run gh:work --show-output` |
-| Recent commits, dirty files, unpushed work per checkout | `devenv tasks run git:recent --show-output` |
-| Per-agent join of Herdr state and GitHub/git evidence | `devenv tasks run work:status --show-output` |
+| Every agent on this host and on each enabled saved machine (`hosts[].machine`, per-host `reachable` and `error`, `machines_error`) | `devenv tasks run herdr:inventory --show-output` |
+| Bounded terminal excerpt of one agent (cap 200 lines); omit `machine` for this host | `devenv tasks run herdr:inspect --input-json '{"machine":"<label>","agent_id":"<id>","lines":40}'` |
+| What a session on this host was last doing, from the harness's own store (last prompt, last answer, tools, `awaiting_input`) | `devenv tasks run harness:session-summary --input-json '{"harness":"claude","session_id":"<id>","cwd":"<cwd>"}'` |
+| Open issues and recent PRs of one repo | `devenv tasks run gh:work --input-json '{"repo":"OWNER/REPO"}'` |
+| Recent commits, dirty files, unpushed work of one checkout | `devenv tasks run git:recent --input-json '{"checkout":"/abs/path"}'` |
+| Per-agent join of Herdr state and GitHub evidence | `devenv tasks run work:status --show-output` |
 
-`host`, `agent_id`, `session_id` and `cwd` come from `herdr:inventory` records;
-never guess them. Hosts and repos come from `fleet.json`; anything not listed is
-refused with exit 3 (`error.kind: invalid_input`).
+The guard also admits Herdr's own read verbs as typed, without a task:
+`herdr [--machine <label>] machine list [--json]`, `machine status [<label>]
+[--json]`, `agent list`, `pane list`, `agent get|read|wait <target> …` and
+`herdr --skill`. Use them to answer a Herdr-specific question the tasks do not
+cover; `herdr agent prompt` is act-class and prompts like `herdr:message`.
+
+`machine`, `agent_id`, `session_id` and `cwd` come from `herdr:inventory`
+records; never guess them. `machine: null` means this host. A label Herdr does
+not know makes Herdr itself fail (`error.kind: command_failed`, exit 1 inside
+the record); an unsafe label or id is refused as `invalid_input`.
 
 ## Reading the output
 
 - `herdr_state` is Herdr's word (`idle|working|blocked|done|unknown`).
-- `work_verdict` comes only from GitHub/git: `verified` (a merged PR closes or
-  names the agent's `#N`), `unverified` (open PR or open issue only), `blocked`
-  (Herdr shows an approval/question UI), `unknown` (no `#N` or no evidence).
-- `partial: true` with `failed_sources` means a source failed; say which, then
-  answer from what remains. A verdict computed without GitHub is `unknown`.
+- `work_verdict` comes only from GitHub: `verified` (a merged PR closes or
+  names the agent's `#N` in the `OWNER/REPO` its title names), `unverified`
+  (open PR or open issue only), `blocked` (Herdr shows an approval/question
+  UI), `unknown` (no `OWNER/REPO` or `#N` in the title, or GitHub unreachable;
+  `reasons` says which).
+- `partial: true` means a host did not answer or `herdr machine list` failed:
+  `answered_hosts`/`hosts_total`, each `hosts[].error` and `machines_error`
+  say what; answer from the hosts that did answer and name the missing ones.
 - `needs_owner: true` items go first in any summary.
 
 ## Reading the states
@@ -45,17 +67,16 @@ refused with exit 3 (`error.kind: invalid_input`).
 - `blocked`: the agent shows an approval or question UI. It needs a human;
   never prompt a blocked agent.
 - `unknown`: an agent is present but unclassified. Treat as "no information".
-- Host `error.kind` of `timeout` or `unreachable`: say so; do not guess.
+- Host `error.kind` of `timeout`, `unreachable` or `command_failed`: say so;
+  do not guess what the host is doing.
 
 ## Freshness
 
-Herdr publishes no timestamps. `observed_at` is when the task ran;
-`state_age_s` is a lower bound: how long `state_change_seq` has been unchanged
-across this coordinator's own snapshots (0 on first sight). `stale: true`
-means the record was served from the last snapshot because the host did not
-answer; `snapshot_age_s` says how old it is, and snapshots older than the
-configured `maxAgeSeconds` are dropped instead of shown.
+Herdr publishes no timestamps and the tasks keep no snapshots: `observed_at`
+is when the task ran, and `state_change_seq` only moves when Herdr saw the
+agent's state change. To show movement, run the inventory twice and compare
+`state_change_seq`. An unreachable machine is reported with `reachable: false`
+and its error, never from memory.
 
 If a task fails or is unavailable, report its `error` verbatim. Do not fall
-back to raw `herdr` or `ssh` commands; those are outside the Coordinator's
-allowed surface.
+back to `ssh` or any command outside the tasks and the Herdr read verbs above.

@@ -7,7 +7,7 @@
 | Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex) | this repo | nixos-config `skills.nix` links every `agents/*.md` into `~/.claude/agents` on devTools hosts, so the roles are ordinary subagents |
 | Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from one writable skills checkout: `$SKILLS_CHECKOUT`, default `~/claude-code-skills` |
 | Guard library `task-modules/guard-lib.nix` (tasks `guard:check`, `guard:integrity` in `guard.nix`) behind the dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook and builds the library into a store binary it hands over as `ROLE_GUARD_BIN`; without that, the dispatcher runs `guard:check` in the checkout |
-| `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | you (schema in the RFC); an absent file is an empty fleet |
+| Worker machines | Herdr's own saved machines (`~/.local/state/herdr/client/endpoints.json`, Herdr-owned) | `herdr machine add <ssh-target> --label <name>` on the coordinator host; nixos-config declares them as `sam.herdr.machines` and runs that idempotently at activation. Workers declare nothing: an empty list means "this host only" |
 | State (snapshots, drafts, `audit.jsonl`, `brief/latest.json`) | `~/.local/state/coordinator/` | the tasks |
 
 ## Daily use
@@ -26,7 +26,8 @@ separate. The same tasks work without an LLM from the checkout:
 
 ```bash
 cd ~/claude-code-skills
-devenv tasks run coord:brief --show-output          # the fleet picture
+devenv tasks run coord:brief --show-output          # this host + every saved Herdr machine
+herdr machine list --json                           # which machines that is (empty on a worker)
 tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message attempt and outcome
 ```
 
@@ -49,18 +50,21 @@ the consumer's own `platform.sdlc` machine. Codex: `codex exec --cd
 agents/quality/AGENTS.md)"$'\n\n'"<request>"` with the guard in a dedicated
 `CODEX_HOME/hooks.json` and `--sandbox workspace-write`; see
 `agents/quality/AGENTS.md` for what Codex cannot enforce, and note that its
-sandbox cannot write fleet checkouts, so a real `quality:report` (the
+sandbox cannot write the consumer checkouts, so a real `quality:report` (the
 consumer's `devenv shell` writes `.devenv/`) or `quality:gate` needs each
 checkout added as a writable root. `quality:gate` is bounded to 540 s; raise
 Claude's Bash timeout (`BASH_MAX_TIMEOUT_MS`) if a long gate must report.
 
 ## Reading failures
 
-- `partial: true` + `failed_sources`: a host or repo did not answer; the rest
-  of the brief is still valid. `stale: true` records come from the last
-  snapshot of an unreachable host.
-- `error.kind` on a task: `invalid_input` (wrong id/host, exit 3),
-  `timeout`/`unreachable`/`command_failed` (exit 2), `not_implemented` (64).
+- `partial: true`: a host did not answer (`answered_hosts`/`hosts_total`,
+  each `hosts[].error`) or `herdr machine list` failed (`machines_error`); the
+  rest of the brief is still valid. There are no snapshots: an unreachable
+  machine is shown as `reachable: false`, never from memory.
+- `error.kind` on a task: `invalid_input` (unsafe id or machine label),
+  `timeout`/`unreachable`/`command_failed` (a machine Herdr does not know fails
+  as `command_failed`), `not_found`, `unsupported`. devenv itself exits 1 for
+  any failed task; the kind is in the record, not the exit code.
 - `herdr:message` outcomes: `delivered`; `unknown_delivery` /
   `agent_prompt_stalled` (text may already sit in the input box: inspect, do
   not resend blindly); `agent_blocked`/`agent_busy`/`agent_changed`/
@@ -103,9 +107,9 @@ Installing this repo as a plugin does not install the dispatcher. Optional
 hardened mode: with
 `COORDINATOR_REQUIRE_INTEGRITY=1` and a 64-hex pin in
 `COORDINATOR_INTEGRITY_SHA256`, the guard also verifies the checkout's
-`.integrity` manifest (the `guard:integrity` task) on every call; the
-nixos-config `coordinator` launcher module does this with a materialised copy,
-and is disabled by default.
+`.integrity` manifest (the `guard:integrity` task) on every call. No installed
+module sets these today (the nixos-config launcher module was removed with
+the herdr-native rework, #25); any wrapper may.
 
 ## Verifying a change to this repo
 

@@ -1,7 +1,7 @@
 # RFC: harness-agnostic agent roles (epic #16)
 
-Status: accepted for implementation, 2026-10-26. Owner decision pending on
-fleet-wide rollout via `just bump skills`.
+Status: accepted for implementation, 2026-10-26. Reworked herdr-native on
+2026-10-27 (#25): no fleet file, hosts are Herdr saved machines.
 
 ## Terms
 
@@ -9,12 +9,12 @@ fleet-wide rollout via `just bump skills`.
 |---|---|---|---|
 | **Role** | `agents/<role>/ROLE.md` | Portable contract: mission, assigned skills, allowed task names split into `read` and `act`, forbidden operations, evidence rules, adapters. YAML frontmatter is machine-read by tests; prose is read by the agent. | A runtime boundary. |
 | **Skill** | `skills/<name>/SKILL.md` | Short "when and how" instructions, Agent Skills compatible; may name tasks and scripts. | A copy of a task's implementation. |
-| **Task** | `task-modules/<family>.nix` | A devenv task: `exec` holds the logic (shared helpers sourced from the Nix-held prelude in `task-modules/fleet.nix`), `input` declares its parameters, output goes to `$DEVENV_TASK_OUTPUT_FILE` as versioned JSON, bounded runtime, documented exit codes, tested by running the task against fixtures with no LLM. | A standalone CLI or a devenv `scripts` entry. |
-| **DAG** | `task-modules/*.nix`, `agents/<role>/tasks.nix` | Native devenv `after` edges. Fan-out is generated at eval time from `fleet.json` (one `herdr:list:<host>`, `gh:work:<repo>`, `git:recent:<repo>` per entry); aggregators depend on `<task>@completed`, read `DEVENV_TASKS_OUTPUTS`, and list every expected upstream that is missing as a failed source. | A scheduler, queue or state machine. |
+| **Task** | `task-modules/<family>.nix` | A devenv task: `exec` holds the logic (shared helpers sourced from the Nix-held prelude in `task-modules/common.nix`), `input` declares its parameters, output goes to `$DEVENV_TASK_OUTPUT_FILE` as versioned JSON, bounded runtime, documented exit codes, tested by running the task against fixtures with no LLM. | A standalone CLI or a devenv `scripts` entry. |
+| **DAG** | `task-modules/*.nix`, `agents/<role>/tasks.nix` | Native devenv `after` edges. `herdr:inventory` is one task that asks this host's Herdr server and, at run time, each enabled saved machine (`herdr --machine <label> agent list`); `work:status` depends on `herdr:inventory@completed`, reads `DEVENV_TASKS_OUTPUTS` and fetches GitHub evidence per agent; `coord:brief` renders it. Evidence tasks take one repo or checkout per call. | A scheduler, queue, state machine or host registry. |
 | **Adapter** | `agents/<role>.md` (Claude), `agents/<role>/AGENTS.md` (Codex) | Thin harness-specific file that points at ROLE.md, preloads the role's skills and restricts tools to what the harness supports. | A second copy of the role logic. |
 | **Guard** | `task-modules/guard.nix` (`guard:check`, `guard:integrity`) behind `hooks/role-guard-dispatch.sh` | PreToolUse(Bash) hook wired in the Claude adapter's frontmatter, so it applies only when that agent runs; resolved from the skills checkout (`$SKILLS_CHECKOUT`, default `~/claude-code-skills`). The authority for allowing a call: one strict grammar (`[cd <checkout> && ]devenv tasks run <task> [--input-json '<object>'] [--show-output]`), exactly one JSON object as body, the call run from or `cd`-ed into exactly the checkout, every per-call working-directory field equal to it, and (hardened mode only) the checkout's `.integrity` manifest intact (the `integrity_check` function in `task-modules/guard.nix` (also the `guard:integrity` task)); returns `allow` for read tasks, `ask` for act tasks, blocks everything else. | An OS boundary. |
 | **Permissions** | `agents/<role>/permissions.json` | Settings rules for the optional hardened (launcher) mode: exact input-less forms allowed, act form `ask`, denies for `-O`/`--option`/`--from`/`--override-input`, Edit/Write, and `Read` of key, token and secret paths. Not needed for subagent use, where the owner's session rules apply. | Enforced in subagent mode. |
-| **Host install** | nixos-config `skills.nix` | Links every `agents/*.md` into `~/.claude/agents` on devTools hosts; the owner keeps one writable skills checkout for the tasks. The hardened launcher module (`sam.profile.coordinator`: materialised pinned copy, integrity pin, rendered settings, dedicated worker key) exists but is disabled by default after the owner's 2026-10-27 redirect to the plain subagent model. | Part of this repo. |
+| **Host install** | nixos-config `skills.nix` | Links every `agents/*.md` into `~/.claude/agents` on devTools hosts; the owner keeps one writable skills checkout for the tasks. The hardened launcher module (`sam.profile.coordinator`) was removed on 2026-10-27 with the herdr-native rework (#25); workers are Herdr saved machines (`sam.herdr.machines` on the coordinator host). | Part of this repo. |
 
 ## Operation classes
 
@@ -32,12 +32,13 @@ Every task writes one JSON document to stdout and, under devenv, to
  "error":null, "...task specific fields..."}
 ```
 
-Per-agent records inside task output carry: `host`, `server`, `agent_id`,
-`harness`, `session_id`, `observed_state` (Herdr state verbatim), `observed_at`,
-`state_age_s` (seconds `state_change_seq` has been unchanged), `stale` (true
-when served from a snapshot rather than a live read; `snapshot_at` then says
-when), `task_ref`, `evidence_ref`, `approval_required`, `error` (`null` or
-`{"kind": "...", "message": "..."}`).
+Per-agent records inside task output carry: `host`, `machine` (saved Herdr
+machine label, `null` for this host), `agent_id`, `harness`, `session_id`,
+`cwd`, `title`, `observed_state` (Herdr state verbatim), `observed_at`,
+`state_change_seq` (Herdr's counter; movement shows as a change between two
+reads), `task_ref`, `evidence_ref`, `approval_required`, `error` (`null` or
+`{"kind": "...", "message": "..."}`). Host records carry `host`, `machine`,
+`reachable`, `error`, `agents`.
 
 Composite outputs (`work:status`, `coord:brief`) add per item `herdr_state`
 (copy of `observed_state`), `work_verdict` (`verified|unverified|blocked|unknown`,
@@ -46,32 +47,32 @@ and at top level `partial` with `failed_sources` whenever an upstream task
 errored. Herdr state never changes `work_verdict`.
 
 Exit codes: `0` result (possibly partial, see `partial`), `2` nothing usable
-(all sources failed, not found), `3` invalid input (bad id, host not in fleet,
+(all sources failed, not found), `3` invalid input (unsafe id or machine label,
 malformed JSON), `64` not implemented.
 
-## Fleet configuration
+## Machines (herdr-native, 2026-10-27)
 
-`$XDG_CONFIG_HOME/coordinator/fleet.json`, installed by nixos-config, never
-committed here (tests and other locations use `--option coordinator.fleetFile:path`;
-devenv's evaluation cache ignores environment variables, so there is no env override):
+There is no fleet file and no host registry in this repo or in nixos-config.
+Herdr is the only abstraction: this host's agents come from its own server,
+other hosts are Herdr **saved machines** (`herdr machine add <ssh-target>
+--label <name>`, stored by Herdr in `~/.local/state/herdr/client/endpoints.json`)
+and are read through Herdr's command forwarding (`herdr --machine <label> …`).
+A worker has no saved machines and therefore sees itself only; the coordinator
+host sees every enabled machine. nixos-config declares the coordinator host's
+machines (`sam.herdr.machines`) and runs `herdr machine add` idempotently at
+activation; workers declare nothing.
 
-```json
-{"schema_version":1,
- "hosts":[{"name":"this-host","ssh":null},{"name":"worker-a","ssh":"user@worker-a"}],
- "repos":[{"name":"skills","gh":"OWNER/skills","checkout":"/home/user/skills"}]}
-```
-
-`ssh: null` means local. The file is read at Nix evaluation time
-(`coordinator.fleetFile`, default `$XDG_CONFIG_HOME/coordinator/fleet.json`),
-so the task graph itself contains exactly the configured hosts and repos;
-names and targets are validated during evaluation against
-`^[A-Za-z0-9_:.@/-]+$`, and runtime identifiers (agent ids, session ids) are
-validated again before use and passed as separate argv words. Over ssh the
-argv travels as a base64 blob of NUL-separated words that a remote `bash -c`
-turns back into argv with `mapfile` and `exec`: no shell re-parses the words,
-so handoff text with quotes, newlines or `$(...)` stays literal, and a
-worker's forced-command shim can whitelist argv before exec. Tests point
-`coordinator.fleetFile` at fixtures with `--option coordinator.fleetFile:path`.
+`herdr:inventory` reads `herdr machine list --json` at run time and asks each
+enabled machine in turn, under one bounded timeout each; a failing machine is a
+host record with `reachable: false` and an `error`, a failing `machine list` is
+`machines_error`, and both set `partial`. Labels are validated against
+`^[A-Za-z0-9_][A-Za-z0-9_.-]*$` and runtime identifiers (agent ids, session
+ids) again before use; every value is passed to Herdr as a separate argv word,
+never through a shell. The ssh transport, forced-command shim, snapshots and
+`state_age_s` of the earlier design are gone. Tests point
+`coordinator.herdrCommand` at a fake with `--option
+coordinator.herdrCommand:string`; devenv's evaluation cache ignores environment
+variables, so there is no env override.
 
 ## Guard placement (verified live 2026-10-26 and 2026-10-27)
 
