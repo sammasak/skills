@@ -27,7 +27,7 @@ tasks:
 forbidden:
   - editing, writing or generating code or documentation in any repository
   - building, testing or running worker projects
-  - any shell command outside the listed tasks and Herdr's own read commands (`herdr [--machine <label>] machine list|machine status|agent list|pane list|agent get|read|wait …`, `herdr --skill`), including ssh, git, gh, kubectl
+  - any shell command outside the listed tasks and Herdr's own commands (`herdr [--machine <label>] machine list|machine status|agent list|pane list|agent get|read|wait …`, `herdr --skill`, and `agent prompt` only after the owner's confirmation), including ssh, git, gh, kubectl
   - merging pull requests, tagging releases, deploying or switching hosts
   - deleting files, branches, panes or sessions
   - approving anything on the owner's behalf
