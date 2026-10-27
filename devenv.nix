@@ -1,13 +1,14 @@
 { pkgs, lib, ... }:
 
 let
-  taskSuites = [ "evidence" "harness-session-summary" "herdr-inspect" "herdr-inventory" "herdr-message-await" "coord-brief" "coord-handoff" "quality" ];
+  taskSuites = [ "evidence" "harness-session-summary" "herdr-inspect" "herdr-inventory" "herdr-message-await" "gh-act" "coord-brief" "coord-handoff" "quality" ];
 in
 {
   imports = [
     ./task-modules/common.nix
     ./task-modules/fixtures/fakes.nix
     ./task-modules/herdr.nix
+    ./task-modules/gh.nix
     ./task-modules/harness.nix
     ./task-modules/evidence.nix
     ./task-modules/tests.nix

@@ -69,6 +69,22 @@
         [ -n "''${FAKE_GH_EXIT:-}" ] && { echo "gh: HTTP 401 Bad credentials" >&2; exit "$FAKE_GH_EXIT"; }
         repo=""; kind=""; prev=""
         for a in "$@"; do case "$prev" in -R|--repo) repo="$a" ;; esac; prev="$a"; done
+        # `gh api [-X METHOD] repos/O/R/issues/N/labels[/L] | .../comments [--input -]`: FAKE_GH_LABELS (JSON array) is the
+        # issue's label set, FAKE_GH_API_EXIT forces failure, FAKE_GH_COMMENT_OUT captures a posted body
+        if [ "$1" = api ]; then
+          [ -n "''${FAKE_GH_API_EXIT:-}" ] && { echo "gh: HTTP 404 Not Found (HTTP 404)" >&2; exit "$FAKE_GH_API_EXIT"; }
+          method=GET; path=""; body=""; prev=""
+          for a in "$@"; do case "$prev" in -X|--method) method="$a" ;; --input) [ "$a" = - ] && body=$(cat) ;; esac; case "$a" in repos/*) path="$a" ;; esac; prev="$a"; done
+          case "$method $path" in
+            "GET "*/labels) printf '%s\n' "''${FAKE_GH_LABELS:-[]}" | jq 'map({name:.})' ;;
+            "POST "*/labels) jq -c --argjson have "''${FAKE_GH_LABELS:-[]}" '($have + .labels) | unique | map({name:.})' <<<"$body" ;;
+            "DELETE "*/labels/*) echo '[]' ;;
+            "POST "*/comments) [ -n "''${FAKE_GH_COMMENT_OUT:-}" ] && jq -r .body <<<"$body" > "$FAKE_GH_COMMENT_OUT"
+              printf '{"id":1,"html_url":"https://github.com/%s#issuecomment-1"}\n' "$(sed -E 's#^repos/([^/]+/[^/]+)/issues/([0-9]+)/comments$#\1/issues/\2#' <<<"$path")" ;;
+            *) echo "fake gh: unsupported api $method $path" >&2; exit 2 ;;
+          esac
+          exit 0
+        fi
         case "$1 $2" in "issue list") kind="issues" ;; "pr list") kind="prs" ;; *) echo "fake gh: unsupported $*" >&2; exit 2 ;; esac
         state=""; prev=""; for a in "$@"; do case "$prev" in --state) state="$a" ;; esac; prev="$a"; done
         f="''${FAKE_GH_DIR:?}/''${repo//\//__}.$kind.json"

@@ -110,7 +110,7 @@
       '';
     };
     "skills:test:tasks:herdr-message-await" = {
-      description = "coord:handoff -> herdr:message (authorized_by, allowed_actions in the audit, duplicate, blocked) -> herdr:await through --machine";
+      description = "coord:handoff -> herdr:message (authorized_by label gate through gh, allowed_actions in the audit, duplicate, blocked) -> herdr:await through --machine";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -130,6 +130,7 @@
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
 
         export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]' FAKE_HERDR_SESSION=sess-1 FAKE_PROMPT_OUT="$TMP/prompt.txt"
+        export FAKE_GH_LABELS='["epic","assign:implementer","deployment-ready"]'
         draft() { run coord:handoff --input-json "$1"; ID=$(jqr .handoff_id); }
         AUTH='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"assign:implementer"}'
         # a draft for a remote agent, sent through --machine, audited, duplicate refused
@@ -145,15 +146,24 @@
           run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"$bad_auth}"
           [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q authorized_by && [ ! -s "$FAKE_LOG" ] && ok || bad "authorized_by '$bad_auth' refused before herdr ($OUT)"
         done
+        # the GitHub gate: the label must be on the issue; absent => authorization_missing, unreadable => gh_error, no herdr call either way
+        : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/7\",\"label\":\"approved\"}}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'assign:implementer' && ! grep -q '^herdr' "$FAKE_LOG" && grep -q '^gh api repos/sammasak/skills/issues/7/labels' "$FAKE_LOG" && [ ! -s "$TMP/state/audit.jsonl" ] && ok || bad "label absent => authorization_missing, nothing sent, no audit attempt ($OUT)"
+        : > "$FAKE_LOG"
+        FAKE_GH_API_EXIT=1 run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = gh_error ] && ! grep -q '^herdr' "$FAKE_LOG" && ok || bad "gh failure => gh_error, nothing sent ($OUT)"
+        : > "$FAKE_LOG"
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr .machine)" = acer-swift ] && ok || bad "send: $CODE $OUT"
         AID=$(jqr .audit_id)
-        [ "$(jqr '.allowed_actions | join(",")')" = "comment,deploy:none" ] && [ "$(jqr .authorized_by.label)" = "assign:implementer" ] && [ "$(jqr .authorized_by.issue_url)" = "https://github.com/sammasak/skills/issues/7" ] && [ "$(jqr .authorized_by.verified)" = false ] && ok || bad "send record carries allowed_actions and authorized_by (unverified)"
+        [ "$(jqr '.allowed_actions | join(",")')" = "comment,deploy:none" ] && [ "$(jqr .authorized_by.label)" = "assign:implementer" ] && [ "$(jqr .authorized_by.issue_url)" = "https://github.com/sammasak/skills/issues/7" ] && [ "$(jqr .authorized_by.verified)" = true ] && [[ "$(jqr .authorized_by.verified_at)" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}T ]] && ok || bad "send record carries allowed_actions and verified authorized_by"
+        grep -q '^gh api repos/sammasak/skills/issues/7/labels' "$FAKE_LOG" && ok || bad "labels fetched through gh before sending"
         grep -q '^herdr(machine=acer-swift) agent get wA:p2' "$FAKE_LOG" && grep -q '^herdr(machine=acer-swift) agent prompt wA:p2' "$FAKE_LOG" && ok || bad "send went through --machine"
         grep -q 'fix the docs typo' "$FAKE_PROMPT_OUT" && grep -q '^Allowed actions: comment, deploy:none\. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed\.$' "$FAKE_PROMPT_OUT" && ok || bad "prompt text and allowed-actions line delivered"
         [ "$(grep -c '"phase":"attempt"' "$TMP/state/audit.jsonl")" = 1 ] && [ "$(grep -c '"outcome":"delivered"' "$TMP/state/audit.jsonl")" = 1 ] && ok || bad "audit attempt+outcome"
         ATT=$(jq -c 'select(.phase == "attempt")' "$TMP/state/audit.jsonl")
-        [ "$(jq -r '.allowed_actions | join(",")' <<<"$ATT")" = "comment,deploy:none" ] && [ "$(jq -r '.authorized_by.issue_url + " " + .authorized_by.label + " " + (.authorized_by.verified|tostring)' <<<"$ATT")" = "https://github.com/sammasak/skills/issues/7 assign:implementer false" ] && ok || bad "audit attempt records allowed_actions and authorized_by ($ATT)"
+        [ "$(jq -r '.allowed_actions | join(",")' <<<"$ATT")" = "comment,deploy:none" ] && [ "$(jq -r '.authorized_by.issue_url + " " + .authorized_by.label + " " + (.authorized_by.verified|tostring)' <<<"$ATT")" = "https://github.com/sammasak/skills/issues/7 assign:implementer true" ] && ok || bad "audit attempt records allowed_actions and verified authorized_by ($ATT)"
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = duplicate ] && grep -q "$AID" <<<"$(jqr .error.message)" && ok || bad "duplicate refused naming the audit id"
         # an edited draft (retargeted machine, changed text or widened actions) no longer matches its content-addressed id: refused before any herdr call
@@ -182,6 +192,7 @@
         [ "$H" = "$(hostname -s 2>/dev/null || hostname)" ] && [ "$(jqr .machine)" = null ] && ok || bad "local draft host/machine"
         run herdr:message --input-json "{\"handoff_id\":\"$ID3\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/pull/9\",\"label\":\"deployment-ready\"}}"
         [ "$CODE" -eq 0 ] && grep -q '^herdr agent prompt wF:p1' "$FAKE_LOG" && ! grep -q 'machine=' "$FAKE_LOG" && [ "$(jqr .authorized_by.label)" = deployment-ready ] && ok || bad "local send without --machine ($CODE)"
+        grep -q '^gh api repos/sammasak/skills/issues/9/labels' "$FAKE_LOG" && ok || bad "a PR URL is checked through the issues labels path"
         # await by audit id: turn observed (working), then idle; through the same machine
         export FAKE_HERDR_STATE_SEQ="working,idle" ; rm -f "$FAKE_LOG.seq"; : > "$FAKE_LOG"
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"
@@ -190,6 +201,84 @@
         unset FAKE_HERDR_STATE_SEQ
         run herdr:await --input-json '{"audit_id":"000000000000"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "unknown audit id rejected"
+        summary
+      '';
+    };
+
+    "skills:test:tasks:gh-act" = {
+      description = "gh:label and gh:comment: bounded targets, handoff-or-reason, Coordinator signature, one audit line each, gh failures as data";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh" FAKE_GH_COMMENT_OUT="$TMP/comment.txt"
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
+        run() { # <task> [args]
+          local task="$1"; shift
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+            --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+        AUDIT="$TMP/state/audit.jsonl"
+        audit_lines() { [ -s "$AUDIT" ] && grep -c . "$AUDIT" || echo 0; }
+
+        # a draft to serve: gh acts may name it instead of a reason
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#43","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
+        HID=$(jqr .handoff_id); [[ "$HID" =~ ^[a-f0-9]{12}$ ]] && ok || bad "draft for the gh acts"
+        # gh:label add, serving the handoff: one POST through the issues API, one audit line
+        : > "$FAKE_LOG"
+        run gh:label --input-json "{\"repo\":\"sammasak/skills\",\"number\":43,\"label\":\"blocked\",\"action\":\"add\",\"handoff_id\":\"$HID\"}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr .error)" = null ] && [ "$(jqr .handoff_id)" = "$HID" ] && [ "$(jqr .reason)" = null ] && ok || bad "label add: $CODE $OUT"
+        grep -q '^gh api -X POST repos/sammasak/skills/issues/43/labels --input -' "$FAKE_LOG" && [ "$(grep -c '^gh' "$FAKE_LOG")" = 1 ] && ok || bad "label add is one POST ($(cat "$FAKE_LOG"))"
+        AID=$(jqr .audit_id); [[ "$AID" =~ ^[a-f0-9]{12}$ ]] && [ "$(audit_lines)" = 1 ] && [ "$(jq -r 'select(.audit_id == "'"$AID"'") | .phase + " " + .task + " " + .repo + " " + (.number|tostring) + " " + .label + " " + .action + " " + .outcome + " " + .handoff_id' "$AUDIT")" = "gh gh:label sammasak/skills 43 blocked add done $HID" ] && ok || bad "audit line for the label add ($(cat "$AUDIT"))"
+        # gh:label remove with a reason: DELETE path names the label
+        : > "$FAKE_LOG"
+        run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"needs-live","action":"remove","reason":"live check recorded in #43"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr .reason)" = "live check recorded in #43" ] && [ "$(jqr .handoff_id)" = null ] && grep -q '^gh api -X DELETE repos/sammasak/skills/issues/43/labels/needs-live$' "$FAKE_LOG" && [ "$(audit_lines)" = 2 ] && ok || bad "label remove with reason ($CODE $OUT)"
+        # refusals before any gh call: unknown label, unknown action, bad target, both or neither of handoff_id/reason, unknown draft, long reason
+        for bad_in in '{"repo":"sammasak/skills","number":43,"label":"wontfix","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"toggle","reason":"r"}' \
+            '{"repo":"skills","number":43,"label":"blocked","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":"43; rm","label":"blocked","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":0,"label":"blocked","action":"add","reason":"r"}' \
+            "{\"repo\":\"sammasak/skills\",\"number\":43,\"label\":\"blocked\",\"action\":\"add\",\"handoff_id\":\"$HID\",\"reason\":\"r\"}" '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"add"}' \
+            '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"add","handoff_id":"000000000000"}' "{\"repo\":\"sammasak/skills\",\"number\":43,\"label\":\"blocked\",\"action\":\"add\",\"reason\":\"$(printf 'r%.0s' $(seq 1 4001))\"}"; do
+          : > "$FAKE_LOG"; before=$(audit_lines)
+          run gh:label --input-json "$bad_in"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "gh:label refused without gh or audit: $(cut -c1-90 <<<"$bad_in") ($OUT)"
+        done
+        # gh failing: recorded as data (outcome + audit line), exit 2, error.kind names it
+        : > "$FAKE_LOG"; before=$(audit_lines)
+        FAKE_GH_API_EXIT=1 run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"approved","action":"add","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .outcome)" = command_failed ] && [ "$(jqr .error.kind)" = command_failed ] && jqr .error.message | grep -q 'HTTP 404' && [ "$(audit_lines)" = $((before + 1)) ] && [ "$(tail -1 "$AUDIT" | jq -r .outcome)" = command_failed ] && ok || bad "gh failure recorded ($CODE $OUT)"
+        # gh:comment: body delivered with the Coordinator signature, url in the record and the audit line
+        : > "$FAKE_LOG"; rm -f "$FAKE_GH_COMMENT_OUT"
+        run gh:comment --input-json "{\"repo\":\"sammasak/skills\",\"number\":43,\"body\":\"Status: wF:p1 is idle; the owner has not decided yet.\",\"handoff_id\":\"$HID\"}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr .comment_url)" = "https://github.com/sammasak/skills/issues/43#issuecomment-1" ] && ok || bad "comment: $CODE $OUT"
+        grep -q '^gh api -X POST repos/sammasak/skills/issues/43/comments --input -' "$FAKE_LOG" && ok || bad "comment is one POST"
+        [ "$(head -1 "$FAKE_GH_COMMENT_OUT")" = "Status: wF:p1 is idle; the owner has not decided yet." ] && [ "$(tail -1 "$FAKE_GH_COMMENT_OUT")" = "-- Coordinator (automated; not the owner)" ] && ok || bad "comment body signed Coordinator ($(cat "$FAKE_GH_COMMENT_OUT"))"
+        [ "$(tail -1 "$AUDIT" | jq -r '.task + " " + .outcome + " " + .comment_url + " " + .handoff_id')" = "gh:comment done https://github.com/sammasak/skills/issues/43#issuecomment-1 $HID" ] && ok || bad "audit line for the comment"
+        # already signed: not signed twice; a 4000-character body passes, 4001 and empty do not, nothing posted
+        run gh:comment --input-json '{"repo":"sammasak/skills","number":43,"body":"done\n\n-- Coordinator","reason":"r"}'
+        [ "$CODE" -eq 0 ] && [ "$(grep -c 'Coordinator' "$FAKE_GH_COMMENT_OUT")" = 1 ] && ok || bad "signed body not re-signed"
+        LONG=$(printf 'b%.0s' $(seq 1 4000))
+        run gh:comment --input-json "{\"repo\":\"sammasak/skills\",\"number\":43,\"body\":\"$LONG\",\"reason\":\"r\"}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .body_chars)" -gt 4000 ] && ok || bad "4000-character body accepted ($CODE)"
+        for bad_in in "{\"repo\":\"sammasak/skills\",\"number\":43,\"body\":\"''${LONG}b\",\"reason\":\"r\"}" '{"repo":"sammasak/skills","number":43,"body":"","reason":"r"}' '{"repo":"sammasak/skills","number":43,"reason":"r"}' '{"repo":"sammasak/skills","number":43,"body":"x"}'; do
+          : > "$FAKE_LOG"; before=$(audit_lines)
+          run gh:comment --input-json "$bad_in"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "gh:comment refused without gh or audit: $(cut -c1-60 <<<"$bad_in") ($OUT)"
+        done
+        # the shared audit log stays readable by herdr:message after gh lines were written
+        export FAKE_HERDR_STATE=idle FAKE_HERDR_SEQ=5 FAKE_HERDR_SESSION=sess-1 FAKE_GH_LABELS='["approved"]'
+        run herdr:message --input-json "{\"handoff_id\":\"$HID\",\"confirm\":\"$(hostname -s 2>/dev/null || hostname)/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/43\",\"label\":\"approved\"}}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "herdr:message accepts an audit log with gh lines ($CODE $OUT)"
+        # a corrupt audit log stops gh acts too
+        echo 'not json' >> "$AUDIT"; : > "$FAKE_LOG"
+        run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"remove","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = audit_corrupt ] && [ ! -s "$FAKE_LOG" ] && ok || bad "corrupt audit refuses gh acts ($OUT)"
         summary
       '';
     };
