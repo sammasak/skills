@@ -34,11 +34,19 @@ herdr machine list --json                           # which machines that is (em
 tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message attempt and outcome
 ```
 
-To hand work over: the coordinator drafts (`coord:handoff`), you confirm the
-`handoff_id` and target in the conversation, it sends (`herdr:message`, which
-Claude Code prompts for), awaits (`herdr:await`), and verifies with
-`work:status`. "delivered" is not "done"; only a merged PR for the agent's
-`#N` in its own repo makes `work_verdict: verified`.
+To hand work over: the coordinator drafts (`coord:handoff`) with the
+`allowed_actions` the agent may take on that handoff (`merge`, `close`,
+`label`, `comment`, `deploy:none`, `deploy:<host>`; the brief shows them as
+its `Allowed actions:` line, which also says that reading, committing and
+opening a PR are implied and everything else, deleting included, stays
+forbidden), you confirm the `handoff_id` and target in the conversation and
+name the GitHub issue URL and label that authorize it (the coordinator asks
+when you have not; it never invents one), it sends (`herdr:message` with
+`authorized_by`, which Claude Code prompts for), awaits (`herdr:await`), and
+verifies with `work:status`. Every attempt in `audit.jsonl` records
+`allowed_actions` and `authorized_by` (as stated, `verified: false`; the
+label is not yet checked through `gh`). "delivered" is not "done"; only a
+merged PR for the agent's `#N` in its own repo makes `work_verdict: verified`.
 
 Keep the checkout current (`git -C ~/claude-code-skills pull`): the tasks and
 contracts the subagent uses are the ones in that working tree.

@@ -110,7 +110,7 @@
       '';
     };
     "skills:test:tasks:herdr-message-await" = {
-      description = "coord:handoff -> herdr:message (audit, duplicate, blocked) -> herdr:await through --machine";
+      description = "coord:handoff -> herdr:message (authorized_by, allowed_actions in the audit, duplicate, blocked) -> herdr:await through --machine";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -131,41 +131,57 @@
 
         export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]' FAKE_HERDR_SESSION=sess-1 FAKE_PROMPT_OUT="$TMP/prompt.txt"
         draft() { run coord:handoff --input-json "$1"; ID=$(jqr .handoff_id); }
+        AUTH='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"assign:implementer"}'
         # a draft for a remote agent, sent through --machine, audited, duplicate refused
-        draft '{"machine":"acer-swift","agent_id":"wA:p2","session_id":"sess-1","task_ref":"#7","scope":"fix the docs typo","expected_evidence":"a commit","acceptance":"typo gone"}'
+        draft '{"machine":"acer-swift","agent_id":"wA:p2","session_id":"sess-1","task_ref":"#7","scope":"fix the docs typo","expected_evidence":"a commit","acceptance":"typo gone","allowed_actions":["comment","deploy:none"]}'
         [ "$CODE" -eq 0 ] && [[ "$ID" =~ ^[a-f0-9]{12}$ ]] && [ "$(jqr .machine)" = acer-swift ] && [ "$(jqr .approval_required)" = true ] && ok || bad "draft: $CODE $OUT"
         [ ! -s "$FAKE_LOG" ] && ok || bad "draft must not touch herdr"
         export FAKE_HERDR_STATE=idle FAKE_HERDR_SEQ=5
-        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"wrong/wA:p2\"}"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"wrong/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_confirmed ] && ok || bad "wrong confirm refused"
-        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"}"
+        # authorized_by (issue URL + owner label) is required and checked before any herdr call
+        for bad_auth in "" ',"authorized_by":"label"' ',"authorized_by":{"label":"assign:implementer"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7"}' ',"authorized_by":{"issue_url":"https://example.com/sammasak/skills/issues/7","label":"assign:implementer"}' \
+            ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"bad\nlabel"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"lbl\n"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7\n","label":"assign:implementer"}'; do
+          run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"$bad_auth}"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q authorized_by && [ ! -s "$FAKE_LOG" ] && ok || bad "authorized_by '$bad_auth' refused before herdr ($OUT)"
+        done
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr .machine)" = acer-swift ] && ok || bad "send: $CODE $OUT"
         AID=$(jqr .audit_id)
+        [ "$(jqr '.allowed_actions | join(",")')" = "comment,deploy:none" ] && [ "$(jqr .authorized_by.label)" = "assign:implementer" ] && [ "$(jqr .authorized_by.issue_url)" = "https://github.com/sammasak/skills/issues/7" ] && [ "$(jqr .authorized_by.verified)" = false ] && ok || bad "send record carries allowed_actions and authorized_by (unverified)"
         grep -q '^herdr(machine=acer-swift) agent get wA:p2' "$FAKE_LOG" && grep -q '^herdr(machine=acer-swift) agent prompt wA:p2' "$FAKE_LOG" && ok || bad "send went through --machine"
-        grep -q 'fix the docs typo' "$FAKE_PROMPT_OUT" && ok || bad "prompt text delivered"
+        grep -q 'fix the docs typo' "$FAKE_PROMPT_OUT" && grep -q '^Allowed actions: comment, deploy:none\. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed\.$' "$FAKE_PROMPT_OUT" && ok || bad "prompt text and allowed-actions line delivered"
         [ "$(grep -c '"phase":"attempt"' "$TMP/state/audit.jsonl")" = 1 ] && [ "$(grep -c '"outcome":"delivered"' "$TMP/state/audit.jsonl")" = 1 ] && ok || bad "audit attempt+outcome"
-        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"}"
+        ATT=$(jq -c 'select(.phase == "attempt")' "$TMP/state/audit.jsonl")
+        [ "$(jq -r '.allowed_actions | join(",")' <<<"$ATT")" = "comment,deploy:none" ] && [ "$(jq -r '.authorized_by.issue_url + " " + .authorized_by.label + " " + (.authorized_by.verified|tostring)' <<<"$ATT")" = "https://github.com/sammasak/skills/issues/7 assign:implementer false" ] && ok || bad "audit attempt records allowed_actions and authorized_by ($ATT)"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = duplicate ] && grep -q "$AID" <<<"$(jqr .error.message)" && ok || bad "duplicate refused naming the audit id"
-        # an edited draft (retargeted machine, or changed text) no longer matches its content-addressed id: refused before any herdr call
+        # an edited draft (retargeted machine, changed text or widened actions) no longer matches its content-addressed id: refused before any herdr call
         D="$TMP/state/handoffs/$ID.json"; cp "$D" "$D.orig"; : > "$FAKE_LOG"
         jq -c '.machine = "other-box" | .host = "other-box"' "$D.orig" > "$D"
-        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"other-box/wA:p2\"}"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"other-box/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && ok || bad "retargeted draft refused ($OUT)"
         jq -c '.text += " and also deploy"' "$D.orig" > "$D"
-        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"}"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && ok || bad "edited draft text refused ($OUT)"
+        jq -c '.allowed_actions += ["merge"]' "$D.orig" > "$D"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && ok || bad "widened allowed_actions refused ($OUT)"
+        jq -c 'del(.allowed_actions)' "$D.orig" > "$D"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q redraft && [ ! -s "$FAKE_LOG" ] && ok || bad "draft without allowed_actions refused ($OUT)"
         mv "$D.orig" "$D"
         # blocked and busy agents are never prompted
         export FAKE_HERDR_STATE=blocked; : > "$FAKE_LOG"
-        draft '{"machine":"acer-swift","agent_id":"wA:p3","task_ref":"#8","scope":"s","expected_evidence":"e","acceptance":"a"}'; ID2=$(jqr .handoff_id)
-        run herdr:message --input-json "{\"handoff_id\":\"$ID2\",\"confirm\":\"acer-swift/wA:p3\"}"
+        draft '{"machine":"acer-swift","agent_id":"wA:p3","task_ref":"#8","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; ID2=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$ID2\",\"confirm\":\"acer-swift/wA:p3\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = agent_blocked ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "blocked agent not prompted"
         # a local agent: no --machine prefix
         export FAKE_HERDR_STATE=idle; : > "$FAKE_LOG"
-        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#9","scope":"s","expected_evidence":"e","acceptance":"a"}'; ID3=$(jqr .handoff_id); H=$(jqr .host)
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#9","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","deploy:acer-swift"]}'; ID3=$(jqr .handoff_id); H=$(jqr .host)
         [ "$H" = "$(hostname -s 2>/dev/null || hostname)" ] && [ "$(jqr .machine)" = null ] && ok || bad "local draft host/machine"
-        run herdr:message --input-json "{\"handoff_id\":\"$ID3\",\"confirm\":\"$H/wF:p1\"}"
-        [ "$CODE" -eq 0 ] && grep -q '^herdr agent prompt wF:p1' "$FAKE_LOG" && ! grep -q 'machine=' "$FAKE_LOG" && ok || bad "local send without --machine ($CODE)"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID3\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/pull/9\",\"label\":\"deployment-ready\"}}"
+        [ "$CODE" -eq 0 ] && grep -q '^herdr agent prompt wF:p1' "$FAKE_LOG" && ! grep -q 'machine=' "$FAKE_LOG" && [ "$(jqr .authorized_by.label)" = deployment-ready ] && ok || bad "local send without --machine ($CODE)"
         # await by audit id: turn observed (working), then idle; through the same machine
         export FAKE_HERDR_STATE_SEQ="working,idle" ; rm -f "$FAKE_LOG.seq"; : > "$FAKE_LOG"
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"
