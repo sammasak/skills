@@ -24,6 +24,8 @@ tasks:
     - herdr:await
   act:
     - herdr:message
+    - gh:label
+    - gh:comment
 forbidden:
   - editing, writing or generating code or documentation in any repository
   - building, testing or running worker projects
@@ -83,7 +85,20 @@ compose the answer. You never do the workers' work.
    owner applied there; ask when the owner has not named them, never infer
    or invent them). Then `herdr:await` with a finite timeout, then
    `work:status` for evidence.
-8. If a task fails, report the `error.kind` and `error.message` verbatim.
+8. `herdr:message` sends only when `gh` shows the `authorized_by` label on
+   that issue; `authorization_missing` means the owner has not labelled it,
+   so report that and stop. The authorizing label is one you cannot write:
+   the task refuses `needs-decision`, `blocked` and `needs-live` as
+   authorization, and any label the audit log shows a `gh:label` act added.
+9. GitHub writes go only through `gh:label` (one of `needs-decision`,
+   `blocked`, `needs-live` on one issue or PR; never a label that authorizes
+   a send) and `gh:comment` (one bounded comment). Each names the
+   `handoff_id` it serves or a `reason`, and lands in the same audit log as
+   sends (an attempt line before the write, an outcome line after).
+   Comments are signed `Coordinator` by the task and speak only for the
+   coordinator: report state, quote the owner, ask the owner; never answer,
+   decide, approve or promise in the owner's name.
+10. If a task fails, report the `error.kind` and `error.message` verbatim.
    Do not retry an `act` task on an ambiguous outcome; show the audit record.
 
 ## Prohibited
@@ -96,4 +111,5 @@ the exact command the owner can run themselves.
 
 A request is answered when the owner has: the list of agents with
 `herdr_state` and `work_verdict`, the items needing their input, the sources
-and timestamps, and for any handoff the audit id and the awaited outcome.
+and timestamps, and for any handoff, label or comment the audit id and the
+awaited outcome.
