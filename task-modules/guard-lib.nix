@@ -134,9 +134,19 @@
       allow_re="''${READ}''${RUN:+''${READ:+|}$RUN}"
       [ -n "$allow_re" ] || { echo "$ROLE: role contract lists no tasks" >&2; exit 2; }
 
+      # herdr's own read verbs are allowed directly (the fleet is herdr's: machines, agents, panes); `agent prompt` asks
+      herdr_target='[A-Za-z0-9_][A-Za-z0-9_:.@/-]*'
+      herdr_free='[^;&|<>$`()\\]*'
+      herdr_read="^herdr( --machine [A-Za-z0-9_][A-Za-z0-9_.-]*)? (--skill|machine list( --json)?|machine status( [A-Za-z0-9_][A-Za-z0-9_.-]*)?( --json)?|agent list|pane list|agent (get|read|wait) ''${herdr_target}''${herdr_free})\$"
+      herdr_ask="^herdr( --machine [A-Za-z0-9_][A-Za-z0-9_.-]*)? agent prompt ''${herdr_target} ''${herdr_free}\$"
+      if [[ "$cmd" =~ $herdr_read ]]; then
+        jq -cn '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"allow", permissionDecisionReason:("'"$ROLE"' herdr read verb")}}'; exit 0
+      elif [[ "$cmd" =~ $herdr_ask ]]; then
+        jq -cn '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"ask", permissionDecisionReason:("'"$ROLE"' herdr agent prompt (owner confirms)")}}'; exit 0
+      fi
       re="^devenv tasks run (''${allow_re}''${ACT:+|$ACT})( --input-json '([^']*)')?( --show-output)?\$"
       if [[ ! "$cmd" =~ $re ]]; then
-        echo "$ROLE: only '[cd <checkout> && ]devenv tasks run <allowed task> [--input-json '<json>'] [--show-output]' is permitted" >&2; exit 2
+        echo "$ROLE: only '[cd <checkout> && ]devenv tasks run <allowed task> [--input-json '<json>'] [--show-output]' or a herdr read verb (herdr [--machine L] machine list|status, agent list|get|read|wait, pane list, --skill) is permitted" >&2; exit 2
       fi
       # The anchored regex leaves no room for metacharacters outside the quoted body.
       task="''${BASH_REMATCH[1]}"; input_arg="''${BASH_REMATCH[2]:-}"; body="''${BASH_REMATCH[3]:-}"

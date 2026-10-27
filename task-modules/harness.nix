@@ -1,7 +1,7 @@
-# harness:* tasks: what an agent is doing, from the harness's own session store
+# harness:* tasks: what an agent is doing, from the harness's own session store on THIS host
 # (Claude Code JSONL under ~/.claude/projects/<cwd-slug>/<id>.jsonl, Pi under
-# ~/.pi/agent/sessions/-<cwd-slug>--/). The formats are undocumented and may
-# change; lines that do not parse are skipped and counted, excerpts are bounded.
+# ~/.pi/agent/sessions/-<cwd-slug>--/). Remote machines are read through herdr (herdr:inspect),
+# not through their session stores. Formats are undocumented; unparsable lines are skipped and counted.
 { lib, config, ... }:
 
 let
@@ -9,25 +9,20 @@ let
   t = lib.types;
 in
 {
-  imports = [ ./fleet.nix ];
+  imports = [ ./common.nix ];
 
-  options.coordinator = {
-    claudeProjectsDir = lib.mkOption { type = t.str; default = "$HOME/.claude/projects"; };
-    piSessionsDir = lib.mkOption { type = t.str; default = "$HOME/.pi/agent/sessions"; };
-  };
 
   config.tasks."harness:session-summary" = {
     description = "Last events of one harness session: last prompt, last answer, tools, awaiting_input.";
-    input = { host = null; harness = null; session_id = null; cwd = null; tail = 200; };
+    input = { harness = null; session_id = null; cwd = null; tail = 200; };
     exec = ''
       ${cfg.prelude}
-      host=$(input .host); harness=$(input .harness); sid=$(input .session_id); cwd=$(input .cwd); tail_n=$(input .tail)
+      host=$(local_host); harness=$(input .harness); sid=$(input .session_id); cwd=$(input .cwd); tail_n=$(input .tail)
       ctx=$(jq -cn --arg h "$host" --arg ha "$harness" --arg s "$sid" '{task:"harness:session-summary",host:$h,harness:$ha,session_id:$s}')
-      [ -n "$host" ] && [ -n "$harness" ] && [ -n "$sid" ] && [ -n "$cwd" ] || fail 3 invalid_input "host, harness, session_id and cwd are required" "$ctx"
+      [ -n "$harness" ] && [ -n "$sid" ] && [ -n "$cwd" ] || fail 3 invalid_input "harness, session_id and cwd are required (local session stores only)" "$ctx"
       [[ "$sid" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail 3 invalid_input "session_id has unsafe characters" "$ctx"
       [[ "$cwd" =~ ^/[A-Za-z0-9_./-]*$ ]] || fail 3 invalid_input "cwd has unsafe characters" "$ctx"
       [[ "$tail_n" =~ ^[0-9]+$ ]] || tail_n=200; [ "$tail_n" -gt 500 ] && tail_n=500
-      ${cfg.hostCase}
       slug=$(printf '%s' "$cwd" | sed -E 's/[^A-Za-z0-9]/-/g')
       case "$harness" in
         claude) remote_cmd="f=${cfg.claudeProjectsDir}/$slug/$sid.jsonl; [ -r \"\$f\" ] || exit 44; tail -n $tail_n \"\$f\"" ;;
@@ -36,7 +31,7 @@ in
         *)      fail 3 invalid_input "harness must be claude, pi or codex" "$ctx" ;;
       esac
       at=$(now_iso); rc=0
-      events=$(run_on ${toString cfg.timeoutSeconds} "$target" bash -c "$remote_cmd" 2>/dev/null) || rc=$?
+      events=$(timeout -k 1 ${toString cfg.timeoutSeconds} bash -c "$remote_cmd" 2>/dev/null) || rc=$?
       case "$rc" in
         0) ;;
         44) fail 2 not_found "no session file for $harness/$sid under $cwd" "$ctx" ;;

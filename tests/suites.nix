@@ -39,7 +39,7 @@
         ok() { PASS=$((PASS+1)); }
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
 
-        TASKS="$(devenv tasks list --option coordinator.fleetFile:path "$ROOT/task-modules/fixtures/fleet-empty.json" 2>/dev/null | grep -oE '[a-z0-9_-]+(:[a-z0-9_-]+)+' | sort -u)"
+        TASKS="$(devenv tasks list 2>/dev/null | grep -oE '[a-z0-9_-]+(:[a-z0-9_-]+)+' | sort -u)"
         [ -n "$TASKS" ] || { echo "FAIL: devenv tasks list returned nothing"; exit 1; }
 
         for role_md in agents/*/ROLE.md; do

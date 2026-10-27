@@ -1,4 +1,4 @@
-# Quality role tasks: read a fleet checkout's platform.sdlc state (quality:report)
+# Quality role tasks: read a checkout's platform.sdlc state (quality:report)
 # and run one of its stages (quality:gate). Both delegate to the checkout's own
 # devenv; the machine, stamps and verdicts stay devenv-platform's.
 { lib, config, ... }:
@@ -6,7 +6,6 @@
 let
   cfg = config.coordinator;
   t = lib.types;
-  checkouts = map (r: r.checkout) (lib.filter (r: r.checkout != null) cfg.repos);
   # the consumer's devenv sees a clean environment: an allowlist of host variables (only those that are set),
   # a system-only PATH, and nothing from the outer skills shell
   consumerEnv = ''
@@ -15,17 +14,15 @@ let
       [ -n "''${!v:+x}" ] && cenv+=("$v=''${!v}")
     done
   '';
-  # resolve $checkout against the fleet or fail; $repo gets the fleet name
+  # the checkout is any plain absolute path with a devenv project; $repo is its basename
   checkoutCase = ''
-    repo=""
-    case "$checkout" in
-      ${lib.concatMapStringsSep "\n      " (r: ''${r.checkout}) repo="${r.name}" ;;'') (lib.filter (r: r.checkout != null) cfg.repos)}
-      *) fail 3 invalid_input "checkout is not a fleet repo: $checkout" "$ctx" ;;
-    esac
+    [[ "$checkout" =~ ^/[A-Za-z0-9_./-]+$ ]] && [[ "/$checkout/" != *"/../"* ]] || fail 3 invalid_input "checkout must be a plain absolute path" "$ctx"
+    [ -d "$checkout" ] || fail 3 invalid_input "checkout does not exist: $checkout" "$ctx"
+    repo=$(basename "$checkout")
   '';
 in
 {
-  imports = [ ../../task-modules/fleet.nix ];
+  imports = [ ../../task-modules/common.nix ];
 
   options.coordinator.devenvCommand = lib.mkOption { type = t.str; default = "devenv"; description = "Overridable for tests (fake devenv)."; };
   options.coordinator.consumerEnvPassthrough = lib.mkOption { type = t.strMatching "^([A-Z_][A-Z0-9_]*( [A-Z_][A-Z0-9_]*)*)?$"; default = ""; description = "Extra variable names forwarded to the consumer's devenv (tests use it for FAKE_*)."; };
@@ -35,7 +32,7 @@ in
 
   config.tasks = {
     "quality:report" = {
-      description = "SDLC machine + durable stage state of one fleet checkout (read-only; sdlc-status is the authority).";
+      description = "SDLC machine + durable stage state of one checkout (read-only; sdlc-status is the authority).";
       input = { checkout = null; };
       exec = ''
         ${cfg.prelude}
@@ -87,7 +84,7 @@ in
     };
 
     "quality:gate" = {
-      description = "RUN: execute one SDLC stage (devenv tasks run sdlc:<stage>) in a fleet checkout and record exit + output tail.";
+      description = "RUN: execute one SDLC stage (devenv tasks run sdlc:<stage>) in a checkout and record exit + output tail.";
       input = { checkout = null; stage = null; };
       exec = ''
         ${cfg.prelude}

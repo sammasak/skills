@@ -5,6 +5,7 @@ let
 in
 {
   imports = [
+    ./task-modules/common.nix
     ./task-modules/fixtures/fakes.nix
     ./task-modules/herdr.nix
     ./task-modules/harness.nix
@@ -29,10 +30,22 @@ in
       exec = "echo skills:test:tasks green";
       after = map (n: "skills:test:tasks:${n}") taskSuites;
     };
+    "skills:herdr-skill-sync" = {
+      description = "Refresh skills/herdr/SKILL.md from the installed `herdr --skill` (Herdr's own skill, vendored verbatim).";
+      exec = "herdr --skill > skills/herdr/SKILL.md && echo \"skills/herdr/SKILL.md <- $(herdr --version)\"";
+    };
+    "skills:test:herdr-skill" = {
+      description = "skills/herdr/SKILL.md equals the installed `herdr --skill` byte for byte (no herdr = fail, not pass).";
+      exec = ''
+        type -P herdr >/dev/null || { echo "FAIL: herdr is not installed here, so skills/herdr/SKILL.md cannot be verified" >&2; exit 1; }
+        diff -u skills/herdr/SKILL.md <(herdr --skill) || { echo "FAIL: skills/herdr/SKILL.md differs from $(herdr --version); run: devenv tasks run skills:herdr-skill-sync" >&2; exit 1; }
+        echo "skills/herdr/SKILL.md matches $(herdr --version)"
+      '';
+    };
     "skills:test" = {
       description = "Every repo test suite.";
       exec = "echo skills:test green";
-      after = [ "skills:test:hooks" "skills:test:manifests" "skills:test:policy" "skills:test:contract" "skills:test:negative" "skills:test:tasks" ];
+      after = [ "skills:test:hooks" "skills:test:manifests" "skills:test:policy" "skills:test:contract" "skills:test:negative" "skills:test:tasks" "skills:test:herdr-skill" ];
     };
   };
 }
