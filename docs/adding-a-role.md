@@ -22,7 +22,8 @@ other roles may share. Nothing here needs a new script runner.
    tasks run <inputless task>)` forms in `allow` (no wildcards), `ask` for act
    tasks, the shared deny list, `Read(./**)` plus `Read(~/.local/state/<role>/**)`.
 4. **Guard** — `hooks/validate-<role>.sh` is two lines:
-   `ROLE=<role> exec "$(dirname "$(readlink -f "$0")")/validate-role.sh"`.
+   nothing: the dispatcher routes by agent name to the `guard:check` task, so a
+   role needs no hook file of its own.
 5. **Adapters** — `agents/<role>.md` (Claude: `tools: [Bash, Read]`,
    `disallowedTools`, `permissionMode: default`, `skills:` = the contract's
    list, the fail-closed `hooks.PreToolUse` command) and
