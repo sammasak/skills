@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "coordinator",
-  "guard": "hooks/validate-coordinator.sh",
+  "guard": "hooks/role-guard-dispatch.sh",
   "allow": [
     "Bash(devenv tasks run coord:brief)",
     "Bash(devenv tasks run coord:brief --show-output)",

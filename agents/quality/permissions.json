@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "quality",
-  "guard": "hooks/validate-quality.sh",
+  "guard": "hooks/role-guard-dispatch.sh",
   "allow": [
     "Bash(devenv tasks run gh:work)",
     "Bash(devenv tasks run gh:work --show-output)",

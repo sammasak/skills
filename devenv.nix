@@ -9,6 +9,7 @@ in
     ./task-modules/herdr.nix
     ./task-modules/harness.nix
     ./task-modules/evidence.nix
+    ./task-modules/guard.nix
     ./task-modules/tests.nix
     ./agents/coordinator/tasks.nix
     ./agents/coordinator/tests.nix
@@ -23,8 +24,6 @@ in
     # the two pre-existing hook-framework suites keep their scripts; everything the roles added is a task
     "skills:test:hooks".exec = "bash tests/test-hooks.sh";
     "skills:test:manifests".exec = "bash tests/test-plugin-manifests.sh";
-    "skills:test:contract".exec = "bash tests/test-role-contract.sh";
-    "skills:test:negative".exec = "bash tests/test-coordinator-negative.sh";
     "skills:test:tasks" = {
       description = "Aggregator for the per-module fixture suites.";
       exec = "echo skills:test:tasks green";
