@@ -28,11 +28,11 @@ other roles may share. Nothing here needs a new script runner.
    list, the fail-closed `hooks.PreToolUse` command) and
    `agents/<role>/AGENTS.md` (Codex: the contract pointer, the single allowed
    command form, and the harness differences spelled out).
-6. **Tests** — fixture suite under `agents/<role>/tests/` driving the real
+6. **Tests** — fixture suite as a task in `agents/<role>/tests.nix` driving the real
    tasks with `--option coordinator.*` overrides; the contract and negative
-   suites pick the role up automatically (`tests/test-role-contract.sh`
+   suites pick the role up automatically (the `skills:test:contract` task
    iterates `agents/*/ROLE.md`; add the role's allow/block cases to
-   `tests/test-coordinator-negative.sh`).
+   the `skills:test:negative` task).
 7. **Host** — nothing to do: nixos-config `skills.nix` links every
    `agents/*.md` as a subagent, and the settings-level dispatcher
    (`hooks/role-guard-dispatch.sh`) picks the role up by name because

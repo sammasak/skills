@@ -6,7 +6,7 @@
 |---|---|---|
 | Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex) | this repo | nixos-config `skills.nix` links every `agents/*.md` into `~/.claude/agents` on devTools hosts, so the roles are ordinary subagents |
 | Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from one writable skills checkout: `$SKILLS_CHECKOUT`, default `~/claude-code-skills` |
-| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers), dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the installed guard for role agents only, with the checkout as data |
+| Guard guard `task-modules/guard.nix` (`guard:check`, `guard:integrity`) behind the dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the installed guard for role agents only, with the checkout as data |
 | `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | you (schema in the RFC); an absent file is an empty fleet |
 | State (snapshots, drafts, `audit.jsonl`, `brief/latest.json`) | `~/.local/state/coordinator/` | the tasks |
 
@@ -76,7 +76,7 @@ Claude's Bash timeout (`BASH_MAX_TIMEOUT_MS`) if a long gate must report.
 
 ## Operating the guard
 
-`hooks/validate-role.sh` reads `agents/$ROLE/ROLE.md` in the skills checkout
+`guard:check` (`task-modules/guard.nix`) reads `agents/<role>/ROLE.md` in the skills checkout
 and allows exactly `[cd <checkout> && ]devenv tasks run <read|run task>
 [--input-json '<object>'] [--show-output]`, run from the checkout or `cd`-ed
 into exactly its plain absolute path; `act` tasks return `ask`. It is wired at
@@ -95,7 +95,7 @@ Installing this repo as a plugin does not install the dispatcher. Optional
 hardened mode: with
 `COORDINATOR_REQUIRE_INTEGRITY=1` and a 64-hex pin in
 `COORDINATOR_INTEGRITY_SHA256`, the guard also verifies the checkout's
-`.integrity` manifest (`hooks/lib/integrity-check.sh`) on every call; the
+`.integrity` manifest (the `guard:integrity` task) on every call; the
 nixos-config `coordinator` launcher module does this with a materialised copy,
 and is disabled by default.
 
@@ -103,5 +103,5 @@ and is disabled by default.
 
 ```bash
 devenv tasks run skills:test            # policy, manifests, contract, negative, hooks, tasks suites
-bash agents/quality/tests/two-harness.sh  # LIVE, costs tokens: same role through Claude and Codex
+devenv tasks run quality:two-harness   # LIVE, costs tokens: same role through Claude and Codex
 ```

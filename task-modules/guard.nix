@@ -122,7 +122,7 @@ let
       # kept outside the checkout) needs both: a missing manifest, a missing pin, a rewritten manifest, a changed listed
       # file, or an unlisted policy file (devenv.local.*, .claude/settings*.json, AGENTS*.md, CLAUDE.md, .mcp.json,
       # .codex/*) all block every call. Without the launcher a present
-      # manifest is still checked. The predicate lives in lib/integrity-check.sh, shared with the nixos-config activation.
+      # manifest is still checked. The predicate lives in lib/integrity_check, shared with the nixos-config activation.
       if { [ -n "''${COORDINATOR_REQUIRE_INTEGRITY:-}" ] && [ "''${COORDINATOR_REQUIRE_INTEGRITY}" != 0 ]; } || [ -n "''${COORDINATOR_INTEGRITY_SHA256:-}" ]; then
         [ -f "$want/.integrity" ] || { echo "$ROLE: no .integrity manifest in $want; refusing (managed session)" >&2; exit 2; }
         [[ "''${COORDINATOR_INTEGRITY_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || { echo "$ROLE: managed session without a valid integrity pin; refusing" >&2; exit 2; }

@@ -214,7 +214,7 @@
       exec = ''
         # Drives the real herdr:list:<host> / herdr:inventory tasks with fixture fleets and
         # fake ssh/herdr injected through devenv options. Run from the repo root inside
-        # the devenv: bash task-modules/tests/test-herdr-inventory.sh
+        # the devenv: bash task-modules/tests.nix (this file)test-herdr-inventory.sh
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         unset COORDINATOR_SSH_IDENTITY  # a leaked value would flip the no-key-options case
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
