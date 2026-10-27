@@ -44,8 +44,8 @@ that; write the path plainly, never through a variable, `..`, `~+` or quotes)
 
 for the tasks the role lists under `tasks.read` and `tasks.run` (the `cd`
 prefix may be dropped when the session already is in the checkout). There are
-no act-class tasks. Every Bash call is checked by the role guard from the
-checkout: as a subagent through the settings-level
+no act-class tasks. Every Bash call is checked by the installed role guard
+(the checkout supplies only the task lists): as a subagent through the settings-level
 `hooks/role-guard-dispatch.sh` (dispatches on the agent name), as a main
 session through the frontmatter hook above; either refuses every Bash call
 when the checkout or the guard is missing.

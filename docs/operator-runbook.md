@@ -6,7 +6,7 @@
 |---|---|---|
 | Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex) | this repo | nixos-config `skills.nix` links every `agents/*.md` into `~/.claude/agents` on devTools hosts, so the roles are ordinary subagents |
 | Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from one writable skills checkout: `$SKILLS_CHECKOUT`, default `~/claude-code-skills` |
-| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers), dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the guard from the checkout for role agents only |
+| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers), dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the installed guard for role agents only, with the checkout as data |
 | `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | you (schema in the RFC); an absent file is an empty fleet |
 | State (snapshots, drafts, `audit.jsonl`, `brief/latest.json`) | `~/.local/state/coordinator/` | the tasks |
 
@@ -82,11 +82,12 @@ and allows exactly `[cd <checkout> && ]devenv tasks run <read|run task>
 into exactly its plain absolute path; `act` tasks return `ask`. It is wired at
 settings level by `hooks/role-guard-dispatch.sh` (nixos-config installs it
 with the other user-scope hooks): the dispatcher reads the hook input's
-`agent_type` and runs the guard only for agents that have a ROLE.md in the
-checkout, so other agents and the main session are untouched. The set of
-roles and the guard logic come from the installed copy next to the dispatcher;
-the checkout only supplies the task lists and the devenv project, and its
-path must be plain (`[A-Za-z0-9_./-]`, no `..`, spaces or unicode). A subagent's
+`agent_type` and runs the guard only for role agents (a role is one whose
+`agents/<name>/ROLE.md` ships in the installed copy, or is present in the
+checkout); other agents and the main session are untouched. The guard logic
+comes from the installed copy next to the dispatcher; the checkout only
+supplies the task lists and the devenv project, and its path must be plain
+(`[A-Za-z0-9_./-]`, no `..`, spaces or unicode). A subagent's
 frontmatter hooks never run (verified 2026-10-27), so the frontmatter hook in
 each adapter only covers the `claude --agent <role>` main-session case. A
 host with the adapters linked but no checkout refuses every role Bash call.

@@ -47,8 +47,8 @@ require the owner's explicit confirmation in this conversation and will prompt
 for permission; never work around the prompt. Everything else is forbidden:
 no other shell, no edits, no `git`, `gh` or `ssh` of your own.
 
-Every Bash call is checked by the role guard from the checkout: as a subagent
-through the settings-level `hooks/role-guard-dispatch.sh` (nixos-config
+Every Bash call is checked by the installed role guard (the checkout supplies
+only the task lists): as a subagent through the settings-level `hooks/role-guard-dispatch.sh` (nixos-config
 installs it; it dispatches on the agent name), as a main session through the
 frontmatter hook above. Either refuses every Bash call when the checkout or
 the guard is missing. The guard admits one allowed task name, an optional

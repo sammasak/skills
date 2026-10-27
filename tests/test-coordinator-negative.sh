@@ -156,17 +156,25 @@ STALE=$(mktemp -d); mkdir -p "$STALE/hooks" "$STALE/agents"; cp "$ROOT/hooks/val
 derr "shipped role, stale checkout without the contract" "missing or stale" "$ALLOWED" SKILLS_CHECKOUT="$STALE"
 derr "checkout path with .. is refused" "must be absolute and plain" "$ALLOWED" SKILLS_CHECKOUT="$ROOT/../$(basename "$ROOT")"
 rm -rf "$STALE"
-# the dispatcher's own copy of the guard is what runs; a crashing guard (exit 1) still blocks
-CRASH=$(mktemp -d); cp -r "$ROOT/hooks/." "$CRASH/"; mkdir -p "$CRASH/../agents" 2>/dev/null; printf '#!/usr/bin/env bash\nexit 1\n' > "$CRASH/validate-role.sh"; chmod +x "$CRASH/validate-role.sh"
-( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$CRASH/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard failed (rc=1)' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): crashing guard must map to exit 2"; }
-chmod -x "$CRASH/validate-role.sh"
-( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$CRASH/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard missing next to the dispatcher' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): non-executable guard must refuse"; }
-rm -rf "$CRASH"
+# the dispatcher's own copy of the guard is what runs; a crashing guard (exit 1) still blocks. The copy is a full
+# tree (hooks + agents) so the shipped-role path is the one exercised
+CRASH=$(mktemp -d); mkdir -p "$CRASH/hooks"; cp -r "$ROOT/hooks/." "$CRASH/hooks/"; cp -r "$ROOT/agents" "$CRASH/agents"; printf '#!/usr/bin/env bash\nexit 1\n' > "$CRASH/hooks/validate-role.sh"; chmod +x "$CRASH/hooks/validate-role.sh"
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$CRASH/hooks/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard failed (rc=1)' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): crashing guard must map to exit 2"; }
+chmod -x "$CRASH/hooks/validate-role.sh"
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$CRASH/hooks/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard missing next to the dispatcher' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): non-executable guard must refuse"; }
+# an adapter that wires a role guard but ships no contract directory is refused, not silently un-guarded
+cp "$ROOT/hooks/validate-role.sh" "$CRASH/hooks/validate-role.sh"; chmod +x "$CRASH/hooks/validate-role.sh"; rm -rf "$CRASH/agents/coordinator"
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$CRASH" "$CRASH/hooks/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'ships no agents/coordinator/ROLE.md' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): adapter without a contract must refuse ($code '$err')"; }
+# the dispatcher reached through a symlink (the ~/.claude/hooks shape) still finds its own tree
+LINKD=$(mktemp -d); ln -s "$ROOT/hooks/role-guard-dispatch.sh" "$LINKD/role-guard-dispatch.sh"
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT -u SKILLS_CHECKOUT HOME=/nonexistent "$LINKD/role-guard-dispatch.sh" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'missing or stale' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): symlinked dispatcher must resolve its own tree"; }
+rm -rf "$CRASH" "$LINKD"
 # without jq the routing still happens (grep fallback) and the guard fails closed on its own missing jq
 NOJQ=$(mktemp -d); for b in bash grep sed head dirname readlink cat printf env; do ln -s "$(command -v $b)" "$NOJQ/$b" 2>/dev/null; done
-( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$NOJQ" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): role agent without jq must refuse (fail closed)"; }
+( err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$NOJQ" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'unparseable input' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): role agent without jq must be refused by the guard's own jq check ($code '$err')"; }
 ( out=$(printf '%s' "$(jq -cn '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:"echo hi"}}')" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$NOJQ" "$DISPATCH" 2>&1); code=$?; [ "$code" -eq 0 ] && [ -z "$out" ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): main session without jq must stay a silent no-op"; }
 rm -rf "$NOJQ"
+dcase "capitalised agent_type is lowercased and routed" 0 allow "$(jq -cn --arg c "cd $ROOT && devenv tasks run coord:brief" '{cwd:"/tmp",agent_type:"Coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
 dcase "namespaced agent_type routes by its tail" 0 allow "$(jq -cn --arg c "cd $ROOT && devenv tasks run coord:brief" '{cwd:"/tmp",agent_type:"sammasak-skills:coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
 ( out=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT/" "$DISPATCH" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty'); [ "$out" = allow ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): checkout configured with a trailing slash must allow"; }
 ( out=$(jq -cn --arg c "cd ~/x && devenv tasks run coord:brief" '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:$c}}' | HOME="/x/" COORDINATOR_CHECKOUT="$ROOT" "$HOOK" >/dev/null 2>&1; echo $?); [ "$out" = 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): HOME with a trailing slash must block (//)"; }

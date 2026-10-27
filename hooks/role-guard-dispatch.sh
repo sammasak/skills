@@ -14,11 +14,20 @@ here=$(dirname "$(readlink -f "$0")")
 if command -v jq >/dev/null 2>&1; then agent=$(jq -r '.agent_type // empty' <<<"$input" 2>/dev/null) || agent=""
 else agent=$(grep -oE '"agent_type"[[:space:]]*:[[:space:]]*"[^"]*"' <<<"$input" | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/'); fi
 agent="${agent##*:}"   # a plugin-installed agent may report a namespaced type (unverified); the role name is the tail
+agent="${agent,,}"     # an unexpected capitalisation resolves to the guarded role rather than slipping past
 [[ "$agent" =~ ^[a-z][a-z-]*$ ]] || exit 0
+# the grep fallback does not decode JSON escapes (\u0063…); the harness emits plain names, and jq is the normal path
+# the checkout path is untrusted until the guard validates it; it is only probed for the contract file here
 checkout="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-${HOME:-/nonexistent}/claude-code-skills}}"
 shipped=0; [ -f "$here/../agents/$agent/ROLE.md" ] && shipped=1
 present=0; [ -f "$checkout/agents/$agent/ROLE.md" ] && present=1
-[ "$shipped" -eq 1 ] || [ "$present" -eq 1 ] || exit 0
+# an adapter that wires a role guard but ships no contract would otherwise be silently unguarded
+if [ "$shipped" -eq 0 ] && [ "$present" -eq 0 ]; then
+  if [ -f "$here/../agents/$agent.md" ] && grep -qE 'validate-(role|[a-z-]+)\.sh' "$here/../agents/$agent.md"; then
+    echo "$agent: adapter declares a role guard but ships no agents/$agent/ROLE.md; refusing" >&2; exit 2
+  fi
+  exit 0
+fi
 [ "$present" -eq 1 ] || { echo "$agent: the skills checkout $checkout has no agents/$agent/ROLE.md (missing or stale: git pull it, or set SKILLS_CHECKOUT); refusing" >&2; exit 2; }
 guard="$here/validate-role.sh"
 [ -x "$guard" ] || { echo "$agent: guard missing next to the dispatcher ($guard); refusing" >&2; exit 2; }
