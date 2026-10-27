@@ -95,7 +95,7 @@
         git init -q "$REPO" && (cd "$REPO" && git config user.email t@t && git config user.name t && echo a > a && printf '.devenv/\n' > .gitignore && git add a .gitignore && git commit -qm init && mkdir -p .devenv/state/sdlc && printf '{"wrapper":"sdlc:test-rust-test","stage":"test","guard":"rust:test","at":"2026-10-26T10:00:00Z","tail":"test result: FAILED. 1 failed","fingerprint":"fp1"}' > .devenv/state/sdlc/last-red-test-rust-test.json)
         printf '{"schema_version":1,"hosts":[{"name":"local","ssh":null}],"repos":[{"name":"repo","gh":null,"checkout":"%s"}]}' "$REPO" > "$OUT/fleet.json"
         cat > "$CK/devenv.local.nix" <<NIX
-        { ... }: { coordinator.fleetFile = $OUT/fleet.json; coordinator.devenvCommand = "$FX/bin/devenv"; coordinator.timeoutSeconds = 10; coordinator.consumerEnvPassthrough = "FAKE_SDLC_DIR FAKE_SDLC_FP FAKE_LOG"; }
+        { ... }: { coordinator.fleetFile = $OUT/fleet.json; coordinator.devenvCommand = "${config.coordinator.fakes}/bin/devenv"; coordinator.timeoutSeconds = 10; coordinator.consumerEnvPassthrough = "FAKE_SDLC_DIR FAKE_SDLC_FP FAKE_LOG"; }
         NIX
         mkdir -p "$CK/.claude/agents" "$CK/.claude/skills"
         ln -sfn ../../agents/quality.md "$CK/.claude/agents/quality.md"
@@ -112,8 +112,9 @@
         ASK="Report the SDLC quality state of the checkout $REPO. Run exactly one command: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output. Then answer from its JSON with exactly one line per stage in the form 'STAGE <name>: <state>' followed by one line 'HEAD <sha>' and one line 'ALL_GREEN <true|false>'. Do not run any gate and do not run anything else."
         # Claude honours a PreToolUse allow only from settings-level hooks in this mode (an agent-frontmatter hook alone
         # left every Bash call at the permission prompt in a live run), so the guard is registered the way the launcher does it.
-        # the dispatcher runs from OUTSIDE the agent-writable copy and decides through `devenv tasks run guard:check` inside
-        # the copy, whose guard.nix the .integrity manifest covers (an edit there is refused as tampering), and
+        # the dispatcher runs from OUTSIDE the agent-writable copy; without an installed guard binary it decides through
+        # `devenv tasks run guard:check` inside the copy, so here the copy is trusted (this run proves the harness wiring,
+        # not isolation from an agent that can edit its own checkout), and
         # every invocation is logged so a run without a single guard decision cannot be called guarded
         GUARD="$OUT/guard"; mkdir -p "$GUARD"; cp "$CK/hooks/role-guard-dispatch.sh" "$GUARD/" || { echo "dispatcher copy failed" >&2; exit 2; }; chmod -R a-w "$GUARD"
         # each wrapper line records the guard's exit code and the command it judged (stderr still reaches the harness);

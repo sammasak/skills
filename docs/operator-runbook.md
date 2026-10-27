@@ -6,7 +6,7 @@
 |---|---|---|
 | Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex) | this repo | nixos-config `skills.nix` links every `agents/*.md` into `~/.claude/agents` on devTools hosts, so the roles are ordinary subagents |
 | Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from one writable skills checkout: `$SKILLS_CHECKOUT`, default `~/claude-code-skills` |
-| Guard guard `task-modules/guard.nix` (`guard:check`, `guard:integrity`) behind the dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the installed guard for role agents only, with the checkout as data |
+| Guard library `task-modules/guard-lib.nix` (tasks `guard:check`, `guard:integrity` in `guard.nix`) behind the dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook and builds the library into a store binary it hands over as `ROLE_GUARD_BIN`; without that, the dispatcher runs `guard:check` in the checkout |
 | `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | you (schema in the RFC); an absent file is an empty fleet |
 | State (snapshots, drafts, `audit.jsonl`, `brief/latest.json`) | `~/.local/state/coordinator/` | the tasks |
 
@@ -84,10 +84,15 @@ settings level by `hooks/role-guard-dispatch.sh` (nixos-config installs it
 with the other user-scope hooks): the dispatcher reads the hook input's
 `agent_type` and runs the guard only for role agents (a role is one whose
 `agents/<name>/ROLE.md` ships in the installed copy, or is present in the
-checkout); other agents and the main session are untouched. The guard logic
-comes from the installed copy next to the dispatcher; the checkout only
-supplies the task lists and the devenv project, and its path must be plain
-(`[A-Za-z0-9_./-]`, no `..`, spaces or unicode). A subagent's
+checkout); other agents and the main session are untouched. Where the guard
+logic runs matters: with nixos-config's install the dispatcher runs a
+store-built binary of `task-modules/guard-lib.nix` (`ROLE_GUARD_BIN`), so the
+checkout supplies only `ROLE.md` and `.integrity` and an agent that can write
+the checkout cannot change its guard. Without that install the dispatcher
+falls back to `devenv tasks run guard:check` in the checkout, under its own
+timeout; then the checkout's guard is trusted as-is, so keep it pulled. The
+checkout path must be plain (`[A-Za-z0-9_./-]`, no `..`, spaces or unicode).
+A subagent's
 frontmatter hooks never run (verified 2026-10-27), so the frontmatter hook in
 each adapter only covers the `claude --agent <role>` main-session case. A
 host with the adapters linked but no checkout refuses every role Bash call.

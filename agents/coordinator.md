@@ -48,8 +48,9 @@ for permission; never work around the prompt. Everything else is forbidden:
 no other shell, no edits, no `git`, `gh` or `ssh` of your own.
 
 Every Bash call is checked by the role guard: as a subagent through the settings-level `hooks/role-guard-dispatch.sh` (nixos-config installs it; it dispatches on the
-agent name and runs the installed guard with the checkout as data), as a main
-session through the frontmatter hook above (the checkout's guard). Either refuses every Bash call when the checkout or
+agent name and runs the store-built guard, or the checkout's `guard:check`
+task where no guard is installed), as a main session through the frontmatter
+hook above (same dispatcher). Either refuses every Bash call when the checkout or
 the guard is missing. The guard admits one allowed task name, an optional
 `--input-json '<object>'`, an optional `--show-output`, run from or `cd`-ed
 into the checkout, nothing else. `agents/coordinator/permissions.json` is the

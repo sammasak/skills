@@ -47,6 +47,7 @@ prefix may be dropped when the session already is in the checkout). There are
 no act-class tasks. Every Bash call is checked by the role guard: as a
 subagent through the settings-level
 `hooks/role-guard-dispatch.sh` (dispatches on the agent name and runs the
-installed guard with the checkout as data), as a main session through the
-frontmatter hook above (the checkout's guard); either refuses every Bash call
+store-built guard, or the checkout's `guard:check` task where no guard is
+installed), as a main session through the frontmatter hook above (same
+dispatcher); either refuses every Bash call
 when the checkout or the guard is missing.

@@ -112,7 +112,7 @@
         # agents/<name>/ROLE.md would be an unguarded role
         for adapter in agents/*.md; do
           name=$(basename "$adapter" .md)
-          if grep -qE "validate-(role|$name)\.sh" "$adapter"; then
+          if grep -qE "role-guard-dispatch\.sh|validate-(role|$name)\.sh" "$adapter"; then
             [ -f "agents/$name/ROLE.md" ] && ok || bad "$name: adapter wires a role guard but agents/$name/ROLE.md is missing"
           fi
         done
@@ -127,7 +127,7 @@
         # Negative controls for the Coordinator surface (epic #16 M0): the portable
         # permission rules must not be able to express code changes, pushes, merges,
         # host switches, arbitrary SSH or the act-class herdr:message without a prompt.
-        # Run: bash tests/test-coordinator-negative.sh
+        # Task: skills:test:negative
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"
         # ---- Claude permission-rule emulator (inlined)
@@ -361,9 +361,18 @@
         rm -rf "$STALE"
         # the decision comes from `devenv tasks run guard:check`; a devenv that fails or decides nothing is a block
         CRASH=$(mktemp -d); CLEANUP+=("$CRASH"); mkdir -p "$CRASH/bin"; printf '#!/usr/bin/env bash\nexit 1\n' > "$CRASH/bin/devenv"; chmod +x "$CRASH/bin/devenv"
-        err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$CRASH/bin:$PATH" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard did not decide (devenv rc=1)' <<<"$err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): a failing devenv must map to exit 2"; }
+        err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$CRASH/bin:$PATH" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard did not decide (devenv guard:check rc=1)' <<<"$err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): a failing devenv must map to exit 2"; }
         printf '#!/usr/bin/env bash\nexit 0\n' > "$CRASH/bin/devenv"
         err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" PATH="$CRASH/bin:$PATH" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'guard did not decide' <<<"$err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): a devenv that writes no decision must map to exit 2"; }
+        # a devenv that hangs is cut by the dispatcher's own timeout and refused (a hook that times out would NOT block)
+        printf '#!/usr/bin/env bash\nsleep 30\n' > "$CRASH/bin/devenv"
+        err=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT -u ROLE_GUARD_BIN SKILLS_CHECKOUT="$ROOT" ROLE_GUARD_TIMEOUT=1 PATH="$CRASH/bin:$PATH" "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && grep -q 'timed out' <<<"$err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): a hanging devenv must be refused by the inner timeout ($code '$err')"; }
+        # an installed guard binary takes precedence over devenv: a fake that always allows proves the path is used
+        printf '#!/usr/bin/env bash\ncat >/dev/null; printf %%s "{\\"decision\\":\\"allow\\",\\"reason\\":\\"fake bin $GUARD_ROLE\\"}"\n' > "$CRASH/bin/guard-check"; chmod +x "$CRASH/bin/guard-check"
+        out=$(printf '%s' "$ALLOWED" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" ROLE_GUARD_BIN="$CRASH/bin/guard-check" "$DISPATCH" 2>/dev/null); code=$?; [ "$code" -eq 0 ] && [ "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$out")" = "fake bin coordinator" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): ROLE_GUARD_BIN must be preferred over devenv ($code '$out')"; }
+        # ROLE_GUARD_AGENT guards a call whose agent_type is not a role (main-session adapters), and a non-role forced name stays a no-op
+        out=$(jq -cn '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:"echo hi"}}' | env -u COORDINATOR_CHECKOUT -u ROLE_GUARD_BIN SKILLS_CHECKOUT="$ROOT" ROLE_GUARD_AGENT=coordinator "$DISPATCH" 2>&1 >/dev/null); code=$?; [ "$code" -eq 2 ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): ROLE_GUARD_AGENT=coordinator must guard a main-session call ($code '$out')"; }
+        out=$(jq -cn '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:"echo hi"}}' | env -u COORDINATOR_CHECKOUT -u ROLE_GUARD_BIN SKILLS_CHECKOUT="$ROOT" ROLE_GUARD_AGENT=code-reviewer "$DISPATCH" 2>&1); code=$?; [ "$code" -eq 0 ] && [ -z "$out" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): a non-role ROLE_GUARD_AGENT must stay a no-op ($code '$out')"; }
         # a copy of the tree without the coordinator contract: the dispatcher refuses before devenv runs
         rm -rf "''${CRASH:?}/bin"; cp -r "$ROOT/hooks" "$CRASH/hooks"; cp -r "$ROOT/agents" "$CRASH/agents"
         # an adapter that wires a role guard but ships no contract directory is refused, not silently un-guarded
@@ -470,7 +479,7 @@
         else echo "note: yq missing, role-list behaviour cases skipped"; fi
         # integrity: a checkout with an .integrity manifest refuses every call once a guarded file changes; managed sessions
         # need manifest AND pin; refusals are checked by their reason, not just by the absence of a decision
-        ITMP=$(mktemp -d); CLEANUP+=("$ITMP"); git -C "$ROOT" archive --format=tar HEAD | tar -x -C "$ITMP"; cp -r "$ROOT/hooks/." "$ITMP/hooks/"; cp "$ROOT/task-modules/guard.nix" "$ITMP/task-modules/guard.nix"   # the guard under test is the working tree's
+        ITMP=$(mktemp -d); CLEANUP+=("$ITMP"); git -C "$ROOT" archive --format=tar HEAD | tar -x -C "$ITMP"; cp -r "$ROOT/hooks/." "$ITMP/hooks/"; cp "$ROOT/task-modules/guard.nix" "$ROOT/task-modules/guard-lib.nix" "$ITMP/task-modules/"   # the guard under test is the working tree's
         mkdir -p "$ITMP/.claude" && echo '{}' > "$ITMP/.claude/settings.json"
         # shellcheck disable=SC2046  # the roots file is a space-free word list
         manifest() { ( cd "$ITMP" && find -L $(cat hooks/lib/integrity-paths) -type f -print0 2>/dev/null | sort -z | xargs -0 sha256sum > .integrity ); }
@@ -504,6 +513,12 @@
         mv "$ITMP/.integrity.orig" "$ITMP/.integrity"; cp "$ITMP/.integrity" "$ITMP/.integrity.orig"
         cp "$ITMP/task-modules/guard.nix" "$ITMP/task-modules/guard.nix.bak"; sed -i 's#  task-modules/guard\.nix$#  task-modules/guard.nix.bak#' "$ITMP/.integrity"; pc 1 "suffix near miss (guard.nix.bak does not cover guard.nix)" "$ITMP" -
         mv "$ITMP/.integrity.orig" "$ITMP/.integrity"; rm -f "$ITMP/devenvXnix" "$ITMP/task-modules/guard.nix.bak"; pc 0 "manifest restored again" "$ITMP" "$pin"
+        # the guard:integrity task wires the same predicate: intact -> exit 0 and intact:true; tampered -> exit 1 with the reason
+        gi() { ( cd "$ITMP" && devenv tasks run guard:integrity --input-json "$1" --show-output ) > "$ITMP/gi.log" 2>&1; echo $?; }
+        [ "$(gi "$(jq -cn --arg p "$pin" '{pin:$p, roles:["coordinator"]}')")" = 0 ] && grep -q '"intact":true' "$ITMP/gi.log" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(task): guard:integrity must report intact on the fresh copy ($(tail -3 "$ITMP/gi.log"))"; }
+        echo '# t' >> "$ITMP/devenv.yaml"
+        [ "$(gi "$(jq -cn --arg p "$pin" '{pin:$p, roles:["coordinator"]}')")" != 0 ] && grep -q '"intact":false' "$ITMP/gi.log" && grep -q 'integrity check failed' "$ITMP/gi.log" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(task): guard:integrity must refuse a changed listed file ($(tail -3 "$ITMP/gi.log"))"; }
+        git -C "$ROOT" show HEAD:devenv.yaml > "$ITMP/devenv.yaml" 2>/dev/null || cp "$ROOT/devenv.yaml" "$ITMP/devenv.yaml"
         ghook "without a valid integrity pin" COORDINATOR_REQUIRE_INTEGRITY=1
         mv "$ITMP/.integrity" "$ITMP/.integrity.bak"; ghook "no .integrity manifest" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"; ghook "no .integrity manifest" COORDINATOR_INTEGRITY_SHA256="$pin"; mv "$ITMP/.integrity.bak" "$ITMP/.integrity"
         echo '# tampered' >> "$ITMP/agents/coordinator/tasks.nix"; manifest; ghook "does not match the pinned hash" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin"
