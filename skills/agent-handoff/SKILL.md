@@ -16,12 +16,14 @@ fixed; skipping a step is a boundary violation.
    `session_id`** from the inventory record so the send is bound to that
    agent, not just its pane:
    `devenv tasks run coord:handoff --input-json '{"machine":"<label>","agent_id":"<id>","session_id":"<session>","task_ref":"#N","scope":"...","expected_evidence":"...","acceptance":"...","allowed_actions":["comment","deploy:none"],"owner_input":"..."}'`
-   `allowed_actions` is required: a non-empty list of distinct entries from
-   `merge`, `close`, `label`, `comment`, `deploy:none`, `deploy:<host>`
-   (`deploy:none` excludes `deploy:<host>`). It is rendered into the brief as
-   the `Allowed actions:` line, so the agent reads what it may do on this
-   handoff; anything not listed stays forbidden. Reading, committing and
-   opening a PR are always implied. `scope`, `expected_evidence`,
+   `allowed_actions` is required: a non-empty list (at most 8) of distinct
+   entries from `merge`, `close`, `label`, `comment`, `deploy:none`,
+   `deploy:<host>` (`deploy:none` excludes `deploy:<host>`). The task puts
+   it in canonical order (merge, close, label, comment, deploy:* by host),
+   so the same set always gives the same `handoff_id`, and renders it into
+   the brief as the `Allowed actions:` line, which also tells the agent that
+   reading, committing and opening a PR are always implied and that anything
+   else, deleting included, is not allowed. `scope`, `expected_evidence`,
    `acceptance` and `owner_input` take up to 4000 characters each.
    Show the owner the returned `text`, `handoff_id` and target (`host` is the
    machine label, or this hostname) verbatim. Nothing has been sent.
@@ -29,7 +31,11 @@ fixed; skipping a step is a boundary violation.
    `handoff_id` may go to this `host/agent_id`. Silence, "looks good", or a
    general "go ahead" from earlier does not count. Note the GitHub issue (or
    PR) URL and the label the owner applied there for this handoff: the send
-   records them as `authorized_by`.
+   records them as `authorized_by`. If the owner has not named an issue URL
+   and a label, ask; never infer or invent one. The authorizing issue is
+   usually the handoff's `task_ref`, but it may be a tracker the owner gates
+   from. This slice records it as stated (`verified: false`); a later slice
+   checks the label through `gh`.
 4. **Send** with `herdr:message` (prompts for permission every time), the
    confirm string being exactly the draft's `host/agent_id` and
    `authorized_by` naming the issue URL and owner label:

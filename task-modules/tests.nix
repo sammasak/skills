@@ -140,19 +140,20 @@
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"wrong/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_confirmed ] && ok || bad "wrong confirm refused"
         # authorized_by (issue URL + owner label) is required and checked before any herdr call
-        for bad_auth in "" ',"authorized_by":"label"' ',"authorized_by":{"label":"assign:implementer"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7"}' ',"authorized_by":{"issue_url":"https://example.com/sammasak/skills/issues/7","label":"assign:implementer"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"bad\\nlabel"}'; do
+        for bad_auth in "" ',"authorized_by":"label"' ',"authorized_by":{"label":"assign:implementer"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7"}' ',"authorized_by":{"issue_url":"https://example.com/sammasak/skills/issues/7","label":"assign:implementer"}' \
+            ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"bad\nlabel"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"lbl\n"}' ',"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7\n","label":"assign:implementer"}'; do
           run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"$bad_auth}"
           [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q authorized_by && [ ! -s "$FAKE_LOG" ] && ok || bad "authorized_by '$bad_auth' refused before herdr ($OUT)"
         done
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr .machine)" = acer-swift ] && ok || bad "send: $CODE $OUT"
         AID=$(jqr .audit_id)
-        [ "$(jqr '.allowed_actions | join(",")')" = "comment,deploy:none" ] && [ "$(jqr .authorized_by.label)" = "assign:implementer" ] && [ "$(jqr .authorized_by.issue_url)" = "https://github.com/sammasak/skills/issues/7" ] && ok || bad "send record carries allowed_actions and authorized_by"
+        [ "$(jqr '.allowed_actions | join(",")')" = "comment,deploy:none" ] && [ "$(jqr .authorized_by.label)" = "assign:implementer" ] && [ "$(jqr .authorized_by.issue_url)" = "https://github.com/sammasak/skills/issues/7" ] && [ "$(jqr .authorized_by.verified)" = false ] && ok || bad "send record carries allowed_actions and authorized_by (unverified)"
         grep -q '^herdr(machine=acer-swift) agent get wA:p2' "$FAKE_LOG" && grep -q '^herdr(machine=acer-swift) agent prompt wA:p2' "$FAKE_LOG" && ok || bad "send went through --machine"
-        grep -q 'fix the docs typo' "$FAKE_PROMPT_OUT" && grep -q '^Allowed actions: comment, deploy:none$' "$FAKE_PROMPT_OUT" && ok || bad "prompt text and allowed-actions line delivered"
+        grep -q 'fix the docs typo' "$FAKE_PROMPT_OUT" && grep -q '^Allowed actions: comment, deploy:none\. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed\.$' "$FAKE_PROMPT_OUT" && ok || bad "prompt text and allowed-actions line delivered"
         [ "$(grep -c '"phase":"attempt"' "$TMP/state/audit.jsonl")" = 1 ] && [ "$(grep -c '"outcome":"delivered"' "$TMP/state/audit.jsonl")" = 1 ] && ok || bad "audit attempt+outcome"
         ATT=$(jq -c 'select(.phase == "attempt")' "$TMP/state/audit.jsonl")
-        [ "$(jq -r '.allowed_actions | join(",")' <<<"$ATT")" = "comment,deploy:none" ] && [ "$(jq -r '.authorized_by.issue_url + " " + .authorized_by.label' <<<"$ATT")" = "https://github.com/sammasak/skills/issues/7 assign:implementer" ] && ok || bad "audit attempt records allowed_actions and authorized_by ($ATT)"
+        [ "$(jq -r '.allowed_actions | join(",")' <<<"$ATT")" = "comment,deploy:none" ] && [ "$(jq -r '.authorized_by.issue_url + " " + .authorized_by.label + " " + (.authorized_by.verified|tostring)' <<<"$ATT")" = "https://github.com/sammasak/skills/issues/7 assign:implementer false" ] && ok || bad "audit attempt records allowed_actions and authorized_by ($ATT)"
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = duplicate ] && grep -q "$AID" <<<"$(jqr .error.message)" && ok || bad "duplicate refused naming the audit id"
         # an edited draft (retargeted machine, changed text or widened actions) no longer matches its content-addressed id: refused before any herdr call

@@ -102,15 +102,18 @@ in
         valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$ctx"
         [[ "$ref" =~ ^#[0-9]+$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
         for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 4000 ] || fail 3 invalid_input "a field exceeds 4000 characters" "$ctx"; done
-        # allowed_actions: a non-empty list of distinct actions the agent may take beyond reading and committing;
-        # the owner's "do not merge, deploy or delete" is now spelled per handoff. deploy:none excludes deploy:<host>.
-        actions=$(jq -c 'if type == "array" and length > 0 and all(.[]; type == "string" and test("^(merge|close|label|comment|deploy:none|deploy:[A-Za-z0-9_][A-Za-z0-9_.-]*)$")) and (length == (unique | length))
-            and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1)) then . else empty end' <<<"$actions") \
-          || fail 3 invalid_input "allowed_actions is not a JSON list" "$ctx"
-        [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
+        # allowed_actions: a non-empty list (at most 8) of distinct actions the agent may take beyond reading, committing and
+        # opening a PR, which are always implied; the owner's "do not merge, deploy or delete" is now spelled per handoff.
+        # deploy:none excludes deploy:<host>. Canonical order (merge, close, label, comment, deploy:* by host) so the same
+        # set always renders and hashes the same. \z, not $: in jq's regexes $ also matches before a trailing newline.
+        actions=$(jq -c 'if type == "array" and length > 0 and length <= 8
+            and all(.[]; type == "string" and test("^(merge|close|label|comment|deploy:none|deploy:[A-Za-z0-9_][A-Za-z0-9_.-]{0,62})\\z") and ((ascii_downcase != "deploy:none") or (. == "deploy:none")))
+            and (length == (unique | length)) and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1))
+            then sort_by([(if . == "merge" then 0 elif . == "close" then 1 elif . == "label" then 2 elif . == "comment" then 3 else 4 end), .]) else empty end' <<<"$actions")
+        [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
         actions_line=$(jq -r 'join(", ")' <<<"$actions")
         at=$(now_iso)
-        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s\n%s\nReply in this pane when done, naming the commit or PR.\n' \
+        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s\nReply in this pane when done, naming the evidence above.\n' \
           "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
         id=$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"

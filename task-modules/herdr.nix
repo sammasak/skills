@@ -89,9 +89,11 @@ in
         auth=$(jq -c '.authorized_by // empty' <<<"''${DEVENV_TASK_INPUT:-{\}}")
         ctx=$(jq -cn --arg i "$id" '{task:"herdr:message",handoff_id:$i}')
         [[ "$id" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "handoff_id must be a 12-hex coord:handoff id" "$ctx"
-        # authorized_by names the GitHub gate: the issue (or PR) URL and the label the owner put on it for this handoff
-        auth=$(jq -c 'if type == "object" and (.issue_url | type) == "string" and (.issue_url | test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[0-9]+$"))
-            and (.label | type) == "string" and (.label | test("^[A-Za-z0-9_:./ -]{1,50}$")) then {issue_url, label} else empty end' <<<"''${auth:-null}") || auth=""
+        # authorized_by names the GitHub gate: the issue (or PR) URL and the label the owner put on it for this handoff.
+        # Recorded as the owner stated it (verified:false): a later slice checks the label through gh. \z, not $ (jq's $ also
+        # matches before a trailing newline).
+        auth=$(jq -c 'if type == "object" and (.issue_url | type) == "string" and (.issue_url | test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[0-9]+\\z"))
+            and (.label | type) == "string" and (.label | test("^[A-Za-z0-9_:./ -]{1,50}\\z")) then {issue_url, label, verified:false} else empty end' <<<"''${auth:-null}") || auth=""
         [ -n "$auth" ] || fail 3 invalid_input "authorized_by is required: {\"issue_url\":\"https://github.com/OWNER/REPO/issues/N\",\"label\":\"<label the owner applied>\"}" "$ctx"
         draft="${cfg.stateDir}/handoffs/$id.json"
         [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"

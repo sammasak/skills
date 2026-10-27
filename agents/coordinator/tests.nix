@@ -72,17 +72,20 @@
         ID=$(jqr .handoff_id); [[ "$ID" =~ ^[a-f0-9]{12}$ ]] && ok || bad "handoff id"
         [ "$(jqr .host)" = acer-swift ] && [ "$(jqr .machine)" = acer-swift ] && [ "$(jqr .approval_required)" = true ] && ok || bad "handoff fields"
         [ "$(jqr '.allowed_actions | join(",")')" = "comment,deploy:none" ] && ok || bad "allowed_actions recorded on the draft"
-        jqr .text | grep -q 'Assignment #7 for acer-swift/wA:p2' && jqr .text | grep -q '^Allowed actions: comment, deploy:none$' && jqr .text | grep -q 'Reply in this pane when done' && ok || bad "handoff text"
-        ! jqr .text | grep -q 'Do not merge' && ok || bad "fixed footer gone"
+        jqr .text | grep -q 'Assignment #7 for acer-swift/wA:p2' && jqr .text | grep -q '^Allowed actions: comment, deploy:none\. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed\.$' && jqr .text | grep -q '^Reply in this pane when done, naming the evidence above\.$' && ok || bad "handoff text"
+        ! jqr .text | grep -q 'Do not merge' && ! jqr .text | grep -q 'naming the commit or PR' && ok || bad "fixed footer gone"
         [ -f "$TMP/state/handoffs/$ID.json" ] && ok || bad "draft saved"
         [ ! -s "$FAKE_LOG" ] && ok || bad "handoff must not call herdr"
         run coord:handoff --input-json '{"machine":"acer-swift","agent_id":"wA:p2","session_id":"sess-1","task_ref":"#7","scope":"fix typo","expected_evidence":"commit","acceptance":"typo gone","allowed_actions":["comment","deploy:none"],"owner_input":"none"}'
         [ "$(jqr .handoff_id)" = "$ID" ] && ok || bad "same content => same id"
         run coord:handoff --input-json '{"machine":"acer-swift","agent_id":"wA:p2","session_id":"sess-1","task_ref":"#7","scope":"fix typo","expected_evidence":"commit","acceptance":"typo gone","allowed_actions":["merge","deploy:none"],"owner_input":"none"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .handoff_id)" != "$ID" ] && ok || bad "different allowed_actions => different id"
-        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","close","label","comment","deploy:acer-swift"]}'
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["deploy:msi","comment","label","deploy:acer-swift","close","merge"]}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .machine)" = null ] && [ "$(jqr .host)" = "$(hostname -s 2>/dev/null || hostname)" ] && ok || bad "local handoff: host is this host, machine null"
-        jqr .text | grep -q '^Allowed actions: merge, close, label, comment, deploy:acer-swift$' && ok || bad "every allowed action rendered in order"
+        ID_LOCAL=$(jqr .handoff_id)
+        jqr .text | grep -q '^Allowed actions: merge, close, label, comment, deploy:acer-swift, deploy:msi\. ' && [ "$(jqr '.allowed_actions | join(",")')" = "merge,close,label,comment,deploy:acer-swift,deploy:msi" ] && ok || bad "actions rendered and recorded in canonical order"
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","close","label","comment","deploy:acer-swift","deploy:msi"]}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr .handoff_id)" = "$ID_LOCAL" ] && ok || bad "same actions in another order => same id"
         run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "task_ref must be #N"
         run coord:handoff --input-json '{"machine":"a b","agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
@@ -92,7 +95,9 @@
         # allowed_actions: required, a non-empty list of distinct known entries; deploy:none excludes deploy:<host>
         run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q allowed_actions && ok || bad "missing allowed_actions rejected"
-        for bad_actions in '[]' '"merge"' '["merge","deploy"]' '["delete"]' '["merge","merge"]' '["deploy:none","deploy:acer-swift"]' '["deploy:a b"]'; do
+        LONGHOST=$(printf 'h%.0s' $(seq 1 64))
+        for bad_actions in '[]' '"merge"' '["merge","deploy"]' '["delete"]' '["merge","merge"]' '["deploy:none","deploy:acer-swift"]' '["deploy:a b"]' \
+            '["deploy:none\n","deploy:acer-swift"]' '["merge","merge\n"]' '["comment\n"]' '["deploy:NONE"]' '["merge","close","label","comment","deploy:a","deploy:b","deploy:c","deploy:d","deploy:e"]' "[\"deploy:$LONGHOST\"]"; do
           run coord:handoff --input-json "{\"agent_id\":\"wF:p1\",\"task_ref\":\"#7\",\"scope\":\"s\",\"expected_evidence\":\"e\",\"acceptance\":\"a\",\"allowed_actions\":$bad_actions}"
           [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "allowed_actions $bad_actions rejected"
         done

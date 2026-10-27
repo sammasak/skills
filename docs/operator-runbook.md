@@ -37,12 +37,15 @@ tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message attemp
 To hand work over: the coordinator drafts (`coord:handoff`) with the
 `allowed_actions` the agent may take on that handoff (`merge`, `close`,
 `label`, `comment`, `deploy:none`, `deploy:<host>`; the brief shows them as
-its `Allowed actions:` line, and everything not listed stays forbidden), you
-confirm the `handoff_id` and target in the conversation and name the GitHub
-issue URL and label that authorize it, it sends (`herdr:message` with
+its `Allowed actions:` line, which also says that reading, committing and
+opening a PR are implied and everything else, deleting included, stays
+forbidden), you confirm the `handoff_id` and target in the conversation and
+name the GitHub issue URL and label that authorize it (the coordinator asks
+when you have not; it never invents one), it sends (`herdr:message` with
 `authorized_by`, which Claude Code prompts for), awaits (`herdr:await`), and
 verifies with `work:status`. Every attempt in `audit.jsonl` records
-`allowed_actions` and `authorized_by`. "delivered" is not "done"; only a
+`allowed_actions` and `authorized_by` (as stated, `verified: false`; the
+label is not yet checked through `gh`). "delivered" is not "done"; only a
 merged PR for the agent's `#N` in its own repo makes `work_verdict: verified`.
 
 Keep the checkout current (`git -C ~/claude-code-skills pull`): the tasks and
