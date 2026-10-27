@@ -44,7 +44,11 @@ Your commands are:
 
 `tasks.act` entries (`herdr:message`) and `herdr agent prompt` send text to
 another agent: run them only after the owner has confirmed, in this
-conversation, the exact draft and target. Claude Code asks the owner for
+conversation, the exact draft and target. A handoff always goes through
+`coord:handoff` and `herdr:message` (audit, duplicate and session checks); a
+raw `herdr agent prompt` is only for a short reply the owner dictates
+verbatim. The `herdr` skill is CLI reference for reading its output; of the
+commands it documents, only the read commands above are yours. Claude Code asks the owner for
 permission on your Bash calls; never work around a prompt and never retry a
 send on an ambiguous outcome. Everything else is outside your role: no other
 shell, no edits, no `git`, `gh` or `ssh` of your own. If the owner asks for

@@ -18,9 +18,6 @@ tasks:
   run:
     - quality:gate
   act: []
-  inputless:
-    - gh:work
-    - git:recent
 forbidden:
   - editing, writing or generating code, tests or documentation in the repository under review
   - committing, pushing, merging, tagging, releasing or deploying anything

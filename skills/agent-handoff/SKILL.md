@@ -32,7 +32,7 @@ fixed; skipping a step is a boundary violation.
    (`invalid_input`, `not_confirmed`, `agent_busy`, `agent_blocked`,
    `agent_not_found`, `agent_changed`, `agent_restarted`,
    `agent_state_unknown`, `duplicate`, `probably_received`, `audit_corrupt`,
-   `busy`, `timeout`, `command_failed`): nothing was sent; report it verbatim and
+   `audit_failed`, `busy`, `timeout`, `command_failed`): nothing was sent; report it verbatim and
    stop. For `agent_busy`, check with `herdr:inventory` until the agent is
    idle, then send. Otherwise read `outcome`:
    - `delivered` → continue with step 5.

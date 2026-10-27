@@ -46,7 +46,6 @@
           [ "$(jq -r .name <<<"$fm")" = "$role" ] && ok || bad "$role: name != directory"
           [ "$(jq -r .version <<<"$fm")" = "1" ] && ok || bad "$role: version must be 1"
           jq -e '(.tasks.read | type == "array" and length > 0) and (.tasks.act | type == "array") and (.skills | type == "array" and length > 0)' <<<"$fm" >/dev/null && ok || bad "$role: tasks.read, tasks.act and skills must be lists"
-          jq -e '.tasks.inputless | type == "array" and length > 0' <<<"$fm" >/dev/null && ok || bad "$role: tasks.inputless must be a non-empty list"
 
           for s in $(jq -r '.skills[]' <<<"$fm"); do
             [ -f "skills/$s/SKILL.md" ] && ok || bad "$role: skill $s missing"
@@ -55,10 +54,6 @@
             grep -qxF "$t" <<<"$TASKS" && ok || bad "$role: task $t not in devenv tasks list"
           done
           [ "$(jq '.forbidden|length' <<<"$fm")" -ge 5 ] && ok || bad "$role: forbidden list too short"
-
-          for t in $(jq -r '.tasks.inputless[]?' <<<"$fm"); do
-            jq -e --arg t "$t" '.tasks.read | index($t)' <<<"$fm" >/dev/null && ok || bad "$role: inputless task $t is not a read task"
-          done
 
           for adapter in $(jq -r '.adapters[]' <<<"$fm"); do
             case "$adapter" in

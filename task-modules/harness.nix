@@ -27,7 +27,7 @@ in
       case "$harness" in
         claude) remote_cmd="f=${cfg.claudeProjectsDir}/$slug/$sid.jsonl; [ -r \"\$f\" ] || exit 44; tail -n $tail_n \"\$f\"" ;;
         pi)     remote_cmd="d=${cfg.piSessionsDir}/-$slug--; f=\$(ls -t \"\$d\"/*_$sid.jsonl 2>/dev/null | head -1); [ -n \"\$f\" ] || exit 44; tail -n $tail_n \"\$f\"" ;;
-        codex)  fail 2 unsupported "codex keeps no readable session store on the fleet yet" "$ctx" ;;
+        codex)  fail 2 unsupported "codex keeps no readable session store here" "$ctx" ;;
         *)      fail 3 invalid_input "harness must be claude, pi or codex" "$ctx" ;;
       esac
       at=$(now_iso); rc=0
