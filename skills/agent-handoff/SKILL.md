@@ -35,8 +35,11 @@ fixed; skipping a step is a boundary violation.
    and a label, ask; never infer or invent one. The authorizing issue is
    usually the handoff's `task_ref`, but it may be a tracker the owner gates
    from. The send fetches that issue's labels through `gh` and refuses with
-   `authorization_missing` when the label is not there; never add it
-   yourself (`gh:label`) to get past that, the label is the owner's act.
+   `authorization_missing` when the label is not there, when it is one the
+   coordinator writes (`needs-decision`, `blocked`, `needs-live`), or when
+   the audit log shows a `gh:label` act added it. The label is the owner's
+   act; the record keeps who applied it and when (`labeled_by`,
+   `labeled_at`, from the issue's label events, null when not found).
 4. **Send** with `herdr:message` (prompts for permission every time), the
    confirm string being exactly the draft's `host/agent_id` and
    `authorized_by` naming the issue URL and owner label:
@@ -49,8 +52,8 @@ fixed; skipping a step is a boundary violation.
    `authorized_by`, `authorization_missing` (the label is not on the issue),
    `gh_error` (the labels could not be read; not treated as present), and a
    second send of the same `handoff_id`. The audit record (`audit.jsonl`)
-   carries `allowed_actions` and `authorized_by` (`verified: true` with
-   `verified_at`) for every attempt. A refusal before sending has no `outcome`, only `error.kind`
+   carries `allowed_actions` and `authorized_by` (`verified: true`,
+   `verified_at`, `labeled_by`, `labeled_at`) for every attempt. A refusal before sending has no `outcome`, only `error.kind`
    (`invalid_input`, `not_confirmed`, `authorization_missing`, `gh_error`,
    `agent_busy`, `agent_blocked`,
    `agent_not_found`, `agent_changed`, `agent_restarted`,
@@ -79,14 +82,16 @@ fixed; skipping a step is a boundary violation.
 ## GitHub writes (`gh:label`, `gh:comment`)
 
 The coordinator's only other acts. Each is bounded to one issue or PR and
-appends one `phase: gh` line to the same `audit.jsonl`, naming the
-`handoff_id` it serves or a `reason`:
+appends two `phase: gh` lines to the same `audit.jsonl` (`stage: attempt`
+before the write, `stage: outcome` after), naming the `handoff_id` it serves
+or a `reason`:
 `devenv tasks run gh:label --input-json '{"repo":"OWNER/REPO","number":N,"label":"blocked","action":"add","handoff_id":"<id>"}'`
-(labels: `needs-decision`, `blocked`, `needs-live`, `approved`; actions:
-`add`, `remove`) and
+(labels: `needs-decision`, `blocked`, `needs-live`, never a label that
+authorizes a send; actions: `add`, `remove`) and
 `devenv tasks run gh:comment --input-json '{"repo":"OWNER/REPO","number":N,"body":"...","reason":"..."}'`
-(body up to 4000 characters). The task signs every comment
-`-- Coordinator (automated; not the owner)`. A comment reports, quotes or
+(body up to 4000 characters). The task ends every comment with the one
+signature `-- Coordinator (automated; not the owner)`, replacing any
+`-- Coordinator` line the body already had. A comment reports, quotes or
 asks; it never answers, decides, approves or promises in the owner's name.
 Both run only after the owner confirmed, in this conversation, the exact
 label or text and its issue. A `gh` failure is recorded in the audit line and

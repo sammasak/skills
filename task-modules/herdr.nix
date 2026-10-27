@@ -106,15 +106,27 @@ in
         valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$ctx"
         [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "draft machine label has unsafe characters" "$ctx"
         # the GitHub gate: the named label must be on the issue now (the issues API serves PR labels too); nothing is
-        # sent otherwise, and a gh failure is reported, never treated as present
-        gh_path=$(jq -r '.issue_url | sub("^https://github\\.com/"; "repos/") | sub("/pull/"; "/issues/")' <<<"$auth"); want_label=$(jq -r .label <<<"$auth")
-        errf=$(mktemp); rc=0; labels=$(timeout -k 1 ${t} ${cfg.ghCommand} api "$gh_path/labels" 2>"$errf") || rc=$?
-        gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
-        [ "$rc" -eq 0 ] || fail 2 gh_error "could not read the labels of $(jq -r .issue_url <<<"$auth"): gh api exited $rc''${gherr:+: $gherr}; not sending" "$ctx"
-        jq -e --arg l "$want_label" 'type == "array" and any(.[]; (.name // "") == $l)' <<<"$labels" >/dev/null 2>&1 \
-          || fail 2 authorization_missing "label '$want_label' is not on $(jq -r .issue_url <<<"$auth") (present: $(jq -r 'if type == "array" then map(.name // empty) | join(", ") else "unreadable" end' <<<"$labels" 2>/dev/null)); the owner has not authorized this handoff, not sending" "$ctx"
-        auth=$(jq -c --arg at "$(now_iso)" '. + {verified:true, verified_at:$at}' <<<"$auth")
+        # sent otherwise, and a gh failure is reported, never treated as present. The label must be one the coordinator
+        # cannot write (gh:label's vocabulary is refused) and must not have been added by a gh:label act in the audit log.
+        want_label=$(jq -r .label <<<"$auth"); want_url=$(jq -r .issue_url <<<"$auth")
+        case "$want_label" in needs-decision|blocked|needs-live) fail 2 authorization_missing "label '$want_label' is one the coordinator writes itself (gh:label); it cannot authorize a send. The owner applies the authorizing label" "$ctx" ;; esac
+        gh_path=$(jq -r '.issue_url | sub("^https://github\\.com/"; "repos/") | sub("/pull/(?<n>[0-9]+)\\z"; "/issues/\(.n)")' <<<"$auth")
+        [[ "$gh_path" =~ ^repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$ ]] && [[ "$gh_path" != */./* ]] && [[ "$gh_path" != */../* ]] || fail 3 invalid_input "authorized_by.issue_url does not name OWNER/REPO and an issue or PR number" "$ctx"
         audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
+        gh_repo=$(sed -E 's#^repos/([^/]+/[^/]+)/issues/.*#\1#' <<<"$gh_path"); gh_num=$(sed -E 's#.*/issues/([0-9]+)$#\1#' <<<"$gh_path")
+        if [ -s "$audit" ] && jq -e --arg r "$gh_repo" --argjson n "$gh_num" --arg l "$want_label" \
+            'select(.phase == "gh" and .task == "gh:label" and .action == "add" and .repo == $r and .number == $n and .label == $l and (.stage // "outcome") != "attempt" and (.outcome // "done") != "command_failed" and (.outcome // "done") != "timeout")' "$audit" 2>/dev/null | grep -q .; then
+          fail 2 authorization_missing "label '$want_label' on $want_url was added by the coordinator (gh:label, see $audit); it cannot authorize a send" "$ctx"
+        fi
+        errf=$(mktemp); rc=0; labels=$(timeout -k 1 ${t} ${cfg.ghCommand} api "$gh_path/labels?per_page=100" 2>"$errf") || rc=$?
+        gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+        [ "$rc" -eq 0 ] || fail 2 gh_error "could not read the labels of $want_url: gh api exited $rc''${gherr:+: $gherr}; not sending" "$ctx"
+        jq -e --arg l "$want_label" 'type == "array" and any(.[]; (.name // "") == $l)' <<<"$labels" >/dev/null 2>&1 \
+          || fail 2 authorization_missing "label '$want_label' is not on $want_url (present: $(jq -r 'if type == "array" then map(.name // empty) | join(", ") else "unreadable" end' <<<"$labels" 2>/dev/null)); the owner has not authorized this handoff, not sending" "$ctx"
+        # who applied it and when, from the issue's label events (best effort: a missing or paginated-away event is null, not a refusal)
+        events=$(timeout -k 1 ${t} ${cfg.ghCommand} api "$gh_path/events?per_page=100" 2>/dev/null) || events="[]"
+        ev=$(jq -c --arg l "$want_label" 'if type == "array" then ([.[] | select(.event == "labeled" and (.label.name // "") == $l)] | last // null) else null end | if . == null then {labeled_at:null, labeled_by:null} else {labeled_at:(.created_at // null), labeled_by:(.actor.login // null)} end' <<<"$events" 2>/dev/null) || ev='{"labeled_at":null,"labeled_by":null}'
+        auth=$(jq -c --arg at "$(now_iso)" --argjson ev "$ev" '. + {verified:true, verified_at:$at} + $ev' <<<"$auth")
         exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another herdr:message holds the audit lock" "$ctx"
         [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 \
           || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"

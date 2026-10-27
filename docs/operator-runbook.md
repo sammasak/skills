@@ -50,12 +50,15 @@ attempt in `audit.jsonl` records `allowed_actions` and `authorized_by`
 PR for the agent's `#N` in its own repo makes `work_verdict: verified`.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of
-`needs-decision`, `blocked`, `needs-live`, `approved` on one issue or PR) and
+`needs-decision`, `blocked`, `needs-live` on one issue or PR) and
 `gh:comment` (one comment, at most 4000 characters, signed `Coordinator`;
 it never speaks as you). Both need the `handoff_id` they serve or a `reason`,
-and append a `phase: gh` line to the same `audit.jsonl`. The label that
-authorizes a send is yours to apply; the coordinator refuses to add it to get
-past `authorization_missing`.
+and append two `phase: gh` lines (attempt, outcome) to the same
+`audit.jsonl`. The label that authorizes a send is yours to apply and must
+be one the coordinator cannot write: `herdr:message` refuses the three
+labels above as authorization, and any label its own audit log says it
+added. The record keeps who applied the label and when, from the issue's
+label events.
 
 Keep the checkout current (`git -C ~/claude-code-skills pull`): the tasks and
 contracts the subagent uses are the ones in that working tree.

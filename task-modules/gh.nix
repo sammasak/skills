@@ -1,5 +1,7 @@
 # gh:* act tasks: the coordinator's only writes to GitHub. Each one is bounded to a single issue or PR, carries the
-# handoff it serves (or a reason), and appends one line to the same audit.jsonl herdr:message writes.
+# handoff it serves (or a reason), and appends two lines (attempt, then outcome) to the same audit.jsonl herdr:message
+# writes. The label vocabulary deliberately excludes the labels that authorize a send (see herdr:message): the
+# coordinator must not be able to label an issue into authorizing its own handoff.
 { lib, config, ... }:
 let
   cfg = config.coordinator;
@@ -9,6 +11,7 @@ let
     ${cfg.prelude}
     repo=$(input .repo); num=$(input .number); hid=$(input .handoff_id); reason=$(input .reason)
     [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail 3 invalid_input "repo must be OWNER/REPO" "$ctx"
+    case "$repo" in ./*|../*|*/.|*/..) fail 3 invalid_input "repo segments may not be . or .." "$ctx" ;; esac
     [[ "$num" =~ ^[1-9][0-9]{0,8}$ ]] || fail 3 invalid_input "number must be the issue or PR number" "$ctx"
     ctx=$(jq -c --arg r "$repo" --argjson n "$num" '. + {repo:$r, number:$n}' <<<"$ctx")
     # exactly one of handoff_id (an existing coord:handoff draft) or reason (free text, bounded) says why
@@ -25,9 +28,15 @@ let
       || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to act until the owner inspects $audit" "$ctx"
     aid=$(printf '%s|%s|%s' "$ctx" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
     why=$(jq -cn --arg h "$hid" --arg r "$reason" '{handoff_id:(if $h == "" then null else $h end), reason:(if $r == "" then null else $r end)}')
-    # <outcome> <extra-json>: the audit line is written whatever gh did; the record repeats it
-    record() { jq -cn --arg a "$aid" --arg at "$at" --argjson c "$ctx" --argjson w "$why" --arg o "$1" --argjson x "$2" \
-        '{audit_id:$a, phase:"gh"} + $c + $w + {at:$at, outcome:$o} + $x' >> "$audit" || fail 2 audit_failed "could not write the audit line" "$ctx"
+    # attempt line before the GitHub write, outcome line after (from the EXIT trap, so a kill mid-write still leaves
+    # "interrupted"): a label or comment never exists on GitHub without a trace here
+    attempt() { # <extra-json>: what is about to be written
+      jq -cn --arg a "$aid" --arg at "$at" --argjson c "$ctx" --argjson w "$why" --argjson x "$1" \
+        '{audit_id:$a, phase:"gh", stage:"attempt"} + $c + $w + {at:$at} + $x' >> "$audit" || fail 2 audit_failed "could not write the attempt line; nothing was sent to GitHub" "$ctx"
+      outcome=interrupted; extra='{}'
+      trap 'jq -cn --arg a "$aid" --arg i "$(now_iso)" --arg o "$outcome" --argjson c "$ctx" --argjson x "$extra" "{audit_id:\$a, phase:\"gh\", stage:\"outcome\"} + \$c + {at:\$i, outcome:\$o} + \$x" >> "$audit"' EXIT; }
+    record() { # <outcome> <extra-json>: the outcome line is written by the trap; the record repeats it
+      outcome="$1"; extra=$(jq -c 'del(.message)' <<<"$2")
       emit "$(jq -cn --arg a "$aid" --arg at "$at" --argjson c "$ctx" --argjson w "$why" --arg o "$1" --argjson x "$2" \
         '{schema_version:1} + $c + {audit_id:$a} + $w + {at:$at, outcome:$o} + ($x | del(.message)) + {error:(if $o == "done" then null else {kind:$o, message:($x.message // "gh failed")} end)}')"
       [ "$1" = done ] || exit 2; }
@@ -38,15 +47,16 @@ in
 
   tasks = {
     "gh:label" = {
-      description = "ACT: add or remove one owner-protocol label (needs-decision, blocked, needs-live, approved) on OWNER/REPO#N; audited with the handoff or reason.";
+      description = "ACT: add or remove one owner-protocol label (needs-decision, blocked, needs-live) on OWNER/REPO#N; audited with the handoff or reason. Never a label that authorizes a send.";
       input = { repo = null; number = null; label = null; action = null; handoff_id = null; reason = null; };
       exec = ''
         ctx='{"task":"gh:label"}'
         ${ghPrelude}
         label=$(input .label); action=$(input .action)
-        case "$label" in needs-decision|blocked|needs-live|approved) ;; *) fail 3 invalid_input "label must be one of needs-decision, blocked, needs-live, approved" "$ctx" ;; esac
+        case "$label" in needs-decision|blocked|needs-live) ;; *) fail 3 invalid_input "label must be one of needs-decision, blocked, needs-live (the coordinator never writes a label that authorizes a send)" "$ctx" ;; esac
         case "$action" in add|remove) ;; *) fail 3 invalid_input "action must be add or remove" "$ctx" ;; esac
         ctx=$(jq -c --arg l "$label" --arg a "$action" '. + {label:$l, action:$a}' <<<"$ctx")
+        attempt '{}'
         errf=$(mktemp); rc=0
         # the issues API serves PRs too, so one path covers both
         if [ "$action" = add ]; then
@@ -68,8 +78,10 @@ in
         body=$(input .body)
         [ -n "$body" ] || fail 3 invalid_input "body is required" "$ctx"
         [ "''${#body}" -le 4000 ] || fail 3 invalid_input "body exceeds 4000 characters" "$ctx"
-        # the comment is the coordinator's, never the owner's: signed as such, and a body already signed is not re-signed
-        case "$body" in *"-- Coordinator") ;; *) body="$body"$'\n\n-- Coordinator (automated; not the owner)' ;; esac
+        # the comment is the coordinator's, never the owner's: any trailing "-- Coordinator" line the caller wrote is
+        # replaced by the one canonical signature, so every comment ends the same way exactly once
+        body=$(jq -rn --arg b "$body" '$b | sub("(\\s*\n-- Coordinator[^\n]*)*\\s*\\z"; "") + "\n\n-- Coordinator (automated; not the owner)"')
+        attempt "$(jq -cn --argjson n "''${#body}" '{body_chars:$n}')"
         errf=$(mktemp); rc=0
         res=$(jq -cn --arg b "$body" '{body:$b}' | timeout -k 1 ${t} ${cfg.ghCommand} api -X POST "repos/$repo/issues/$num/comments" --input - 2>"$errf" 9>&-) || rc=$?
         msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"

@@ -48,9 +48,10 @@ the owner has confirmed, in this conversation, the exact draft and target (or
 the exact label or comment and its issue). A handoff always goes through
 `coord:handoff` and `herdr:message` (audit, duplicate and session checks, and
 the `authorized_by` label fetched through gh; `authorization_missing` is a
-stop, never something to fix with `gh:label`); a raw `herdr agent prompt` is
-only for a short reply the owner dictates verbatim. GitHub writes go only
-through `gh:label` (needs-decision, blocked, needs-live, approved) and
+stop, and the task refuses any label you could have written yourself); a
+raw `herdr agent prompt` is only for a short reply the owner dictates
+verbatim. GitHub writes go only through `gh:label` (needs-decision,
+blocked, needs-live; never a label that authorizes a send) and
 `gh:comment`, each with the `handoff_id` it serves or a `reason`; the task
 signs comments `Coordinator`, and a comment never speaks as the owner: it
 reports, quotes or asks, and does not answer, decide or approve for them. The `herdr` skill is CLI reference for reading its output; of the
