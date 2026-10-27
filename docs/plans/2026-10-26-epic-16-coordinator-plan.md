@@ -206,10 +206,19 @@ Consequence: the launcher / materialised-checkout / integrity-pin / dedicated-ke
 - [x] Live: from a normal Claude Code session on a dev host, delegate to the coordinator subagent → it runs `coord:brief` from the checkout and answers; same with the quality subagent (`quality:report`). Codex: `codex exec --cd <checkout>` with `agents/quality/AGENTS.md` as context (credentials still owner-waived). *(2026-10-27 08:44 UTC on acer: plain `claude -p` from a scratch dir with the dispatcher in project settings; probe role's `echo` BLOCKED with the guard reason, coordinator ran only `cd <checkout> && devenv tasks run coord:brief --show-output` + `work:status`, 38 s, $0.21, 1 denial; quality subagent not separately exercised (same guard path, `quality:report` proven live earlier); Codex waived)*
 - [x] #16: record the redirect verbatim; re-state which checklist items the subagent model satisfies and which are superseded; final comment. *(2026-10-27 09:05 UTC: redirect quoted, two-host item marked superseded, final comment with the three owner steps; 30/30 items ticked)*
 
+
+## Slice 8 — Owner rule (2026-10-27 11:34 UTC): no .sh files, devenv tasks only
+
+Owner, verbatim: *"I dont want us to have a .sh files I want them to be devenv tasks!!!"* Boundary chosen with the owner: everything except the single hook entry Claude Code's hook contract requires.
+
+- [x] `task-modules/lib.sh` → Nix prelude; fake ssh/herdr/gh/devenv → Nix packages (`coordinator.fakes`); every suite → a devenv task (`skills:test:*`); guard → `task-modules/guard.nix` (`guard:check`, `guard:integrity`, shared `coordinator.guardLib`); parity → `quality:two-harness`; one shell file left: `hooks/role-guard-dispatch.sh`. skills PR #23 (eca2e26), `skills:test` 0 on 15 tasks. *(lessons: the task runner enables errexit so suites set `+e`; a quote before an interpolation needs `${"'"}''${` in Nix indented strings; `command -v` returns alias names, use `type -P`)*
+- [ ] Independent review of #23 → fixes → owner merge; nixos-config follow-up (dormant launcher → dispatcher + `guard:integrity`, pin bump) merged; `just switch` on both hosts; live subagent check with the task-based guard.
+
 ## Effort log
 
 | When (UTC) | Slice / task | Commit / PR | Tasks run (exit) | Outcome / limitation |
 |---|---|---|---|---|
+| 2026-10-27 11:34 | Slice 8: no .sh files (owner rule) | skills #23 @ eca2e26; nixos branch epic-16/guard-as-tasks (local) | skills:test (0) ×5 rounds; guard:check + dispatcher live allow/block; lenovo (dormant mode) + acer eval (0) with the branch | 40 files, −1711/+1855; suites as tasks, guard as tasks, fakes in Nix; review running |
 | 2026-10-27 09:28 | lenovo activated | lenovo system 6c7srvrd… (main 4cb9422) | owner paste: HM active (exited) after moving the stale settings.json.backup; just switch finished | both hosts on the subagent model; lenovo checkout reset + subagent check pending; owner declined an overwriteBackup PR (not created) |
 | 2026-10-27 09:23 | Host activation | acer switched (vhylgr4s…); lenovo system switched, HM failed on a stale settings.json.backup | acer production check: coordinator subagent ran coord:brief only, stray grep BLOCKED by the installed dispatcher, 47.5 s, $0.36, 1 denial | acer prep: skipped 2 never-activated weekly lock commits; ~/claude-code-skills reset to origin/main (old history on branch local-pre-squash-2026-10-27); fleet.json repo path updated. lenovo fix: move the stale backup, restart home-manager-lukas.service, pull ~/claude-code-skills, run the same check |
 | 2026-10-27 09:05 | Slice 7 merged | skills #21 → main 2fc151d; nixos #106 → main 4cb9422 | skills:test (0); lenovo+acer eval (0) with the new pin | subagent model live on main; owner steps: `just switch` both hosts, `git pull` ~/claude-code-skills, try "ask the coordinator …" |
