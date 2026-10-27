@@ -6,7 +6,7 @@
 |---|---|---|
 | Role contracts `agents/<role>/ROLE.md`, adapters `agents/<role>.md` (Claude) / `agents/<role>/AGENTS.md` (Codex) | this repo | nixos-config `skills.nix` links every `agents/*.md` into `~/.claude/agents` on devTools hosts, so the roles are ordinary subagents |
 | Tasks (`task-modules/*.nix`, `agents/<role>/tasks.nix`) | this repo | run from one writable skills checkout: `$SKILLS_CHECKOUT`, default `~/claude-code-skills` |
-| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers) | this repo | the adapter's frontmatter hook runs it from the checkout; nothing to install |
+| Guard `hooks/validate-role.sh` (+ `validate-<role>.sh` wrappers), dispatcher `hooks/role-guard-dispatch.sh` | this repo | nixos-config registers the dispatcher as a user-scope PreToolUse(Bash) hook with the other skills hooks; it runs the guard from the checkout for role agents only |
 | `fleet.json` (hosts, repos) | `~/.config/coordinator/fleet.json` | you (schema in the RFC); an absent file is an empty fleet |
 | State (snapshots, drafts, `audit.jsonl`, `brief/latest.json`) | `~/.local/state/coordinator/` | the tasks |
 
@@ -66,19 +66,28 @@ Claude's Bash timeout (`BASH_MAX_TIMEOUT_MS`) if a long gate must report.
   not resend blindly); `agent_blocked`/`agent_busy`/`agent_changed`/
   `agent_not_found` (nothing sent).
 - A guard refusal shows up in Claude as a blocked Bash call with the guard's
-  reason on stderr; in `-p` mode a permission prompt is denied, so make sure
-  the settings-level guard is in place (the launcher does this). A refusal
-  "checkout integrity check failed" means a guarded file in the copy changed:
-  rebuild the copy (re-run the activation) rather than editing it back.
+  reason on stderr. "tasks run only from the skills checkout" means the
+  subagent used another directory or path form; "no guard at …" means the
+  host has no skills checkout at `~/claude-code-skills` (clone it, or set
+  `SKILLS_CHECKOUT`). In hardened mode, "checkout integrity check failed"
+  means a guarded file in the materialised copy changed: let the activation
+  rebuild it rather than editing it back.
 
 ## Operating the guard
 
 `hooks/validate-role.sh` reads `agents/$ROLE/ROLE.md` in the skills checkout
 and allows exactly `[cd <checkout> && ]devenv tasks run <read|run task>
 [--input-json '<object>'] [--show-output]`, run from the checkout or `cd`-ed
-into exactly it; `act` tasks return `ask`. The adapter's frontmatter hook
-resolves it from the checkout, so a host with the adapter linked but no
-checkout refuses every Bash call. Optional hardened mode: with
+into exactly its plain absolute path; `act` tasks return `ask`. It is wired at
+settings level by `hooks/role-guard-dispatch.sh` (nixos-config installs it
+with the other user-scope hooks): the dispatcher reads the hook input's
+`agent_type` and runs the guard only for agents that have a ROLE.md in the
+checkout, so other agents and the main session are untouched. A subagent's
+frontmatter hooks never run (verified 2026-10-27), so the frontmatter hook in
+each adapter only covers the `claude --agent <role>` main-session case. A
+host with the adapters linked but no checkout refuses every role Bash call.
+Installing this repo as a plugin does not install the dispatcher. Optional
+hardened mode: with
 `COORDINATOR_REQUIRE_INTEGRITY=1` and a 64-hex pin in
 `COORDINATOR_INTEGRITY_SHA256`, the guard also verifies the checkout's
 `.integrity` manifest (`hooks/lib/integrity-check.sh`) on every call; the

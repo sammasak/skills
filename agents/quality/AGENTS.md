@@ -51,8 +51,8 @@ retry with a variation.
   an unmanaged clone, or without the pin, is **not enforced** and must not be
   described as such; the `.devenv/` evaluation cache is not covered either.
 - **Global hooks file.** `~/.codex/hooks.json` is per user, so a guard
-  registered there applies to every Codex session on the host; the launcher
-  has to use a dedicated `CODEX_HOME` for role sessions (hooks are a stable,
+  registered there applies to every Codex session on the host; use a dedicated
+  `CODEX_HOME` for role sessions (hooks are a stable,
   default-on feature in codex-cli 0.162.1). Unverified until the Codex half of
   the parity run happens: the exact PreToolUse payload shape
   (`tool_input.command` as a string), how Codex treats `permissionDecision`,

@@ -37,8 +37,8 @@ mkdir -p "$CK/.claude" && echo '{}' > "$CK/.claude/settings.json"
 # the guard copy comes from the same tree as the checkout copy (HEAD), not from the working tree
 pin=$(sha256sum "$CK/.integrity" | cut -d' ' -f1)
 export COORDINATOR_CHECKOUT="$CK" SKILLS_CHECKOUT="$CK" COORDINATOR_REQUIRE_INTEGRITY=1 COORDINATOR_INTEGRITY_SHA256="$pin" FAKE_SDLC_DIR="$FX/sdlc" FAKE_LOG="$OUT/fake-calls.log"
-# nothing is planted in $HOME by this script; note the adapter's frontmatter hook still requires the host-installed
-# ~/.claude/hooks/validate-quality.sh (it fails closed without it), so both guards run in the Claude half
+# nothing is planted in $HOME by this script; the adapter's frontmatter hook resolves the guard from $CK through the
+# exported checkout variables, so both the settings-level guard and the frontmatter guard run in the Claude half
 ASK="Report the SDLC quality state of the checkout $REPO. Run exactly one command: devenv tasks run quality:report --input-json '{\"checkout\":\"$REPO\"}' --show-output. Then answer from its JSON with exactly one line per stage in the form 'STAGE <name>: <state>' followed by one line 'HEAD <sha>' and one line 'ALL_GREEN <true|false>'. Do not run any gate and do not run anything else."
 # Claude honours a PreToolUse allow only from settings-level hooks in this mode (an agent-frontmatter hook alone
 # left every Bash call at the permission prompt in a live run), so the guard is registered the way the launcher does it.

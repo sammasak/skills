@@ -108,8 +108,9 @@ hook allow "devenv tasks run coord:handoff --input-json '{\"scope\":\"A & B | \$
 # no checkout anywhere (env unset, default path absent) must block; the default resolves when nothing is set
 ( unset COORDINATOR_CHECKOUT SKILLS_CHECKOUT; HOME=/nonexistent jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | HOME=/nonexistent "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): no checkout at all must block"; }
 ( unset COORDINATOR_CHECKOUT; jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | SKILLS_CHECKOUT="$ROOT" "$HOOK" 2>/dev/null | jq -e '.hookSpecificOutput.permissionDecision=="allow"' >/dev/null ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): SKILLS_CHECKOUT fallback must allow"; }
-# subagent form: cd into exactly the checkout from any cwd, joined with && only
+# subagent form: cd into exactly the checkout (plain absolute text, or ~/) from any cwd, joined with && only
 hook allow "cd $ROOT && devenv tasks run coord:brief" /tmp
+hook allow "cd $ROOT/ && devenv tasks run coord:brief" /tmp
 hook allow "cd $ROOT && devenv tasks run coord:brief --input-json '{}' --show-output" /tmp
 hook block "devenv tasks run coord:brief" /tmp
 hook block "cd /tmp && devenv tasks run coord:brief" /tmp
@@ -119,8 +120,38 @@ hook block "cd $ROOT && devenv tasks run coord:brief && ssh lenovo id" /tmp
 hook block "cd $ROOT && cd /tmp && devenv tasks run coord:brief" /tmp
 hook block "cd \"$ROOT\" && devenv tasks run coord:brief" /tmp
 hook block "cd $ROOT/tests && devenv tasks run coord:brief" /tmp
-hook block "cd $ROOT/../$(basename "$ROOT")/tests && devenv tasks run coord:brief" /tmp
-hook allow "cd $ROOT/../$(basename "$ROOT") && devenv tasks run coord:brief" /tmp
+hook block "X=1 cd $ROOT && devenv tasks run coord:brief" /tmp
+hook block "cd -- $ROOT && devenv tasks run coord:brief" /tmp
+hook block "cd \$SKILLS_CHECKOUT && devenv tasks run coord:brief" /tmp
+# bash moves logically and expands ~+ ~- -: text that resolves physically to the checkout but is not its path is refused
+hook block "cd $ROOT/../$(basename "$ROOT") && devenv tasks run coord:brief" /tmp
+hook block "cd $ROOT/tests/.. && devenv tasks run coord:brief" /tmp
+hook block "cd $ROOT/./ && devenv tasks run coord:brief" /tmp
+hook block "cd /$ROOT && devenv tasks run coord:brief" /tmp
+SYMTMP=$(mktemp -d); ln -s "$ROOT/agents" "$SYMTMP/x"; ln -s "$ROOT" "$SYMTMP/~+"; ln -s "$ROOT" "$SYMTMP/-"
+hook block "cd x/.. && devenv tasks run coord:brief" "$SYMTMP"
+hook block "cd $SYMTMP/x/.. && devenv tasks run coord:brief" "$SYMTMP"
+hook block "cd ~+ && devenv tasks run coord:brief" "$SYMTMP"
+hook block "cd ~- && devenv tasks run coord:brief" "$SYMTMP"
+hook block "cd - && devenv tasks run coord:brief" "$SYMTMP"
+hook block "cd -P && devenv tasks run coord:brief" "$SYMTMP"
+hook block "cd ~root && devenv tasks run coord:brief" "$SYMTMP"
+rm -rf "$SYMTMP"
+# ~ and ~/ expand exactly as bash does
+( out=$(jq -cn --arg c "cd ~ && devenv tasks run coord:brief" '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:$c}}' | HOME="$ROOT" "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty'); [ "$out" = allow ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): cd ~ with HOME=checkout must allow"; }
+HOMETMP=$(mktemp -d); ln -s "$ROOT" "$HOMETMP/claude-code-skills"
+( out=$(jq -cn --arg c "cd ~/claude-code-skills && devenv tasks run coord:brief" '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:$c}}' | env -u COORDINATOR_CHECKOUT -u SKILLS_CHECKOUT HOME="$HOMETMP" "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty'); [ "$out" = allow ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): cd ~/claude-code-skills with the default checkout must allow"; }
+# the settings-level dispatcher: role agents go through the guard, everything else is a silent no-op
+DISPATCH="$ROOT/hooks/role-guard-dispatch.sh"
+dcase() { local label="$1" want_code="$2" want_dec="$3" payload="$4" out code dec; out=$(printf '%s' "$payload" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$DISPATCH" 2>/dev/null); code=$?; dec=$(jq -r '.hookSpecificOutput.permissionDecision // empty' <<<"$out" 2>/dev/null); [ "$code" -eq "$want_code" ] && [ "$dec" = "$want_dec" ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(dispatch): $label -> $code/'$dec' (want $want_code/'$want_dec')"; }; }
+dcase "coordinator subagent, allowed task" 0 allow "$(jq -cn --arg c "cd $ROOT && devenv tasks run coord:brief" '{cwd:"/tmp",agent_type:"coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
+dcase "coordinator subagent, forbidden command" 2 "" "$(jq -cn '{cwd:"/tmp",agent_type:"coordinator",tool_name:"Bash",tool_input:{command:"echo hi"}}')"
+dcase "coordinator subagent, act task asks" 0 ask "$(jq -cn --arg c "cd $ROOT && devenv tasks run herdr:message --input-json '{}'" '{cwd:"/tmp",agent_type:"coordinator",tool_name:"Bash",tool_input:{command:$c}}')"
+dcase "quality subagent, allowed task" 0 allow "$(jq -cn --arg c "cd $ROOT && devenv tasks run quality:report --input-json '{}'" '{cwd:"/tmp",agent_type:"quality",tool_name:"Bash",tool_input:{command:$c}}')"
+dcase "other agent is a no-op" 0 "" "$(jq -cn '{cwd:"/tmp",agent_type:"code-reviewer",tool_name:"Bash",tool_input:{command:"echo hi"}}')"
+dcase "main session is a no-op" 0 "" "$(jq -cn '{cwd:"/tmp",tool_name:"Bash",tool_input:{command:"echo hi"}}')"
+dcase "pattern-like agent name is a no-op" 0 "" "$(jq -cn '{cwd:"/tmp",agent_type:"../coordinator",tool_name:"Bash",tool_input:{command:"echo hi"}}')"
+( printf '%s' "$(jq -cn '{cwd:"/tmp",agent_type:"code-reviewer",tool_name:"Bash",tool_input:{command:"echo hi"}}')" | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" "$DISPATCH" 2>/dev/null | grep -q . ) && { FAIL=$((FAIL+1)); echo "FAIL(dispatch): no-op must print nothing"; } || PASS=$((PASS+1))
 ( jq -cn '{tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): missing cwd must block"; }
 ( jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\u0000; ssh x"}}' | "$HOOK" >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(hook): NUL byte must block"; }
 # a per-call working directory (Codex workdir) outside the checkout must block even when the session cwd is right
@@ -149,13 +180,16 @@ cchook "newline-only workdir" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash
 cchook "workdir with an embedded newline" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief",workdir:($d+"\n/tmp")}}')"
 cchook "newline inside the command" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\nssh lenovo id"}}')"
 cchook "carriage return in the command" "$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief\r"}}')"
-# the adapter's hook command refuses when the guard file is absent (fail closed)
+# the adapter's hook command (main-session mode) finds the guard in the default checkout and refuses when none exists
 if command -v yq >/dev/null; then
   cmd=$(yq --front-matter=extract -r '.hooks.PreToolUse[0].hooks[0].command' "$ROOT/agents/coordinator.md")
-  ( HOME="$TMP_HOME_MISSING" bash -c "$cmd" </dev/null >/dev/null 2>&1; [ $? -eq 2 ] ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): hook command must exit 2 when guard is missing ($cmd)"; }
-  mkdir -p "$TMP_HOME_MISSING/.claude/hooks" && ln -sf "$HOOK" "$TMP_HOME_MISSING/.claude/hooks/validate-coordinator.sh"
-  dec=$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | HOME="$TMP_HOME_MISSING" bash -c "$cmd" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty')
-  [ "$dec" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): installed guard must exec through (got '$dec')"; }
+  err=$( (env -u COORDINATOR_CHECKOUT -u SKILLS_CHECKOUT HOME="$TMP_HOME_MISSING" bash -c "$cmd" </dev/null 2>&1 >/dev/null); echo "rc=$?")
+  ( grep -q 'no guard at' <<<"$err" && grep -q 'rc=2' <<<"$err" ) && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): hook command must exit 2 with 'no guard at' when no checkout exists ($err)"; }
+  dec=$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | env -u COORDINATOR_CHECKOUT -u SKILLS_CHECKOUT HOME="$HOMETMP" bash -c "$cmd" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty')
+  [ "$dec" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): guard in the default checkout must exec through (got '$dec')"; }
+  dec=$(jq -cn --arg d "$ROOT" '{cwd:$d,tool_name:"Bash",tool_input:{command:"devenv tasks run coord:brief"}}' | env -u COORDINATOR_CHECKOUT SKILLS_CHECKOUT="$ROOT" HOME="$TMP_HOME_MISSING" bash -c "$cmd" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty')
+  [ "$dec" = allow ] && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL(adapter): SKILLS_CHECKOUT override must exec through (got '$dec')"; }
+  rm -rf "$HOMETMP"
 else echo "note: yq missing, adapter hook command cases skipped"; fi
 
 # the same guard serves the quality role: run-class allowed, coordinator-only and act tasks blocked

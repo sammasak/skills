@@ -73,22 +73,35 @@ so handoff text with quotes, newlines or `$(...)` stays literal, and a
 worker's forced-command shim can whitelist argv before exec. Tests point
 `coordinator.fleetFile` at fixtures with `--option coordinator.fleetFile:path`.
 
-## Guard placement (verified live 2026-10-26)
+## Guard placement (verified live 2026-10-26 and 2026-10-27)
 
-A PreToolUse `permissionDecision: allow` from an **agent-frontmatter** hook was
-not honoured when the agent ran as the main session (`claude -p --agent quality`):
-every Bash call stayed at the permission prompt and was denied in print mode.
-The same guard registered in a **settings file** passed with `--settings` allowed
-the role's tasks and blocked everything else. The launcher therefore registers
-the guard at settings level; the frontmatter hook stays as the fail-closed
-backstop for hosts that have the adapter but no launcher.
+Two facts fix where the guard must live:
+
+- **Main session** (`claude --agent <role>`): a PreToolUse `allow` from the
+  agent-frontmatter hook is not honoured (every Bash call stayed at the
+  permission prompt in print mode); a settings-level hook is. A frontmatter
+  hook's *block* does fire here.
+- **Subagent** (the normal use: "ask the coordinator …" from any session): the
+  agent-frontmatter hooks are **not run at all** (an always-block hook never
+  fired; the subagent's command ran). A settings-level PreToolUse hook does
+  run, and its input carries `agent_type` and `agent_id`.
+
+So the guard is a settings-level hook, `hooks/role-guard-dispatch.sh`, installed
+by nixos-config next to the other user-scope hooks: it reads `agent_type`,
+and only when `agents/<agent_type>/ROLE.md` exists in the skills checkout does
+it run `validate-role.sh`; for every other agent and for the main session it
+is a silent no-op. The frontmatter hook in each adapter stays as the
+main-session backstop. Installing this repo as a Claude Code plugin loads the
+adapters without that settings hook, so a plugin-installed role is unguarded
+unless the dispatcher is registered separately; the nixos-config install path
+is the supported one.
 
 ## Adapters
 
 Claude today (`agents/<role>.md`: tools, `permissionMode: default`, preloaded
-skills, the guard hook). Codex arrives in M4 as `agents/<role>/AGENTS.md`; its
-harness has no per-agent hook, so the grammar guard runs as a wrapper script
-there and the limitation is recorded, not hidden.
+skills, the guard hook). Codex: `agents/<role>/AGENTS.md`; its harness has no
+per-agent hook, so the same guard is registered in a dedicated `CODEX_HOME`'s
+`hooks.json` and the limitations are recorded, not hidden.
 
 ## Claude Code permission gotchas (verified against docs 2026-10-26)
 
@@ -105,9 +118,9 @@ there and the limitation is recorded, not hidden.
   rules therefore list only exact input-less forms and deny `-O`, `--option`,
   `--from`, `--override-input`; every call that carries input is allowed only
   by the guard hook, which returns `allow` after validating the grammar, the
-  JSON body and the working directory. The adapter's hook command refuses every
-  Bash call when the guard file is not installed, so a host that has the
-  adapter but not the launcher cannot run tasks at all (fail closed).
+  JSON body and the working directory. Both the dispatcher and the adapter's
+  hook command refuse every Bash call when the skills checkout or the guard is
+  missing (fail closed).
 - `Read(~/...)` and `Read(./**)` rules are checked as rule text; the emulator
   does not expand `~` or `./`. The launcher renders the real state directory
   (`$XDG_STATE_HOME/coordinator`) in place of the portable default.

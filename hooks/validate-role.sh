@@ -27,13 +27,21 @@ cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null) || cwd=""
 
 COORDINATOR_CHECKOUT="${COORDINATOR_CHECKOUT:-${SKILLS_CHECKOUT:-$HOME/claude-code-skills}}"
 want=$(readlink -e -- "$COORDINATOR_CHECKOUT" 2>/dev/null) || { echo "$ROLE: skills checkout $COORDINATOR_CHECKOUT does not exist (set SKILLS_CHECKOUT to a sammasak/skills checkout)" >&2; exit 2; }
-# a subagent inherits the parent session's cwd, so `cd <checkout> && <task call>` is the normal form; the cd target
-# must be exactly the checkout (no quotes or spaces, ~ allowed) and `&&` is the only join accepted
+# a subagent inherits the parent session's cwd, so `cd <checkout> && <task call>` is the normal form. bash's cd moves
+# logically and expands ~+ ~- and -, so the target is checked as TEXT: absolute (or ~/), no . or .. segments, no
+# doubled slashes, and equal to the checkout path itself; `&&` is the only join accepted
 effective_dir="$cwd"
-if [[ "$cmd" =~ ^cd[[:space:]]+([A-Za-z0-9_./~-]+)[[:space:]]+\&\&[[:space:]]+(.+)$ ]]; then
+if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]]+)[[:space:]]+\&\&[[:space:]]+(.+)$ ]]; then
   cdpath="${BASH_REMATCH[1]}"; rest="${BASH_REMATCH[2]}"
-  # shellcheck disable=SC2088  # a literal ~ from the agent's command is matched here, then expanded
-  case "$cdpath" in "~") cdpath="$HOME" ;; "~/"*) cdpath="$HOME/${cdpath#\~/}" ;; /*) ;; *) cdpath="$cwd/$cdpath" ;; esac
+  # shellcheck disable=SC2088  # a literal ~ from the agent's command is matched here, then expanded like bash would
+  case "$cdpath" in "~") cdpath="$HOME" ;; "~/"*) cdpath="$HOME/${cdpath#\~/}" ;; esac
+  if [[ ! "$cdpath" =~ ^/[A-Za-z0-9_./-]*$ ]] || [[ "/$cdpath/" == *"/../"* || "/$cdpath/" == *"/./"* || "$cdpath" == *//* ]]; then
+    echo "$ROLE: the cd target must be the skills checkout as a plain absolute path (got '$cdpath')" >&2; exit 2
+  fi
+  cdpath="${cdpath%/}"
+  if [ "$cdpath" != "${COORDINATOR_CHECKOUT%/}" ] && [ "$cdpath" != "$want" ]; then
+    echo "$ROLE: tasks run only from the skills checkout $COORDINATOR_CHECKOUT (cd target: $cdpath)" >&2; exit 2
+  fi
   effective_dir="$cdpath"; cmd="$rest"
 fi
 if [ "$(readlink -e -- "$effective_dir" 2>/dev/null)" != "$want" ]; then
