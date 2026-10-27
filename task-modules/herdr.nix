@@ -81,19 +81,25 @@ in
       '';
     };
     "herdr:message" = {
-      description = "ACT: send a confirmed coord:handoff draft to its agent; audit log, duplicate detection, never to a blocked or changed agent.";
-      input = { handoff_id = null; confirm = null; resend = null; };
+      description = "ACT: send a confirmed coord:handoff draft to its agent; audit log (with allowed_actions and the authorizing issue label), duplicate detection, never to a blocked or changed agent.";
+      input = { handoff_id = null; confirm = null; authorized_by = null; resend = null; };
       exec = ''
         ${cfg.prelude}
         id=$(input .handoff_id); confirm=$(input .confirm); resend=$(input .resend)
+        auth=$(jq -c '.authorized_by // empty' <<<"''${DEVENV_TASK_INPUT:-{\}}")
         ctx=$(jq -cn --arg i "$id" '{task:"herdr:message",handoff_id:$i}')
         [[ "$id" =~ ^[a-f0-9]{12}$ ]] || fail 3 invalid_input "handoff_id must be a 12-hex coord:handoff id" "$ctx"
+        # authorized_by names the GitHub gate: the issue (or PR) URL and the label the owner put on it for this handoff
+        auth=$(jq -c 'if type == "object" and (.issue_url | type) == "string" and (.issue_url | test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[0-9]+$"))
+            and (.label | type) == "string" and (.label | test("^[A-Za-z0-9_:./ -]{1,50}$")) then {issue_url, label} else empty end' <<<"''${auth:-null}") || auth=""
+        [ -n "$auth" ] || fail 3 invalid_input "authorized_by is required: {\"issue_url\":\"https://github.com/OWNER/REPO/issues/N\",\"label\":\"<label the owner applied>\"}" "$ctx"
         draft="${cfg.stateDir}/handoffs/$id.json"
         [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"
         host=$(jq -r '.host // empty' "$draft"); m=$(jq -r '.machine // empty' "$draft"); agent=$(jq -r '.agent_id // empty' "$draft"); text=$(jq -r '.text // empty' "$draft"); ref=$(jq -r '.task_ref // empty' "$draft"); want_session=$(jq -r '.session_id // empty' "$draft")
-        [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] || fail 3 invalid_input "draft $id is incomplete" "$ctx"
-        # the id is content-addressed: re-derive it so the text sent is the text the owner confirmed
-        [ "$(printf '%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
+        acts=$(jq -c '.allowed_actions // empty' "$draft")
+        [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] && [ -n "$acts" ] || fail 3 invalid_input "draft $id is incomplete (a draft without allowed_actions predates this version: redraft it)" "$ctx"
+        # the id is content-addressed: re-derive it so the text and actions sent are the ones the owner confirmed
+        [ "$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$acts" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
         [ "$confirm" = "$host/$agent" ] || fail 3 not_confirmed "confirm must equal the draft target '$host/$agent' (got '$confirm')" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$ctx"
         [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "draft machine label has unsafe characters" "$ctx"
@@ -136,8 +142,8 @@ in
           done < <(tac <<<"$attempts")
         fi
         aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
-        jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" \
-          '{audit_id:$a, handoff_id:$i, phase:"attempt", host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, state_before:$s, seq_before:$q}' >> "$audit" \
+        jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" \
+          '{audit_id:$a, handoff_id:$i, phase:"attempt", host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q}' >> "$audit" \
           || fail 2 audit_failed "could not write the attempt record; not sending" "$ctx"
         outcome=interrupted
         trap 'jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" "{audit_id:\$a, handoff_id:\$i, phase:\"outcome\", at:\$at, outcome:\$o}" >> "$audit"' EXIT
@@ -149,8 +155,8 @@ in
           case "$code" in agent_blocked|agent_not_found) outcome=$code ;; agent_prompt_stalled) outcome=agent_prompt_stalled ;; *) outcome=unknown_delivery ;; esac
         fi
         rm -f "$errf"
-        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" \
-          '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), sent_at:$at, state_before:$s, seq_before:$q, outcome:$o,
+        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" \
+          '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), sent_at:$at, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q, outcome:$o,
             receipt:($o == "delivered"), worker_done:false, accepted:false,
             error:(if $o == "delivered" then null elif ($o == "unknown_delivery" or $o == "agent_prompt_stalled") then {kind:$o, message:"prompt did not confirm; the text may already sit in the input box of the agent. Inspect the pane; only the owner decides on a resend (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt refused: " + $o + "; nothing was delivered"} end)}')
         emit "$rec"

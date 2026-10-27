@@ -15,20 +15,33 @@ fixed; skipping a step is a boundary violation.
 2. **Draft** with `coord:handoff`, copying `machine`, `agent_id` **and
    `session_id`** from the inventory record so the send is bound to that
    agent, not just its pane:
-   `devenv tasks run coord:handoff --input-json '{"machine":"<label>","agent_id":"<id>","session_id":"<session>","task_ref":"#N","scope":"...","expected_evidence":"...","acceptance":"...","owner_input":"..."}'`
+   `devenv tasks run coord:handoff --input-json '{"machine":"<label>","agent_id":"<id>","session_id":"<session>","task_ref":"#N","scope":"...","expected_evidence":"...","acceptance":"...","allowed_actions":["comment","deploy:none"],"owner_input":"..."}'`
+   `allowed_actions` is required: a non-empty list of distinct entries from
+   `merge`, `close`, `label`, `comment`, `deploy:none`, `deploy:<host>`
+   (`deploy:none` excludes `deploy:<host>`). It is rendered into the brief as
+   the `Allowed actions:` line, so the agent reads what it may do on this
+   handoff; anything not listed stays forbidden. Reading, committing and
+   opening a PR are always implied. `scope`, `expected_evidence`,
+   `acceptance` and `owner_input` take up to 4000 characters each.
    Show the owner the returned `text`, `handoff_id` and target (`host` is the
    machine label, or this hostname) verbatim. Nothing has been sent.
 3. **Confirm**: the owner must say, in this conversation, that this
    `handoff_id` may go to this `host/agent_id`. Silence, "looks good", or a
-   general "go ahead" from earlier does not count.
+   general "go ahead" from earlier does not count. Note the GitHub issue (or
+   PR) URL and the label the owner applied there for this handoff: the send
+   records them as `authorized_by`.
 4. **Send** with `herdr:message` (prompts for permission every time), the
-   confirm string being exactly the draft's `host/agent_id`:
-   `devenv tasks run herdr:message --input-json '{"handoff_id":"<id>","confirm":"<host>/<agent_id>"}'`
+   confirm string being exactly the draft's `host/agent_id` and
+   `authorized_by` naming the issue URL and owner label:
+   `devenv tasks run herdr:message --input-json '{"handoff_id":"<id>","confirm":"<host>/<agent_id>","authorized_by":{"issue_url":"https://github.com/OWNER/REPO/issues/N","label":"<label>"}}'`
    It forwards through `herdr --machine <label> agent prompt` for a saved
    machine, only sends to an `idle`/`done` agent and refuses: `agent_blocked`,
    `agent_busy` (mid-turn: wait, then send), `agent_changed` (session differs
-   from the draft), an edited draft, and a second send of the same
-   `handoff_id`. A refusal before sending has no `outcome`, only `error.kind`
+   from the draft), an edited draft (text or `allowed_actions`), a draft
+   without `allowed_actions` (redraft it), a missing or malformed
+   `authorized_by`, and a second send of the same `handoff_id`. The audit
+   record (`audit.jsonl`) carries `allowed_actions` and `authorized_by` for
+   every attempt. A refusal before sending has no `outcome`, only `error.kind`
    (`invalid_input`, `not_confirmed`, `agent_busy`, `agent_blocked`,
    `agent_not_found`, `agent_changed`, `agent_restarted`,
    `agent_state_unknown`, `duplicate`, `probably_received`, `audit_corrupt`,

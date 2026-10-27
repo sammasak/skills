@@ -88,26 +88,34 @@ in
     };
 
     "coord:handoff" = {
-      description = "Draft (never send) a bounded assignment brief for one agent; saves it under the state dir with a handoff_id.";
-      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; owner_input = ""; };
+      description = "Draft (never send) a bounded assignment brief for one agent, with the actions it may take; saves it under the state dir with a handoff_id.";
+      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; allowed_actions = null; owner_input = ""; };
       exec = ''
         ${cfg.prelude}
         m=$(input .machine); host=$([ -n "$m" ] && printf '%s' "$m" || local_host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input)
+        actions=$(jq -c '.allowed_actions // empty' <<<"''${DEVENV_TASK_INPUT:-{\}}")
         ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"coord:handoff",host:$h,agent_id:$a}')
         [ -z "$ses" ] || [[ "$ses" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail 3 invalid_input "session_id has unsafe characters" "$ctx"
-        [ -n "$agent" ] && [ -n "$ref" ] && [ -n "$scope" ] && [ -n "$ev" ] && [ -n "$acc" ] \
-          || fail 3 invalid_input "agent_id, task_ref, scope, expected_evidence and acceptance are required (machine for a remote agent)" "$ctx"
+        [ -n "$agent" ] && [ -n "$ref" ] && [ -n "$scope" ] && [ -n "$ev" ] && [ -n "$acc" ] && [ -n "$actions" ] \
+          || fail 3 invalid_input "agent_id, task_ref, scope, expected_evidence, acceptance and allowed_actions are required (machine for a remote agent)" "$ctx"
         [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "machine label has unsafe characters" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$ctx"
         [[ "$ref" =~ ^#[0-9]+$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
-        for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 2000 ] || fail 3 invalid_input "a field exceeds 2000 characters" "$ctx"; done
+        for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 4000 ] || fail 3 invalid_input "a field exceeds 4000 characters" "$ctx"; done
+        # allowed_actions: a non-empty list of distinct actions the agent may take beyond reading and committing;
+        # the owner's "do not merge, deploy or delete" is now spelled per handoff. deploy:none excludes deploy:<host>.
+        actions=$(jq -c 'if type == "array" and length > 0 and all(.[]; type == "string" and test("^(merge|close|label|comment|deploy:none|deploy:[A-Za-z0-9_][A-Za-z0-9_.-]*)$")) and (length == (unique | length))
+            and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1)) then . else empty end' <<<"$actions") \
+          || fail 3 invalid_input "allowed_actions is not a JSON list" "$ctx"
+        [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
+        actions_line=$(jq -r 'join(", ")' <<<"$actions")
         at=$(now_iso)
-        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n%s\nReply in this pane when done, naming the commit or PR. Do not merge, deploy or delete anything.\n' \
-          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
-        id=$(printf '%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$text" | sha256sum | cut -c1-12)
+        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s\n%s\nReply in this pane when done, naming the commit or PR.\n' \
+          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
+        id=$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
-        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" \
-          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, text:$t,
+        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" --argjson acts "$actions" \
+          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, allowed_actions:$acts, text:$t,
             owner_input: (if $need == "" then null else $need end), approval_required:true, error:null}')
         if [ ! -f "$dir/$id.json" ]; then
           [ -n "$rec" ] && printf '%s\n' "$rec" > "$dir/$id.json.tmp" && mv "$dir/$id.json.tmp" "$dir/$id.json" || fail 2 state_write_failed "could not write the draft under $dir" "$ctx"

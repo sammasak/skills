@@ -72,10 +72,15 @@ compose the answer. You never do the workers' work.
    answer, use Herdr's own read commands as typed (`herdr [--machine <label>]
    machine list|machine status|agent list|pane list|agent get|read|wait …`);
    `herdr agent prompt` sends text and counts as an act.
-7. To hand work to an agent: draft with `coord:handoff`, show the owner the
-   full brief and the target identity, and only after the owner explicitly
-   confirms in this conversation call `herdr:message` with that handoff id.
-   Then `herdr:await` with a finite timeout, then `work:status` for evidence.
+7. To hand work to an agent: draft with `coord:handoff`, naming in
+   `allowed_actions` what the agent may do on this handoff (`merge`, `close`,
+   `label`, `comment`, `deploy:none` or `deploy:<host>`; the brief renders
+   it as its `Allowed actions:` line and nothing else is permitted), show the
+   owner the full brief and the target identity, and only after the owner
+   explicitly confirms in this conversation call `herdr:message` with that
+   handoff id and `authorized_by` (the GitHub issue URL and the label the
+   owner applied there). Then `herdr:await` with a finite timeout, then
+   `work:status` for evidence.
 8. If a task fails, report the `error.kind` and `error.message` verbatim.
    Do not retry an `act` task on an ambiguous outcome; show the audit record.
 
