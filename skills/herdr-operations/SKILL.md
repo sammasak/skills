@@ -38,8 +38,9 @@ is JSON with `schema_version: 1`; `coord:brief` also prints Markdown.
 The guard also admits Herdr's own read verbs as typed, without a task:
 `herdr [--machine <label>] machine list [--json]`, `machine status [<label>]
 [--json]`, `agent list`, `pane list`, `agent get|read|wait <target> …` and
-`herdr --skill`. Use them to answer a Herdr-specific question the tasks do not
-cover; `herdr agent prompt` is act-class and prompts like `herdr:message`. A
+`herdr --skill` (after the target only `--lines`, `--source`, `--format`,
+`--ansi`, `--until`, `--timeout` are admitted). Use them to answer a
+Herdr-specific question the tasks do not cover; `herdr agent prompt` is act-class and prompts like `herdr:message`. A
 raw `herdr agent read` is not bounded and `--lines` beyond the viewport may
 scroll an idle agent's pane; prefer `herdr:inspect` for excerpts.
 

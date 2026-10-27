@@ -30,7 +30,7 @@ in
           # herdr's own first stderr line (connection refused, unknown machine, ssh failure) is the useful message
           herr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
           if [ "$rc" -ne 0 ]; then
-            hosts_out=$(jq -c --arg h "$host" --arg m "$m" --arg k "$(rc_kind $rc)" --argjson rc "$rc" --arg e "$herr" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:$k, message:("herdr agent list: " + $k + " (exit " + ($rc|tostring) + ")" + (if $e == "" then "" else ": " + $e end) + ")")}, agents:[]}]' <<<"$hosts_out"); return; fi
+            hosts_out=$(jq -c --arg h "$host" --arg m "$m" --arg k "$(rc_kind $rc)" --argjson rc "$rc" --arg e "$herr" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:$k, message:("herdr agent list: " + $k + " (exit " + ($rc|tostring) + ")" + (if $e == "" then "" else ": " + $e end))}, agents:[]}]' <<<"$hosts_out"); return; fi
           records=$(normalise "$host" "$m" "$raw") && [ -n "$records" ] \
             || { hosts_out=$(jq -c --arg h "$host" --arg m "$m" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:"malformed", message:"herdr agent list did not return an agent_list"}, agents:[]}]' <<<"$hosts_out"); return; }
           answered=$((answered+1))
@@ -71,10 +71,13 @@ in
         text=$(herdr_at ${t} "$m" agent read "$agent" --lines "$lines" --source "$source" --format text 2>/dev/null) || rc=$?
         [ "$rc" -eq 0 ] || fail 2 "$(rc_kind $rc)" "herdr agent read: $(rc_kind $rc) (exit $rc; unknown agent or machine?)" "$ctx"
         capped=false; [ "$requested" -le 200 ] || capped=true
-        # bounded inside jq (no head pipeline: under pipefail a cut-off writer would SIGPIPE and lose the record)
-        emit "$(jq -cn --argjson c "$ctx" --arg at "$at" --arg t "$text" --arg src "$source" --argjson req "$requested" --argjson cap "$capped" \
+        # bounded inside jq, fed through a file: a head pipeline would SIGPIPE under pipefail and a jq --arg is capped by
+        # the kernel's single-argument limit (128 KiB); either way the record would be lost instead of truncated
+        tf=$(mktemp); printf '%s' "$text" > "$tf"
+        emit "$(jq -cn --argjson c "$ctx" --arg at "$at" --rawfile t "$tf" --arg src "$source" --argjson req "$requested" --argjson cap "$capped" \
           '($t | split("\n") | .[:200] | join("\n") | .[:65536]) as $cut
            | {schema_version:1} + $c + {observed_at:$at, source:$src, lines_requested:$req, lines_returned:($cut | split("\n") | length), truncated:($cut != $t), capped:$cap, excerpt:$cut, error:null}')"
+        rm -f "$tf"
       '';
     };
     "herdr:message" = {

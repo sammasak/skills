@@ -90,6 +90,14 @@
         : > "$FAKE_LOG"; export FAKE_HERDR_READ="$FX/herdr/read-visible.txt"
         run herdr:inspect --input-json '{"machine":"acer-swift","agent_id":"wA:p2","lines":40}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .machine)" = acer-swift ] && [ "$(jqr .host)" = acer-swift ] && grep -q '^herdr(machine=acer-swift) agent read wA:p2 --lines 40' "$FAKE_LOG" && ok || bad "remote read through --machine ($OUT)"
+        # the excerpt bound must hold past the kernel's 128 KiB single-argument limit and past 200 lines: a record, truncated
+        head -c 140000 /dev/zero | tr '\0' a | fold -w 700 > "$TMP/wide.txt"; export FAKE_HERDR_READ="$TMP/wide.txt"
+        run herdr:inspect --input-json '{"agent_id":"wF:p1","lines":200,"source":"recent-unwrapped"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr .truncated)" = true ] && [ "$(jqr '.excerpt|length')" = 65536 ] && [ "$(jqr .error)" = null ] && ok || bad "140 KB excerpt: bounded record, not lost ($CODE $(tail -c 300 "$TMP/run.log"))"
+        seq 1 300 > "$TMP/tall.txt"; export FAKE_HERDR_READ="$TMP/tall.txt"
+        run herdr:inspect --input-json '{"agent_id":"wF:p1","lines":200}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr .truncated)" = true ] && [ "$(jqr .lines_returned)" = 200 ] && ok || bad "300-line excerpt cut at 200 ($OUT)"
+        export FAKE_HERDR_READ="$FX/herdr/read-visible.txt"
         run herdr:inspect --input-json '{"machine":"no-such","agent_id":"wA:p2"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" != null ] && [ "$(jqr .error.kind)" != "" ] && ok || bad "unknown machine must fail (exit $CODE, $OUT)"
         run herdr:inspect --input-json '{"agent_id":"-x;y","lines":5}'
@@ -138,6 +146,15 @@
         [ "$(grep -c '"phase":"attempt"' "$TMP/state/audit.jsonl")" = 1 ] && [ "$(grep -c '"outcome":"delivered"' "$TMP/state/audit.jsonl")" = 1 ] && ok || bad "audit attempt+outcome"
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = duplicate ] && grep -q "$AID" <<<"$(jqr .error.message)" && ok || bad "duplicate refused naming the audit id"
+        # an edited draft (retargeted machine, or changed text) no longer matches its content-addressed id: refused before any herdr call
+        D="$TMP/state/handoffs/$ID.json"; cp "$D" "$D.orig"; : > "$FAKE_LOG"
+        jq -c '.machine = "other-box" | .host = "other-box"' "$D.orig" > "$D"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"other-box/wA:p2\"}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && ok || bad "retargeted draft refused ($OUT)"
+        jq -c '.text += " and also deploy"' "$D.orig" > "$D"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\"}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && ok || bad "edited draft text refused ($OUT)"
+        mv "$D.orig" "$D"
         # blocked and busy agents are never prompted
         export FAKE_HERDR_STATE=blocked; : > "$FAKE_LOG"
         draft '{"machine":"acer-swift","agent_id":"wA:p3","task_ref":"#8","scope":"s","expected_evidence":"e","acceptance":"a"}'; ID2=$(jqr .handoff_id)

@@ -139,7 +139,11 @@
       # herdr's: machines, agents, panes); read verbs are allowed, `agent prompt` asks; other roles get neither
       herdr_target='[A-Za-z0-9_][A-Za-z0-9_:.@/-]*'
       herdr_free='[^;&|<>$`()\\]*'
-      herdr_read="^herdr( --machine [A-Za-z0-9_][A-Za-z0-9_.-]*)? (--skill|machine list( --json)?|machine status( [A-Za-z0-9_][A-Za-z0-9_.-]*)?( --json)?|agent list|pane list|agent (get|read|wait) ''${herdr_target}''${herdr_free})\$"
+      # per-verb option allowlists: `--session` or an unknown flag after the target would read another socket or
+      # change herdr's behaviour, so only the display/wait options the role needs are admitted
+      herdr_read_opts='( --lines [0-9]{1,6}| --source (visible|recent|recent-unwrapped)| --format (text|json)| --ansi)*'
+      herdr_wait_opts='( --until [a-z]+| --timeout [0-9]{1,7})*'
+      herdr_read="^herdr( --machine [A-Za-z0-9_][A-Za-z0-9_.-]*)? (--skill|machine list( --json)?|machine status( [A-Za-z0-9_][A-Za-z0-9_.-]*)?( --json)?|agent list|pane list|agent get ''${herdr_target}|agent read ''${herdr_target}''${herdr_read_opts}|agent wait ''${herdr_target}''${herdr_wait_opts})\$"
       herdr_ask="^herdr( --machine [A-Za-z0-9_][A-Za-z0-9_.-]*)? agent prompt ''${herdr_target} ''${herdr_free}\$"
       if [[ "|$DIRECT|" == *"|herdr:read|"* ]] && [[ "$cmd" =~ $herdr_read ]]; then
         jq -cn '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"allow", permissionDecisionReason:("'"$ROLE"' herdr read verb")}}'; exit 0

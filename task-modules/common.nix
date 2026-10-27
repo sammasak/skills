@@ -36,7 +36,7 @@ in
         exit "$1"
       }
       observe_error() { emit "$(jq -cn --arg k "$1" --arg m "$2" --argjson x "$3" --arg at "$(now_iso)" '{schema_version:1} + $x + {observed_at:$at, error:{kind:$k, message:$m}}')"; }
-      rc_kind() { case "$1" in 124) echo timeout ;; 255) echo unreachable ;; *) echo command_failed ;; esac; }
+      rc_kind() { case "$1" in 124) echo timeout ;; *) echo command_failed ;; esac; }
       upstream() { jq -c --arg t "$1" '.[$t] // null' <<<"''${DEVENV_TASKS_OUTPUTS:-{\}}"; }
       local_host() { hostname -s 2>/dev/null || hostname; }
       # herdr_at <timeout_s> <machine-label-or-empty> <herdr args...>: the local server, or herdr's own forwarding to a saved machine
