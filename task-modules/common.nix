@@ -59,7 +59,7 @@ in
           || jq -cn '{machines:[], error:{kind:"malformed", message:"herdr machine list returned no JSON"}}'; }
       # auth_shape <json>: the normalised {issue_url, label, verified:false} of an authorized_by input, or nothing.
       # \z, not $ (jq's $ also matches before a trailing newline).
-      auth_shape() { jq -c 'if type == "object" and (.issue_url | type) == "string" and (.issue_url | test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[0-9]+\\z"))
+      auth_shape() { jq -c 'if type == "object" and (.issue_url | type) == "string" and (.issue_url | test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[1-9][0-9]*\\z"))
           and (.label | type) == "string" and (.label | test("^[A-Za-z0-9_:./ -]{1,50}\\z")) then {issue_url, label, verified:false} else empty end' <<<"$1" 2>/dev/null || true; }
       # gh_authorize <noun> <verb-ing> <item>: the GitHub gate shared by every act that starts work (herdr:message,
       # coord:spawn). The label in $auth must be on the issue now (the issues API serves PR labels too), must be one the

@@ -26,7 +26,7 @@ let
       jq -sc 'add // {}' "$tmpd/usage.jsonl" > "$tmpd/usage.json"
       jq -nc --slurpfile inv "$tmpd/inv.json" --slurpfile audit "$tmpd/audit.json" --slurpfile usage "$tmpd/usage.json" \
         --argjson cap ${lib.escapeShellArg cfg.capacity} --argjson kinds ${lib.escapeShellArg (builtins.toJSON cfg.kinds)} \
-        --argjson next "$1" --argjson threshold ${toString cfg.hygieneContextTokens} --arg at "$(now_iso)" -f ${./capacity.jq}
+        --argjson next "$1" --argjson threshold ${toString cfg.hygieneContextTokens} --arg at "$(now_iso)" --argjson now "$(now_epoch)" -f ${./capacity.jq}
       local rc=$?; rm -rf "$tmpd"; return $rc; }
   '';
 in
@@ -89,53 +89,84 @@ in
       host=$([ -n "$m" ] && printf '%s' "$m" || local_host)
       auth=$(auth_shape "$(jq -c '.authorized_by // null' <<<"''${DEVENV_TASK_INPUT:-{\}}")")
       ctx=$(jq -cn --arg h "$host" --arg k "$kind" --arg r "$ref" '{task:"coord:spawn",host:$h,kind:$k,task_ref:$r}')
+      kinds=${lib.escapeShellArg (builtins.toJSON cfg.kinds)}
       [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "machine label has unsafe characters" "$ctx"
-      model=$(jq -r --arg k "$kind" '.[$k].model // empty' <<<${lib.escapeShellArg (builtins.toJSON cfg.kinds)})
+      model=$(jq -r --arg k "$kind" '.[$k].model // empty' <<<"$kinds"); heavy=$(jq -r --arg k "$kind" '.[$k].heavy // false' <<<"$kinds")
       [ -n "$model" ] || fail 3 invalid_input "kind must be one of: ${lib.concatStringsSep ", " (lib.attrNames cfg.kinds)}" "$ctx"
-      heavy=$(jq -r --arg k "$kind" '.[$k].heavy' <<<${lib.escapeShellArg (builtins.toJSON cfg.kinds)})
-      [[ "$ref" =~ ^#([0-9]+)$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
-      name="$kind-''${BASH_REMATCH[1]}"
-      [[ "$cwd" =~ ^(/|~/)[A-Za-z0-9_./-]*$ ]] && [[ "$cwd" != *..* ]] || fail 3 invalid_input "cwd must be an absolute or ~/ path with safe characters" "$ctx"
+      [[ "$ref" =~ ^#([1-9][0-9]*)$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
+      num="''${BASH_REMATCH[1]}"; name="$kind-$num"
+      # an absolute path only: herdr takes --cwd literally (no ~ expansion), on whichever host runs the pane
+      [[ "$cwd" =~ ^/[A-Za-z0-9_./-]*$ ]] && [[ "$cwd" != *..* ]] || fail 3 invalid_input "cwd must be an absolute path with safe characters" "$ctx"
       [ -n "$auth" ] || fail 3 invalid_input "authorized_by is required: {\"issue_url\":\"https://github.com/OWNER/REPO/issues/N\",\"label\":\"<label the owner applied>\"}" "$ctx"
       inv=$(upstream "herdr:inventory")
       [ "$inv" != null ] || fail 2 missing "herdr:inventory produced no output" "$ctx"
       audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
-      exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another act holds the audit lock" "$ctx"
+      # the GitHub gate runs before the lock (as in herdr:message); its verdict is audited below either way. A spawn is
+      # authorized only by the item it serves (the issue in issue_url is task_ref's) and only by a label the owner applied
+      refusal=""
+      if ! [[ "$(jq -r .issue_url <<<"$auth")" =~ /(issues|pull)/$num$ ]]; then
+        refusal=$(jq -cn --arg u "$(jq -r .issue_url <<<"$auth")" --arg r "$ref" '{kind:"authorization_missing", message:("authorized_by.issue_url " + $u + " is not the item " + $r + "; a label authorizes only its own item")}')
+      elif ! gh_authorize spawn spawning spawn; then
+        refusal=$(jq -cn --arg k "$AUTH_KIND" --arg msg "$AUTH_MSG" --argjson x "$AUTH_EXIT" '{kind:$k, message:$msg, exit:$x}')
+      elif [ "$(jq -r '.labeled_by // ""' <<<"$auth")" != ${lib.escapeShellArg cfg.ghOwner} ]; then
+        refusal=$(jq -cn --arg l "$(jq -r .label <<<"$auth")" --arg b "$(jq -r '.labeled_by // "unknown"' <<<"$auth")" \
+          '{kind:"authorization_missing", message:("label " + $l + " was applied by " + $b + ", not ${cfg.ghOwner}; only the owner'"'"'s label authorizes a spawn")}')
+      fi
+      # under the audit lock: the audit check, a fresh read of the target host's agents, the capacity decision and the
+      # attempt line (which reserves the slot for an in-flight spawn); the lock is released before the herdr calls and
+      # taken again only to append the outcome, so herdr:message and the gh acts never wait out a 60 s agent start
+      exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another act (herdr:message, coord:spawn, gh:label, gh:comment) holds the audit lock" "$ctx"
       [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 \
         || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to spawn until the owner inspects $audit" "$ctx"
-      # every request that passes input validation is audited: an attempt line now, an outcome line on any exit
-      aid=$(printf 'spawn|%s|%s|%s' "$host" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
-      jq -cn --arg a "$aid" --arg h "$host" --arg m "$m" --arg n "$name" --arg k "$kind" --arg mo "$model" --argjson hv "$heavy" --arg r "$ref" --arg c "$cwd" --arg at "$at" --argjson auth "$auth" \
-        '{audit_id:$a, phase:"spawn", stage:"attempt", host:$h, machine:(if $m == "" then null else $m end), name:$n, kind:$k, model:$mo, heavy:$hv, task_ref:$r, cwd:$c, at:$at, authorized_by:$auth}' >> "$audit" \
-        || fail 2 audit_failed "could not write the spawn attempt; not spawning" "$ctx"
-      outcome=interrupted; detail='{}'
-      trap 'jq -cn --arg a "$aid" --arg at "$(now_iso)" --arg o "$outcome" --argjson d "$detail" "{audit_id:\$a, phase:\"outcome\", at:\$at, outcome:\$o} + \$d" >> "$audit"' EXIT
-      refuse() { outcome=refused; detail=$(jq -cn --arg k "$1" --arg msg "$2" '{reason:{kind:$k, message:$msg}}'); fail 2 "$1" "$2" "$(jq -c --arg a "$aid" '. + {audit_id:$a}' <<<"$ctx")"; }
-      gh_authorize spawn spawning spawn || refuse "$AUTH_KIND" "$AUTH_MSG"
+      aid=$(printf 'spawn|%s|%s|%s' "$host" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); attempted=false
+      # the attempt line, then an outcome line on any exit. Outcomes are a closed set: started, refused, agent_not_ready,
+      # failed, and interrupted when the task dies without one; herdr's own error code stays under error_code
+      attempt() { "$attempted" && return 0; attempted=true
+        jq -cn --arg a "$aid" --arg h "$host" --arg m "$m" --arg n "$name" --arg k "$kind" --arg mo "$model" --argjson hv "$heavy" --arg r "$ref" --arg c "$cwd" --arg at "$(now_iso)" --argjson auth "$auth" \
+          '{audit_id:$a, phase:"spawn", stage:"attempt", host:$h, machine:(if $m == "" then null else $m end), name:$n, kind:$k, model:$mo, heavy:$hv, task_ref:$r, cwd:$c, at:$at, authorized_by:$auth}' >> "$audit" \
+          || fail 2 audit_failed "could not write the spawn attempt; not spawning" "$ctx"
+        outcome=interrupted; detail='{}'
+        trap 'exec 9>>"$audit.lock"; flock -w 30 9 || true; jq -cn --arg a "$aid" --arg at "$(now_iso)" --arg o "$outcome" --argjson d "$detail" "{audit_id:\$a, phase:\"outcome\", at:\$at, outcome:\$o} + \$d" >> "$audit"' EXIT; }
+      refuse() { attempt; outcome=refused; detail=$(jq -cn --arg k "$1" --arg msg "$2" '{reason:{kind:$k, message:$msg}}'); fail "''${3:-2}" "$1" "$2" "$(jq -c --arg a "$aid" '. + {audit_id:$a}' <<<"$ctx")"; }
+      [ -z "$refusal" ] || refuse "$(jq -r .kind <<<"$refusal")" "$(jq -r .message <<<"$refusal")" "$(jq -r '.exit // 2' <<<"$refusal")"
+      # the inventory is from before the lock: re-read this host's agents now, so two spawns never decide on one snapshot
+      # (a spawn still in flight holds its slots through its attempt line, see capacity.jq)
+      rc=0; fresh=$(herdr_at ${t} "$m" agent list 2>/dev/null 9>&-) || rc=$?
+      [ "$rc" -eq 0 ] || refuse host_unreachable "host $host did not answer (herdr agent list exit $rc); not spawning"
+      inv=$(jq -c --arg h "$host" --argjson f "$fresh" '.hosts |= map(if (.host | ascii_downcase) == ($h | ascii_downcase) then
+              .agents = [$f.result.agents[]? | select(type == "object" and (.pane_id | type) == "string")
+                         | {host:$h, agent_id:.pane_id, harness:(.agent // "unknown"), session_id:(.agent_session.value? // null), cwd:(.cwd // null), observed_state:(.agent_status // "unknown")}]
+              | .reachable = true
+            else . end)' <<<"$inv" 2>/dev/null) || refuse host_unreachable "host $host returned an unreadable agent list; not spawning"
       cap=$(capacity_json null) || refuse internal "capacity could not be computed"
       hc=$(jq -c --arg h "$host" '[.hosts[] | select((.host | ascii_downcase) == ($h | ascii_downcase))] | first' <<<"$cap")
       [ "$hc" != null ] || refuse host_unknown "host $host is not in the inventory (a saved herdr machine, or this host)"
       [ "$(jq -r .reachable <<<"$hc")" = true ] || refuse host_unreachable "host $host did not answer; not spawning"
       if [ "$heavy" = true ]; then want=heavy; else want=light; fi
-      [ "$(jq -r --arg w "$want" '.spawn_ok[$w]' <<<"$hc")" = true ] \
-        || refuse capacity "no $want spawn on $host: $(jq -r '.reasons | join("; ")' <<<"$hc")"
+      [ "$(jq -r --arg w "$want" '.spawn_ok[$w]' <<<"$hc")" = true ] || refuse capacity "no $want spawn on $host: $(jq -r '.reasons | join("; ")' <<<"$hc")"
+      attempt
+      exec 9>&-
       # spawn: a workspace of its own (never a split of the coordinator's pane), then the agent in its root pane
       errf=$(mktemp); rc=0
-      ws=$(herdr_at ${t} "$m" workspace create --cwd "$cwd" --label "$name" --no-focus 2>"$errf" 9>&-) || rc=$?
+      ws=$(herdr_at ${t} "$m" workspace create --cwd "$cwd" --label "$name" --no-focus 2>"$errf") || rc=$?
       pane=$(jq -r '.result.root_pane.pane_id // .result.root_pane // empty | strings' <<<"$ws" 2>/dev/null || true)
-      wsid=$(jq -r '.result.workspace.workspace_id // empty' <<<"$ws" 2>/dev/null || true)
+      wsid=$(jq -r '.result.workspace.workspace_id // empty | strings' <<<"$ws" 2>/dev/null || true)
       if [ "$rc" -ne 0 ] || [ -z "$pane" ]; then
         outcome=failed; detail=$(jq -cn --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '{error:("workspace create: " + $e)}'); rm -f "$errf"
         fail 2 herdr_error "herdr workspace create failed on $host (exit $rc)" "$ctx"; fi
+      if ! valid_id "$pane" || { [ -n "$wsid" ] && ! valid_id "$wsid"; }; then
+        outcome=failed; detail=$(jq -cn --arg p "$pane" '{error:"workspace create returned an unsafe pane id", returned_pane:($p | .[0:80])}'); rm -f "$errf"
+        fail 2 herdr_error "herdr workspace create on $host returned an unsafe pane id; not starting an agent there" "$ctx"; fi
       rc=0
       # --dangerously-skip-permissions runs unattended only where Home Manager pre-accepted the bypass and $HOME trust
       # dialogs (nixos-config mcp.nix, acceptClaudeStartupDialogs); elsewhere the dialog blocks and agent start says agent_not_ready
-      st=$(herdr_at 70 "$m" agent start "$name" --kind claude --pane "$pane" --timeout 60000 -- --dangerously-skip-permissions --model "$model" 2>"$errf" 9>&-) || rc=$?
-      code=$(jq -rs 'map(.error.code? // empty) | first // empty' "$errf" 2>/dev/null || true)
+      st=$(herdr_at 70 "$m" agent start "$name" --kind claude --pane "$pane" --timeout 60000 -- --dangerously-skip-permissions --model "$model" 2>"$errf") || rc=$?
+      code=$(jq -rs 'map(.error.code? // empty | strings) | first // empty' "$errf" 2>/dev/null | tr -cd 'A-Za-z0-9_' || true)
       detail=$(jq -cn --arg p "$pane" --arg w "$wsid" '{agent_id:$p, workspace_id:(if $w == "" then null else $w end)}')
       if [ "$rc" -ne 0 ]; then
-        outcome=''${code:-failed}; detail=$(jq -c --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '. + {error:$e}' <<<"$detail"); rm -f "$errf"
-        fail 2 "''${code:-herdr_error}" "herdr agent start failed on $host/$pane (exit $rc; the workspace stays for inspection)" "$(jq -c --arg a "$aid" --arg p "$pane" '. + {audit_id:$a, agent_id:$p}' <<<"$ctx")"; fi
+        if [ "$code" = agent_not_ready ]; then outcome=agent_not_ready; else outcome=failed; fi
+        detail=$(jq -c --arg c "$code" --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '. + {error_code:(if $c == "" then null else $c end), error:$e}' <<<"$detail"); rm -f "$errf"
+        fail 2 "$outcome" "herdr agent start failed on $host/$pane (exit $rc''${code:+, $code}; the workspace stays for inspection)" "$(jq -c --arg a "$aid" --arg p "$pane" '. + {audit_id:$a, agent_id:$p}' <<<"$ctx")"; fi
       rm -f "$errf"
       ses=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
       outcome=started; detail=$(jq -c --arg s "$ses" --argjson auth "$auth" '. + {session_id:(if $s == "" then null else $s end), authorized_by:$auth}' <<<"$detail")
