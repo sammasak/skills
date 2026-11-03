@@ -84,8 +84,7 @@ a `coordinator` agent there. No shell command is involved in loading it.
 ## Waking up without tokens
 
 `coord:changed` is the check a timer runs between sessions. It costs no model
-call: `herdr:inventory` (and, once sammasak/skills#38 is merged and the task
-depends on it, `gh:repos`; until then a `repos_file` holding such a record)
+call: `herdr:inventory` and `gh:repos` (both run upstream in the same DAG)
 plus a jq read of `audit.jsonl`, diffed against
 `~/.local/state/coordinator/changed/snapshot.json`. It prints nothing and
 exits 0 when nothing is actionable; otherwise one line per change: an agent
