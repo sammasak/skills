@@ -31,7 +31,7 @@ separate. The same tasks work without an LLM from the checkout:
 cd ~/claude-code-skills
 devenv tasks run coord:brief >/dev/null; cat ~/.local/state/coordinator/brief/latest.md   # this host + every saved Herdr machine
 herdr machine list --json                           # which machines that is (empty on a worker)
-tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message attempt and outcome
+tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message, coord:spawn and gh act attempt and outcome
 ```
 
 To hand work over: the coordinator drafts (`coord:handoff`) with the
@@ -58,6 +58,33 @@ why; a run that failed before rendering leaves no `latest.md` at all. The pane t
 an agent that holds a handoff, an open epic does not hold back its merged
 children, and the brief prints verified handoffs as one line per `repo#ref`
 and each open one with its `implemented`, `reviewed`, `merged`, `live` stages.
+
+Workers: `coord:capacity` reports each host's workers, the worker and
+heavy-job slots left and which assignment kinds fit (planning and review on
+opus, implementation on sonnet, mechanical checks on haiku; review and
+implementation take a heavy-job slot). The limits are `coordinator.capacity`
+in `agents/coordinator/spawn.nix`: acer-swift two heavy jobs and three
+workers, lenovo one heavy job and no spawning (the control plane; see
+nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`, an absolute `cwd`,
+`authorized_by`) starts one Claude Code worker in its own Herdr workspace
+(`herdr workspace create` + `herdr agent start <kind>-<N> --kind claude --
+--dangerously-skip-permissions --model <the kind's model>`) only for an item
+carrying a label you applied on that same item and only when that host's
+capacity allows. The decision is taken under the audit lock on a fresh agent
+list of the target host, and a spawn in flight holds its slots, so two
+concurrent spawns never share one slot; the lock is released before the
+herdr calls. Every request that passes input validation and reaches the lock
+writes a `phase: spawn` attempt and an outcome line to `audit.jsonl`; the
+outcome is one of `started`, `refused` (with its reason), `agent_not_ready`,
+`failed` (herdr's code under `error_code`), or `interrupted` when the task
+died before writing one. A request refused earlier (`invalid_input`, a
+missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
+has no assignment until the coordinator hands it one (`coord:handoff`,
+`herdr:message`). `--dangerously-skip-permissions` starts unattended only where
+Home Manager pre-accepted the bypass and `$HOME` trust dialogs (nixos-config
+`mcp.nix`, `acceptClaudeStartupDialogs`); elsewhere `agent start` returns
+`agent_not_ready` and the workspace stays for you to inspect. The task never
+closes a pane or workspace.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of
 `needs-decision`, `blocked`, `needs-live` on one issue or PR) and

@@ -40,7 +40,9 @@
         want_state() { local s="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = --until ] && [ "$2" = "$s" ] && return 0; shift; done; return 1; }
         agent_info() { printf '{"id":"cli:agent:%s","result":{"agent":{"pane_id":"%s","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"%s"},"agent_status":"%s","state_change_seq":%s,"revision":3},"type":"agent_info"}}\n' "$1" "$2" "''${FAKE_HERDR_SESSION:-sess-1}" "$3" "$4"; }
         case "$1 $2" in
-          "agent list") cat "''${FAKE_HERDR_LIST:?}" ;;
+          # FAKE_HERDR_STARTED=<file>: agents a successful `agent start` registered (one JSON object per line) join the list,
+          # like a real server listing the new agent
+          "agent list") if [ -s "''${FAKE_HERDR_STARTED:-/nonexistent}" ]; then jq --slurpfile s "$FAKE_HERDR_STARTED" '.result.agents += $s' "''${FAKE_HERDR_LIST:?}"; else cat "''${FAKE_HERDR_LIST:?}"; fi ;;
           "agent read") # like herdr 0.9.5: <TARGET> comes first; an option or `--` in its place is "unknown option"
             case "$3" in -*|"") echo "unknown option: ''${3:-<none>}" >&2; exit 2 ;; esac
             cat "''${FAKE_HERDR_READ:?}" ;;
@@ -59,6 +61,16 @@
             [ "''${FAKE_HERDR_MISSING:-}" = "$3" ] && { echo '{"error":{"code":"agent_not_found","message":"no such agent"}}' >&2; exit 1; }
             if [ "''${FAKE_HERDR_WAIT:-reached}" = timeout ] || ! want_state "$s" "$@"; then echo '{"error":{"code":"timeout","message":"state not reached"}}' >&2; exit 1; fi
             agent_info wait "$3" "$s" 9 ;;
+          # coord:spawn: FAKE_HERDR_WS=<id> names the created workspace (root pane <id>:p1); FAKE_HERDR_START=ok|not_ready|fail,
+          # FAKE_HERDR_START_SLEEP delays it
+          "workspace create") w="''${FAKE_HERDR_WS:-wN}"; printf '{"id":"cli:workspace:create","result":{"type":"workspace_created","workspace":{"workspace_id":"%s"},"tab":{"tab_id":"%s:t1"},"root_pane":{"pane_id":"%s:p1"}}}\n' "$w" "$w" "$w" ;;
+          "agent start") [ -n "''${FAKE_HERDR_START_SLEEP:-}" ] && sleep "$FAKE_HERDR_START_SLEEP"
+            case "''${FAKE_HERDR_START:-ok}" in
+              ok) [ -n "''${FAKE_HERDR_STARTED:-}" ] && jq -cn --arg p "$7" --arg s "''${FAKE_HERDR_SESSION:-sess-new}" '{pane_id:$p, agent:"claude", agent_status:"idle", agent_session:{agent:"claude", kind:"id", value:$s}, cwd:"/home/lukas", terminal_title_stripped:"Claude Code"}' >> "$FAKE_HERDR_STARTED"
+                printf '{"id":"cli:agent:start","result":{"type":"agent_started","agent":{"name":"%s","pane_id":"%s","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"%s"},"agent_status":"idle"}}}\n' "$3" "$7" "''${FAKE_HERDR_SESSION:-sess-new}" ;;
+              not_ready) echo '{"error":{"code":"agent_not_ready","message":"agent blocked during startup"}}' >&2; exit 1 ;;
+              *) echo '{"error":{"code":"pane_not_available","message":"pane is not at a shell prompt"}}' >&2; exit 1 ;;
+            esac ;;
           *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
         esac
         exit "''${FAKE_HERDR_EXIT:-0}"
