@@ -75,8 +75,9 @@
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"assign:implementer\"}}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "send: $CODE $OUT"
         run coord:brief; [ "$CODE" -eq 0 ] && ok || bad "brief after send: $CODE"
-        # session 2: forget everything above; only the two files remain
-        unset ID; B="$TMP/state/brief/latest.json"; A="$TMP/state/audit.jsonl"
+        # session 2: forget everything above and lose the drafts too; only the two files remain
+        unset ID; rm -rf "$TMP/state/handoffs"; run coord:brief; [ "$CODE" -eq 0 ] && ok || bad "brief without drafts: $CODE"
+        B="$TMP/state/brief/latest.json"; A="$TMP/state/audit.jsonl"
         [ -s "$B" ] && [ -s "$A" ] && ok || bad "state files present"
         HID=$(jq -r '.handoffs[0].handoff_id' "$B"); AID=$(jq -r '.handoffs[0].audit_id' "$B")
         [[ "$HID" =~ ^[a-f0-9]{12}$ ]] && [[ "$AID" =~ ^[a-f0-9]{12}$ ]] && [ "$(jq -r '.handoffs|length' "$B")" = 1 ] && ok || bad "brief lists the one handoff ($(jq -c .handoffs "$B"))"
@@ -90,13 +91,19 @@
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .audit_id)" = "$AID" ] && [ "$(jqr .agent_id)" = "wF:p1" ] && [ "$(jqr .herdr_state)" = idle ] && ok || bad "await by audit id from the recovered state ($CODE $OUT)"
         unset FAKE_HERDR_STATE_SEQ
-        # a second send of the recovered handoff is still refused as a duplicate (the gate is unchanged)
+        # a second send of the recovered handoff is refused: without its draft as invalid_input (no draft), with it as duplicate;
+        # either way nothing is prompted (the gate is unchanged)
+        : > "$FAKE_LOG"
         run herdr:message --input-json "{\"handoff_id\":\"$HID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"assign:implementer\"}}"
-        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = duplicate ] && ok || bad "duplicate still refused after recovery ($OUT)"
+        [ "$CODE" -ne 0 ] && [[ "$(jqr .error.kind)" =~ ^(duplicate|invalid_input)$ ]] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "resend refused after recovery ($OUT)"
         # an interrupted attempt (no outcome line) shows as interrupted, never as delivered
         printf '%s\n' '{"audit_id":"aaaaaaaaaaaa","handoff_id":"bbbbbbbbbbbb","phase":"attempt","host":"'"$H"'","machine":null,"agent_id":"wT:p1","at":"2026-11-03T09:10:00Z","allowed_actions":["comment"],"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/29","label":"approved"}}' >> "$A"
         run coord:brief; B="$TMP/state/brief/latest.json"
-        [ "$(jq -r '.handoffs|length' "$B")" = 2 ] && [ "$(jq -r '.handoffs[] | select(.handoff_id=="bbbbbbbbbbbb") | "\(.outcome) \(.delivered) \(.task_ref)"' "$B")" = "interrupted false null" ] && ok || bad "interrupted attempt recovered honestly ($(jq -c .handoffs "$B"))"
+        [ "$(jq -r '.handoffs|length' "$B")" = 2 ] && [ "$(jq -r '.handoffs[] | select(.handoff_id=="bbbbbbbbbbbb") | "\(.outcome) \(.delivered) \(.task_ref)"' "$B")" = "interrupted false null" ] && [ "$(jq -r .handoffs_error "$B")" = null ] && ok || bad "interrupted attempt recovered honestly ($(jq -c .handoffs "$B"))"
+        # a malformed audit line is surfaced as a failed source, never as "no handoffs"
+        printf '%s\n' 'this is not json' >> "$A"
+        run coord:brief; B="$TMP/state/brief/latest.json"
+        [ "$CODE" -eq 0 ] && [ "$(jq -r '.handoffs_error.kind' "$B")" = audit_corrupt ] && [ "$(jq -r .partial "$B")" = true ] && [ "$(jq -r '[.failed_sources[] | select(.source=="coordinator:audit")] | length' "$B")" = 1 ] && [ "$(jq -r '.handoffs|length' "$B")" = 0 ] && grep -q 'unreadable: audit_corrupt' "$TMP/run.log" && ok || bad "corrupt audit surfaced in the brief ($(jq -c '{handoffs_error,partial,failed_sources}' "$B"))"
         summary
       '';
     };
