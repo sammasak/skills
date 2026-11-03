@@ -319,7 +319,7 @@
       '';
     };
     "skills:test:tasks:evidence" = {
-      description = "gh:work for one repo and git:recent for one checkout over fakes";
+      description = "gh:work for one repo, git:recent for one checkout, gh:repos for the owner's portfolio, over fakes";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -359,6 +359,23 @@
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "git:recent: relative path rejected"
         run git:recent --input-json "{\"checkout\":\"$TMP/../$(basename "$TMP")/repo\"}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "git:recent: .. rejected"
+        # gh:repos: the owner's portfolio in one GraphQL call; projected, sorted by push, archived excluded, capped, failures as data
+        export FAKE_GH_REPOS='[{"name":"skills","pushedAt":"2026-11-03T10:18:03Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":1},"issues":{"totalCount":4},"approved":{"totalCount":2}},{"name":"nixos-config","pushedAt":"2026-11-03T11:19:56Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":2},"issues":{"totalCount":12},"approved":{"totalCount":0}},{"name":"quiet","pushedAt":"2026-10-01T00:00:00Z","isArchived":false,"isPrivate":true,"pullRequests":{"totalCount":0},"issues":{"totalCount":3},"approved":{"totalCount":0}},{"name":"old-thing","pushedAt":"2026-11-02T00:00:00Z","isArchived":true,"isPrivate":true,"pullRequests":{"totalCount":9},"issues":{"totalCount":9},"approved":{"totalCount":9}}]'
+        : > "$FAKE_LOG"; run gh:repos
+        [ "$CODE" -eq 0 ] && [ "$(jqr .owner)" = sammasak ] && [ "$(jqr '.repos|length')" = 3 ] && [ "$(jqr '[.repos[].name] | join(",")')" = "nixos-config,skills,quiet" ] && ok || bad "gh:repos: projection sorted by pushed_at ($OUT)"
+        [ "$(jqr '[.repos[].name] | index("old-thing")')" = null ] && ok || bad "gh:repos: archived repo excluded even when the server returns it"
+        [ "$(jqr '.repos[] | select(.name=="skills") | "\(.repo) \(.open_prs) \(.open_issues) \(.approved_issues) \(.active) \(.private)"')" = "sammasak/skills 1 4 2 true false" ] && [ "$(jqr '.repos[] | select(.name=="quiet") | .active')" = false ] && ok || bad "gh:repos: counts and active flag ($OUT)"
+        [ "$(jqr .truncated)" = false ] && [ "$(jqr .total)" = 4 ] && [ "$(jqr .listed)" = 3 ] && [ "$(jqr .limit)" = 20 ] && ok || bad "gh:repos: below the cap nothing is truncated ($OUT)"
+        grep -q -- '-F owner=sammasak' "$FAKE_LOG" && grep -q -- '-F n=20' "$FAKE_LOG" && [ "$(grep -c '^gh ' "$FAKE_LOG")" = 1 ] && ok || bad "gh:repos: exactly one gh call, owner and cap reach it ($(cat "$FAKE_LOG"))"
+        run gh:repos --option coordinator.ghLimit:int 2
+        [ "$CODE" -eq 0 ] && [ "$(jqr '[.repos[].name] | join(",")')" = "nixos-config,skills" ] && [ "$(jqr .truncated)" = true ] && [ "$(jqr .limit)" = 2 ] && [ "$(jqr .total)" = 4 ] && ok || bad "gh:repos: capped at the limit and flagged truncated ($OUT)"
+        run gh:repos --input-json '{"owner":"sammasak; id"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "gh:repos: unsafe owner rejected"
+        FAKE_GH_API_EXIT=1 run gh:repos
+        [ "$CODE" -eq 0 ] && [ "$(jqr .error.kind)" = gh_error ] && jqr .error.message | grep -q 'HTTP 404' && ok || bad "gh:repos: gh failure is data with gh's own message ($CODE $OUT)"
+        FAKE_GH_GRAPHQL_RAW='{"data":null,"errors":[{"message":"rate limited"}]}' run gh:repos
+        [ "$CODE" -eq 0 ] && [ "$(jqr .error.kind)" = malformed ] && ok || bad "gh:repos: a GraphQL error body is data, not a list ($OUT)"
+        unset FAKE_GH_REPOS
         summary
       '';
     };

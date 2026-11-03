@@ -12,6 +12,8 @@ in
     herdrCommand = lib.mkOption { type = t.str; default = "herdr"; description = "Overridable for tests (fake herdr)."; };
     ghCommand = lib.mkOption { type = t.str; default = "gh"; description = "Overridable for tests (fake gh)."; };
     ghLimit = lib.mkOption { type = t.int; default = 20; };
+    ghOwner = lib.mkOption { type = t.str; default = "sammasak"; description = "GitHub login whose repositories gh:repos lists."; };
+    portfolioActive = lib.mkOption { type = t.int; default = 5; description = "How many active repos coord:brief expands with gh:work."; };
     gitSince = lib.mkOption { type = t.str; default = "48 hours ago"; };
     stateDir = lib.mkOption {
       type = t.str;
@@ -47,6 +49,26 @@ in
         if [ "$rc" -ne 0 ]; then jq -cn --arg m "herdr machine list: $(rc_kind $rc) (exit $rc)" '{machines:[], error:{kind:"herdr_error", message:$m}}'; return 0; fi
         jq -c 'if type == "array" then {machines: map(select(type == "object" and .enabled == true and (.label|type) == "string")), error:null} else {machines:[], error:{kind:"malformed", message:"herdr machine list returned no JSON array"}} end' <<<"$raw" 2>/dev/null \
           || jq -cn '{machines:[], error:{kind:"malformed", message:"herdr machine list returned no JSON"}}'; }
+      # gh_work_json <OWNER/REPO>: the gh:work record (open issues, open+merged PRs, truncation) or an error record;
+      # never exits, so coord:brief can call it per active repo and gh:work can emit it
+      gh_work_json() { local gh="$1" ctx at rc=0 issues open_prs merged_prs prs trunc fields out
+        ctx=$(jq -cn --arg g "$gh" '{task:"gh:work",repo:$g,gh:$g}'); at=$(now_iso)
+        gh_err() { jq -cn --arg k "$1" --arg m "$2" --argjson x "$ctx" --arg at "$at" '{schema_version:1} + $x + {observed_at:$at, error:{kind:$k, message:$m}}'; }
+        issues=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} issue list -R "$gh" --state open --limit ${toString cfg.ghLimit} --json number,title,state,updatedAt,labels,url 2>/dev/null) || { rc=$?; gh_err gh_error "gh issue list exited $rc"; return 0; }
+        fields=number,title,state,isDraft,reviewDecision,mergedAt,updatedAt,headRefName,url,statusCheckRollup,closingIssuesReferences
+        open_prs=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$gh" --state open --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || { rc=$?; gh_err gh_error "gh pr list (open) exited $rc"; return 0; }
+        merged_prs=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$gh" --state merged --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || { rc=$?; gh_err gh_error "gh pr list (merged) exited $rc"; return 0; }
+        prs=$(jq -cn --argjson o "$open_prs" --argjson m "$merged_prs" '$o + $m' 2>/dev/null) || { gh_err malformed "gh returned unexpected JSON"; return 0; }
+        # gh stops at --limit without saying so; a list that is exactly the limit long may be cut, and the reader must know
+        trunc=$(jq -cn --argjson i "$issues" --argjson o "$open_prs" --argjson m "$merged_prs" --argjson l ${toString cfg.ghLimit} \
+          '[("issues" | select(($i|length) >= $l)), ("open_prs" | select(($o|length) >= $l)), ("merged_prs" | select(($m|length) >= $l))]' 2>/dev/null) || trunc='[]'
+        out=$(jq -cn --arg at "$at" --argjson c "$ctx" --argjson i "$issues" --argjson p "$prs" --argjson no "$(jq 'length' <<<"$open_prs")" --argjson l ${toString cfg.ghLimit} --argjson tl "$trunc" '
+          $c + {schema_version:1, observed_at:$at, error:null, open_pr_count:$no, limit:$l, truncated:(($tl|length) > 0), truncated_lists:$tl,
+           issues: ($i | map({number, title, state, updated_at:.updatedAt, labels:((.labels // []) | map(.name)), url})),
+           prs: ($p | map({number, title, state, draft:.isDraft, review_decision:(.reviewDecision // ""), merged_at:.mergedAt, updated_at:.updatedAt,
+                          branch:.headRefName, url, checks:((.statusCheckRollup // []) | map((.conclusion | select(. != null and . != "")) // .state // "PENDING")),
+                          closes:((.closingIssuesReferences // []) | map(.number))}))}' 2>/dev/null) || { gh_err malformed "gh returned unexpected JSON"; return 0; }
+        printf '%s\n' "$out"; }
     ''; };
   };
 }

@@ -77,6 +77,14 @@
           [ -e /proc/self/fd/9 ] && { echo "fake gh: fd 9 (the audit lock) was inherited" >&2; exit 99; }
           [ -n "''${FAKE_GH_SLEEP:-}" ] && sleep "$FAKE_GH_SLEEP"
           [ -n "''${FAKE_GH_API_EXIT:-}" ] && { echo "gh: HTTP 404 Not Found (HTTP 404)" >&2; exit "$FAKE_GH_API_EXIT"; }
+          # `gh api graphql -f query=… -F owner=… -F n=N`: FAKE_GH_REPOS is the owner's repository node list (archived ones
+          # included, as if the server ignored isArchived:false), cut at n like a page; FAKE_GH_GRAPHQL_RAW replaces the answer
+          if [ "$2" = graphql ]; then
+            [ -n "''${FAKE_GH_GRAPHQL_RAW:-}" ] && { printf '%s\n' "$FAKE_GH_GRAPHQL_RAW"; exit 0; }
+            n=100; prev=""; for a in "$@"; do case "$prev" in -F|--field) case "$a" in n=*) n="''${a#n=}" ;; esac ;; esac; prev="$a"; done
+            jq -c --argjson n "$n" '{data:{repositoryOwner:{repositories:{totalCount:length, nodes:.[:$n]}}}}' <<<"''${FAKE_GH_REPOS:-[]}"
+            exit 0
+          fi
           method=GET; path=""; body=""; prev=""
           for a in "$@"; do case "$prev" in -X|--method) method="$a" ;; --input) [ "$a" = - ] && body=$(cat) ;; esac; case "$a" in repos/*) path="''${a%%\?*}" ;; esac; prev="$a"; done
           case "$method $path" in
