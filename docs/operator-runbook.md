@@ -67,12 +67,15 @@ contracts the subagent uses are the ones in that working tree.
 
 "ask the coordinator to work the queue" runs one tick of `docs/process.md`:
 discover (`coord:brief`, whose `handoffs` section is rebuilt from
-`audit.jsonl`, and `gh:work` per repository; `truncated: true` means gh cut
-the list at `coordinator.ghLimit`), prioritize, delegate one authorized item
-through the unchanged send gate, follow up one delivered handoff, report.
-A new session continues from `brief/latest.json` and `audit.jsonl`; nothing
-is kept in memory. Codex runs the same contract through
-`agents/coordinator/AGENTS.md` (`codex exec --cd ~/claude-code-skills …`).
+`audit.jsonl`, and `gh:work` per repository; `truncated: true` means a list
+reached `coordinator.ghLimit` and may have been cut), prioritize, delegate one
+authorized item through the unchanged send gate, follow up one delivered
+handoff, report. A new session continues from `brief/latest.json` and
+`audit.jsonl`; nothing is kept in memory. Codex runs the same contract through
+`agents/coordinator/codex.toml`, a custom-agent file in Codex's `agents_dir`
+format whose instructions point at the same ROLE.md; nixos-config installs it
+as `~/.codex/agents/coordinator.toml` on the coordinator host, so Codex lists
+a `coordinator` agent there. No shell command is involved in loading it.
 
 ## Running the quality role
 

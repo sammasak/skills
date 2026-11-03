@@ -23,10 +23,11 @@ other roles may share. Nothing here needs a new script runner or a hook.
    `skills:` = the contract's list, a short prompt that points at ROLE.md and
    spells out the single allowed command form). No hooks: the owner's
    permission prompt and the role prompt are the boundary. Optional Codex
-   adapter `agents/<role>/AGENTS.md`: a few lines that point at the same
-   ROLE.md, name the skill files to read and the `codex exec --cd` form; it
-   never restates tasks, skills or forbidden lists (the contract suite checks
-   both adapters name only the contract's tasks).
+   adapter `agents/<role>/codex.toml` (Codex `agents_dir` format: `name`,
+   `description`, `developer_instructions`): plain-text instructions that
+   point at the same ROLE.md and name the skill files to read; no shell
+   command, no restated tasks, skills or forbidden lists (the contract suite
+   parses it and checks both adapters name only the contract's tasks).
 4. **Tests** — fixture suite as a task in `agents/<role>/tests.nix` driving the real
    tasks with `--option coordinator.*` overrides; the contract suite picks the
    role up automatically (`skills:test:contract` iterates `agents/*/ROLE.md`).

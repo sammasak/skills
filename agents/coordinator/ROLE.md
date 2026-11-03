@@ -102,7 +102,7 @@ compose the answer. You never do the workers' work.
    decide, approve or promise in the owner's name.
 10. If a task fails, report the `error.kind` and `error.message` verbatim.
    Do not retry an `act` task on an ambiguous outcome; show the audit record.
-11. When the owner asks you to work the queue (or a tick is due), follow
+11. When the owner asks you to work the queue, follow
    `docs/process.md`: one tick = discover (`coord:brief`, `gh:work` per
    repository), prioritize (blocked or owner-needing handoffs first, then
    authorized items without a handoff, then delivered handoffs to follow

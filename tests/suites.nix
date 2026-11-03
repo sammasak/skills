@@ -68,11 +68,17 @@
                 jq -e '.permissionMode == "default"' <<<"$afm" >/dev/null && ok || bad "$role: claude adapter must keep permissionMode default (prompts)"
                 ;;
               codex)
-                f="agents/$role/AGENTS.md"; [ -f "$f" ] || { bad "$role: codex adapter $f missing"; continue; }
-                grep -q "agents/$role/ROLE.md" "$f" && ok || bad "$role: codex adapter does not point at agents/$role/ROLE.md"
-                for s in $(jq -r '.skills[]' <<<"$fm"); do grep -q "skills/$s/SKILL.md" "$f" && ok || bad "$role: codex adapter does not name skill $s to read"; done
-                # thin adapter: no second copy of the contract (no frontmatter, no task list of its own)
-                head -1 "$f" | grep -qv '^---' && ! grep -qE '^(tasks|forbidden|evidence|skills):' "$f" && ok || bad "$role: codex adapter must not restate the contract"
+                # Codex loads agents/<role>/codex.toml directly (agents_dir format: name, description, developer_instructions);
+                # the instructions are plain text that point at the one ROLE.md, never a shell command
+                f="agents/$role/codex.toml"; [ -f "$f" ] || { bad "$role: codex adapter $f missing"; continue; }
+                cfm="$(yq -p toml -o json '.' "$f" 2>/dev/null)" || { bad "$role: codex adapter is not valid TOML"; continue; }
+                [ "$(jq -r .name <<<"$cfm")" = "$role" ] && ok || bad "$role: codex adapter name must be $role"
+                [ -n "$(jq -r '.description // ""' <<<"$cfm" | tr -d ' ')" ] && [ -n "$(jq -r '.developer_instructions // ""' <<<"$cfm" | tr -d ' \n')" ] && ok || bad "$role: codex adapter needs description and developer_instructions"
+                di=$(jq -r '.developer_instructions // ""' <<<"$cfm")
+                grep -q "agents/$role/ROLE.md" <<<"$di" && ok || bad "$role: codex instructions do not point at agents/$role/ROLE.md"
+                for s in $(jq -r '.skills[]' <<<"$fm"); do grep -q "skills/$s/SKILL.md" <<<"$di" && ok || bad "$role: codex instructions do not name skill $s to read"; done
+                ! grep -qE '\$\(|`[^`]*\bcat\b|codex exec|^\s*cat ' <<<"$di" && ok || bad "$role: codex instructions must not embed a shell command"
+                [ "$(jq 'keys - ["name","description","developer_instructions"] | length' <<<"$cfm")" = 0 ] && ok || bad "$role: codex adapter has keys outside the agents_dir format"
                 ;;
               *) bad "$role: unknown adapter $adapter" ;;
             esac
@@ -80,7 +86,7 @@
           # adapter parity: every adapter points at the same ROLE.md, and any task name an adapter mentions is in the contract
           # (so neither adapter can widen or narrow the task list on its own)
           allowed=$(jq -r '[.tasks.read[], (.tasks.run // [])[], .tasks.act[]] | .[]' <<<"$fm")
-          for f in "agents/$role.md" "agents/$role/AGENTS.md"; do
+          for f in "agents/$role.md" "agents/$role/codex.toml"; do
             [ -f "$f" ] || continue
             grep -q "agents/$role/ROLE.md" "$f" && ok || bad "$role: $f does not name agents/$role/ROLE.md"
             stray=$(grep -oE '\b(coord|gh|herdr|work|harness|git|quality):[a-z][a-z-]*' "$f" | sort -u | grep -vxF -f <(printf '%s\n' "$allowed") || true)
