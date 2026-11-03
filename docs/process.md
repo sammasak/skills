@@ -5,8 +5,10 @@ the owner has already authorized on GitHub, using only the tasks its contract
 lists (`coord:brief`, `gh:work`, `coord:handoff`, `herdr:message`,
 `herdr:await`, `work:status`, `gh:comment`, `gh:label`). This is a procedure
 the agent follows, not a program: there is no scheduler, daemon, queue or
-database. One pass is a *tick*; the owner (or a later session) starts the
-next one. Every tick starts from files, never from memory.
+database. One pass is a *tick*; within an active session the coordinator runs
+ticks back to back until the stop conditions below hold (ROLE.md, Autonomy),
+and nothing runs after the session ends. Every tick starts from files, never
+from memory.
 
 ## Rule 0
 
@@ -40,16 +42,17 @@ authorization.
    - P3: everything else is reported, not assigned. Items labelled
      `needs-decision`, `blocked` or `needs-live` are never assigned; `blocked`
      items get their blocker re-checked, nothing more.
-3. **Delegate** one P1 item: pick an agent that is `idle` or `done` (never
+3. **Delegate** P1 items, one handoff per item, while a free worker remains: pick an agent that is `idle` or `done` (never
    `blocked`, never `working`) on a host with capacity (lenovo: one heavy job,
    control plane only; acer-swift: two, one while a full gate runs). Draft
    with `coord:handoff`, `allowed_actions` limited to what the label grants
    (reading, committing, opening a PR and `comment` for ordinary work; `merge`,
    `close`, `deploy:<host>` only when the owner's label or comment says so).
    Send with `herdr:message` and `authorized_by = {issue_url, label}`. A
-   refusal (`authorization_missing`, `duplicate`, `agent_busy`, ...) ends the
-   item for this tick; report the `error.kind` verbatim.
-4. **Follow up** one P2 item: `herdr:await` by `audit_id` with a finite
+   refusal (`authorization_missing`, `duplicate`, `agent_busy`, ...) ends that
+   item for this tick, not the tick; report the `error.kind` verbatim and go to
+   the next item.
+4. **Follow up** every P2 item once: `herdr:await` by `audit_id` with a finite
    timeout, then `work:status`. `unknown_delivery` or
    `agent_prompt_stalled`: `herdr:inspect`, report, never resend.
    `no_turn_observed`: the agent is idle and has not started; report, do not
@@ -61,12 +64,14 @@ authorization.
    skipped, each with its `handoff_id`/`audit_id` and the task output it came
    from.
 
-## Stop conditions for a tick
+## Stop conditions
 
-Stop and report when any holds: no P1 item is left and every delivered
-handoff has been followed up once; an agent is `blocked`; an item needs the
-owner (`needs-decision`); or a task refused with `gh_error`, `audit_corrupt`
-or `busy` (fix the environment before the next tick).
+A blocked agent or an item that needs the owner ends that item only: record
+it (`gh:label` `blocked` or `needs-decision`, one `gh:comment` with the exact
+question) and continue with the rest. Stop the session and report when no
+eligible P1 item or free worker is left and every delivered handoff has been
+followed up once, or when a task refuses with `gh_error`, `audit_corrupt` or
+`busy` (fix the environment before the next tick).
 
 ## Definition of done for an item
 

@@ -65,12 +65,14 @@ contracts the subagent uses are the ones in that working tree.
 
 ## Working the queue
 
-"ask the coordinator to work the queue" runs one tick of `docs/process.md`:
+"ask the coordinator to work the queue" (or any coordinator session, by
+default; ROLE.md, Autonomy) runs ticks of `docs/process.md` until nothing
+eligible is left:
 discover (`coord:brief`, whose `handoffs` section is rebuilt from
 `audit.jsonl`, and `gh:work` per repository; `truncated: true` means a list
-reached `coordinator.ghLimit` and may have been cut), prioritize, delegate one
-authorized item through the unchanged send gate, follow up one delivered
-handoff, report. A new session continues from `brief/latest.json` and
+reached `coordinator.ghLimit` and may have been cut), prioritize, delegate every
+eligible authorized item through the unchanged send gate, follow up delivered
+handoffs, report; a blocked item is recorded and skipped, not a stop. A new session continues from `brief/latest.json` and
 `audit.jsonl`; nothing is kept in memory. Codex runs the same contract through
 `agents/coordinator/codex.toml`, a custom-agent file in Codex's `agents_dir`
 format whose instructions point at the same ROLE.md; nixos-config installs it
