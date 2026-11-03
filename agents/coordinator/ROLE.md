@@ -148,7 +148,8 @@ END autonomy
    moves the snapshot on, so a change shows once. It also spaces its own
    printing runs (`wakeMinGapSeconds`, `wakeMaxPerHour`): a deferred run
    prints nothing, keeps the snapshot, and says why in `latest.json`
-   (`wake.deferred`, `wake.reason`, `wake.next_allowed_at`), so a burst of
+   (`wake.deferred`, `wake.reason`, `wake.next_allowed_at`; the held lines
+   sit under `wake.pending`, `changes` stays empty), so a burst of
    changes costs at most the capped sessions and surfaces together. A session that starts
    from a wake-up answers those lines (also in `<state>/changed/latest.json`)
    with fresh `coord:brief` output; it never treats them as current state.

@@ -11,8 +11,8 @@ in
   imports = [ ../../task-modules/common.nix ];
 
   # The wake budget: a timer may start a model session only when this task prints, so the task itself spaces its
-  # printing runs (min gap) and caps them per hour; a deferred run prints nothing and leaves the snapshot where it is, so
-  # the changes stay pending and come out together once the budget allows.
+  # printing runs (min gap) and caps them per hour; a deferred run prints nothing, leaves the snapshot where it is and
+  # keeps its lines under wake.pending (never .changes), so they come out together once the budget allows.
   options.coordinator.wakeMinGapSeconds = lib.mkOption {
     type = lib.types.ints.unsigned;
     default = 300;
@@ -159,13 +159,16 @@ in
       fi
       wake=$(jq -cn --argjson d "$deferred" --argjson r "$reason" --argjson n "$next_at" --argjson h "$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")" --argjson g "$gap" --argjson c "$cap" \
         '{deferred:$d, reason:$r, next_allowed_at:(if $n == null then null else ($n | todate) end), wakes_last_hour:$h, min_gap_seconds:$g, max_per_hour:$c}')
-      jq -c --argjson w "$wake" '. + {wake:$w}' "$tmpd/rec.json" > "$tmpd/rec2.json" && mv "$tmpd/rec2.json" "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
+      # .changes is what was printed, nothing else: a deferred run keeps its lines under wake.pending, so a timer that
+      # reads .changes instead of stdout starts no session either
+      jq -c --argjson w "$wake" 'if $w.deferred then . + {wake:($w + {pending:.changes}), changes:[]} else . + {wake:$w} end' "$tmpd/rec.json" > "$tmpd/rec2.json" && mv "$tmpd/rec2.json" "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
       # record and lines first, the snapshot last: a failure here repeats a change on the next run rather than losing it
       if [ "$peek" = false ]; then cp "$tmpd/rec.json" "$tmpd/latest.json" && mv "$tmpd/latest.json" "$dir/latest.json" || fail 2 state_unwritable "cannot write $dir/latest.json" "$ctx"; fi
       cat "$tmpd/rec.json" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
       if [ "$deferred" = true ]; then exit 0; fi
       # stdout is the contract for the timer: empty when nothing is actionable, one line per change otherwise
       jq -r '.changes[].line' "$tmpd/rec.json"
+      # the wake is spent after the lines are out: a crash in between repeats the wake rather than swallowing it
       if [ "$peek" = false ] && [ "$nchanges" -gt 0 ]; then
         jq -cn --argjson r "$recent" --argjson now "$now" '$r + [$now]' > "$tmpd/wakes.json" && mv "$tmpd/wakes.json" "$wakes" || fail 2 state_unwritable "cannot write $wakes" "$ctx"
       fi
