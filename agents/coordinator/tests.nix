@@ -233,13 +233,14 @@
         handoff h00000000004 wG:p1 old "#30" 2026-11-03T09:30:00Z    # pane restarted since: stale
         handoff h00000000005 wZ:p9 sZ "#31" 2026-11-03T09:40:00Z     # pane gone: stale
         handoff h00000000006 wB:p1 sB "#29" 2026-11-03T08:00:00Z none # attempt without an outcome: interrupted, superseded by 003
+        handoff h00000000007 wB:p1 sB "#29" 2026-11-03T15:00:00Z     # a fix-up round: PR 53 (opened under 003) gets a commit at 15:30
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         B="$TMP/state/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
         q() { jq -r "$1" "$B"; }
         h() { jq -r --arg i "$1" ".handoffs[] | select(.handoff_id == \$i) | $2" "$B"; }
         it() { jq -r --arg a "$1" ".items[] | select(.agent_id == \$a) | $2" "$B"; }
-        [ "$CODE" -eq 0 ] && [ "$(q '.handoffs | length')" = 6 ] && ok || bad "brief over six handoffs: $CODE $(grep -E 'error|jq:' "$TMP/run.log" | head -3)"
+        [ "$CODE" -eq 0 ] && [ "$(q '.handoffs | length')" = 7 ] && ok || bad "brief over seven handoffs: $CODE $(grep -E 'error|jq:' "$TMP/run.log" | head -3)"
         # (1) the wrong title loses to the handoff on the pane's session
         [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.title_ref) \(.work_verdict) \(.evidence_ref)"')" = "handoff h00000000002 #28 #99 verified https://github.com/sammasak/skills/pull/52" ] && ok || bad "wrong title: correlated by handoff ($(it wA:p1 '{correlation,task_ref,title_ref,work_verdict,evidence_ref}'))"
         it wA:p1 '.reasons | join(";")' | grep -q 'title names #99; correlated by handoff h00000000002 to #28' && ok || bad "wrong title is named in the reasons"
@@ -252,6 +253,8 @@
         [ "$(h h00000000002 '.stages | "\(.reviewed[0].url) \(.live[0])"')" = "https://github.com/sammasak/skills/pull/52#issuecomment-522 https://github.com/sammasak/skills/pull/52#issuecomment-523" ] && ok || bad "PR 52: the re-review naming the head counts, the author's 8/10 response does not; live from its note ($(h h00000000002 .stages))"
         [ "$(h h00000000003 '"\(.work_verdict) \(.evidence_ref) \(.stages.implemented[0]) \(.stages.reviewed) \(.stages.merged)"')" = "unverified null https://github.com/sammasak/skills/pull/53 null null" ] && ok || bad "PR 53: open; a 9/10 on another head, or unsigned, is not reviewed ($(h h00000000003 '{work_verdict,stages}'))"
         [ "$(h h00000000003 '[.prs[].number] | join(",")')" = 53 ] && ok || bad "PR 54, which wB:p1 itself graded 9/10, is a review it did, not its own work ($(h h00000000003 '[.prs[].number]'))"
+        # a fix-up handoff owns the existing PR it pushed commits to inside its window, and is not stale
+        [ "$(h h00000000007 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stale) \(.stages.implemented[0])"')" = "53 unverified false https://github.com/sammasak/skills/pull/53" ] && ok || bad "fix-up handoff owns the PR it committed to ($(h h00000000007 '{prs:[.prs[].number], work_verdict, stale, reasons}'))"
         [ "$(it wB:p1 '"\(.correlation.by) \(.task_ref) \(.work_verdict)"')" = "handoff #29 unverified" ] && ok || bad "a pane with no ref in its title is correlated by its handoff"
         # (4) stale handoffs: the pane restarted, or is gone; neither is verified and the restarted pane falls back to its title
         [ "$(h h00000000004 '"\(.stale) \(.session_state) \(.work_verdict)"')" = "true session_changed unknown" ] && [ "$(it wG:p1 '.correlation.by')" = title ] && ok || bad "restarted pane: stale handoff, item by title ($(h h00000000004 '{stale,session_state}') $(it wG:p1 .correlation))"
@@ -290,7 +293,7 @@
         for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
-        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 6 q000000000010" ] && grep -q '56 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
+        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 7 q000000000010" ] && grep -q '57 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
         # an agent whose handoff fell out of the evaluated window says so, rather than being judged by its (wrong) title
         [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.work_verdict) \(.evidence_ref)"')" = "omitted h00000000002 #28 unknown null" ] && it wA:p1 '.reasons[0]' | grep -q 'older than the 50 newest evaluated' && ok || bad "omitted handoff reported as omitted ($(it wA:p1 '{correlation,task_ref,work_verdict,reasons}'))"
         summary

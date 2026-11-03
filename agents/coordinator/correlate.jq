@@ -24,7 +24,7 @@ def pr_view: (.headRefOid // "") as $head
 def agent_at($h; $a): [$inv.hosts[]? | select(.host == $h) | .agents[]? | select(.agent_id == $a)] | first;
 def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
 
-# a handoff owns the PRs naming its task_ref opened in its window [sent_at, until), except a PR its own agent passed
+# a handoff owns the PRs naming its task_ref opened, or given commits, in its window [sent_at, until), except a PR its own agent passed
 # (a >= 9 grade on the head): that agent reviewed it, a concurrent handoff implemented it
 ($handoffs
  | map(. as $h | ($h.task_ref | num) as $n | ($repos[$h.repo // ""] // null) as $d | "\($h.host)/\($h.agent_id)" as $impl
@@ -32,7 +32,10 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
    | (if $now == null then (if host_answered($h.host) then "gone" else "unobserved" end)
       elif $h.session_id != null and $now.session_id != null and $h.session_id != $now.session_id then "session_changed" else "same" end) as $sess
    | (if $d != null and $d.error == null and $n != null then
-        [$d.prs[] | select(refs($n)) | select(.number == $n or (.createdAt >= $h.sent_at and ($h.until == null or .createdAt < $h.until)))
+        # owned: the PR is the task_ref itself, was opened in the window, or got commits in the window (a fix-up round on an
+        # existing PR, its review findings handed back as a new handoff)
+        def in_window: . != null and . >= $h.sent_at and ($h.until == null or . < $h.until);
+        [$d.prs[] | select(refs($n)) | select(.number == $n or (.createdAt | in_window) or any((.commits // [])[]; .committedDate | in_window))
          | pr_view | select(.passed_by | index($impl) | not) | del(.passed_by)] | sort_by(.number)
       else [] end) as $prs
    | [$prs[] | select(.state != "CLOSED" or .stages.merged != null)] as $live_prs
