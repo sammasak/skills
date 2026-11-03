@@ -131,6 +131,8 @@ in
       [ -z "$refusal" ] || refuse "$(jq -r .kind <<<"$refusal")" "$(jq -r .message <<<"$refusal")" "$(jq -r '.exit // 2' <<<"$refusal")"
       # the inventory is from before the lock: re-read this host's agents now, so two spawns never decide on one snapshot
       # (a spawn still in flight holds its slots through its attempt line, see capacity.jq)
+      [ "$(jq -r --arg h "$host" 'any(.hosts[]?; (.host | ascii_downcase) == ($h | ascii_downcase))' <<<"$inv")" = true ] \
+        || refuse host_unknown "host $host is not in the inventory (a saved herdr machine, or this host)"
       rc=0; fresh=$(herdr_at ${t} "$m" agent list 2>/dev/null 9>&-) || rc=$?
       [ "$rc" -eq 0 ] || refuse host_unreachable "host $host did not answer (herdr agent list exit $rc); not spawning"
       inv=$(jq -c --arg h "$host" --argjson f "$fresh" '.hosts |= map(if (.host | ascii_downcase) == ($h | ascii_downcase) then

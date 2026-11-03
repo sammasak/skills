@@ -157,7 +157,7 @@
         n=$(lines); : > "$FAKE_LOG"; spawn "" mechanical
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = capacity ] && jqr .error.message | grep -q 'spawning is off' && ! grep -q 'workspace create' "$FAKE_LOG" && [ "$(lines)" = $((n + 2)) ] && ok || bad "no spawn on the control plane ($CODE $OUT)"
         spawn down-b mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = host_unreachable ] && ok || bad "unreachable host refused ($OUT)"
-        spawn nowhere mechanical; [ "$CODE" -ne 0 ] && [[ "$(jqr .error.kind)" =~ ^host_(unknown|unreachable)$ ]] && ok || bad "unknown host refused ($OUT)"
+        spawn nowhere mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = host_unknown ] && ok || bad "unknown host refused as host_unknown ($OUT)"
         # (7) authorization: the label must be on the issue, not one the coordinator writes, applied by the owner, and on the
         #     item itself; refused and audited, no herdr call
         jq '.result.agents = [.result.agents[0]]' "$FX/herdr/remote-ok.json" > "$TMP/worker-a.json"; : > "$FAKE_HERDR_STARTED"
