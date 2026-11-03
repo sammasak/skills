@@ -92,6 +92,25 @@
             stray=$(grep -oE '\b(coord|gh|herdr|work|harness|git|quality):[a-z][a-z-]*' "$f" | sort -u | grep -vxF -f <(printf '%s\n' "$allowed") || true)
             [ -z "$stray" ] && ok || bad "$role: $f names tasks outside the contract: $(tr '\n' ' ' <<<"$stray")"
           done
+          # autonomy parity: a role whose ROLE.md carries an Autonomy block has it byte-identical in every adapter,
+          # so Claude and Codex sessions start from the same default; the coordinator must have one
+          block() { awk '/^BEGIN autonomy/{f=1} f{print} /^END autonomy/{f=0}'; }
+          canon=$(block < "$role_md")
+          if [ "$role" = coordinator ]; then
+            [ -n "$canon" ] && ok || bad "$role: ROLE.md has no BEGIN/END autonomy block"
+            for rule in "Never authorize yourself" "ends that item, not the session" "exactly /clear" "Escalate only owner decisions" "never two handoffs for one item" "Nothing continues after this session ends"; do
+              grep -qF "$rule" <<<"$canon" && ok || bad "$role: autonomy block lost the rule: $rule"
+            done
+            for boundary in "merging pull requests" "approving anything on the owner's behalf" "editing, writing or generating code"; do
+              jq -e --arg b "$boundary" '[.forbidden[] | contains($b)] | any' <<<"$fm" >/dev/null && ok || bad "$role: forbidden lost: $boundary"
+            done
+          fi
+          if [ -n "$canon" ]; then
+            [ "$(block < "agents/$role.md")" = "$canon" ] && ok || bad "$role: claude adapter autonomy block differs from ROLE.md"
+            if [ -f "agents/$role/codex.toml" ]; then
+              [ "$(yq -p toml -o json '.' "agents/$role/codex.toml" | jq -r .developer_instructions | block)" = "$canon" ] && ok || bad "$role: codex adapter autonomy block differs from ROLE.md"
+            fi
+          fi
         done
 
         echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]

@@ -28,7 +28,10 @@ fixed; skipping a step is a boundary violation.
    Show the owner the returned `text`, `handoff_id` and target (`host` is the
    machine label, or this hostname) verbatim. Nothing has been sent.
 3. **Confirm**: the owner must say, in this conversation, that this
-   `handoff_id` may go to this `host/agent_id`. Silence, "looks good", or a
+   `handoff_id` may go to this `host/agent_id`. Exception: inside the
+   coordinator role (`agents/coordinator/ROLE.md`, Autonomy) the owner's
+   label on the item replaces this per-draft confirmation; the send gate and
+   its checks are the same. Silence, "looks good", or a
    general "go ahead" from earlier does not count. Note the GitHub issue (or
    PR) URL and the label the owner applied there for this handoff: the send
    records them as `authorized_by`. If the owner has not named an issue URL
@@ -94,6 +97,7 @@ signature `-- Coordinator (automated; not the owner)`, replacing any
 `-- Coordinator` line the body already had. A comment reports, quotes or
 asks; it never answers, decides, approves or promises in the owner's name.
 Both run only after the owner confirmed, in this conversation, the exact
-label or text and its issue. A `gh` failure is recorded in the audit line and
+label or text and its issue (inside the coordinator role, its Autonomy rules
+instead). A `gh` failure is recorded in the audit line and
 returned as `error.kind` (`command_failed`, `timeout`, `malformed`); report it
 and do not retry blindly.
