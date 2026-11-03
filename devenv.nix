@@ -1,7 +1,7 @@
 { pkgs, lib, ... }:
 
 let
-  taskSuites = [ "evidence" "harness-session-summary" "herdr-inspect" "herdr-inventory" "herdr-message-await" "gh-act" "coord-brief" "coord-handoff" "coord-recovery" "coord-evidence" "quality" ];
+  taskSuites = [ "evidence" "harness-session-summary" "herdr-inspect" "herdr-inventory" "herdr-message-await" "gh-act" "coord-brief" "coord-changed" "coord-handoff" "coord-recovery" "coord-evidence" "quality" ];
 in
 {
   imports = [
@@ -13,6 +13,7 @@ in
     ./task-modules/evidence.nix
     ./task-modules/tests.nix
     ./agents/coordinator/tasks.nix
+    ./agents/coordinator/changed.nix
     ./agents/coordinator/tests.nix
     ./agents/quality/tasks.nix
     ./agents/quality/tests.nix
