@@ -77,6 +77,27 @@ format whose instructions point at the same ROLE.md; nixos-config installs it
 as `~/.codex/agents/coordinator.toml` on the coordinator host, so Codex lists
 a `coordinator` agent there. No shell command is involved in loading it.
 
+## Waking up without tokens
+
+`coord:changed` is the check a timer runs between sessions. It costs no model
+call: `herdr:inventory` (and, once sammasak/skills#38 is merged and the task
+depends on it, `gh:repos`; until then a `repos_file` holding such a record)
+plus a jq read of `audit.jsonl`, diffed against
+`~/.local/state/coordinator/changed/snapshot.json`. It prints nothing and
+exits 0 when nothing is actionable; otherwise one line per change: an agent
+newly `blocked`; an agent holding a delivered handoff that `settled` (its
+`state_change_seq` moved and it is idle or done), is `gone` or was `replaced`
+by another session; a `new` agent; a saved machine that went `host …
+unreachable` or came back; a `repo` whose open-PR or approved-issue count
+changed; the `audit` log turning unreadable; a `snapshot` that had to be
+rebuilt. The first run is a baseline (only blocked agents print) and every
+run moves the snapshot on, so a change is reported once and kept in
+`changed/latest.json`. The nixos-config module `coordinator-wakeup` runs it
+on a user timer on the coordinator host and starts one headless
+`claude -p --agent coordinator` session, with a spend cap, only when it
+printed; `systemctl --user disable --now coordinator-wakeup.timer` stops that
+until the next switch.
+
 ## Running the quality role
 
 "ask the quality agent whether devenv-platform's gates pass"; it runs

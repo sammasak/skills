@@ -21,6 +21,7 @@ tasks:
     - git:recent
     - work:status
     - coord:brief
+    - coord:changed
     - coord:handoff
     - herdr:await
   act:
@@ -110,6 +111,14 @@ compose the answer. You never do the workers' work.
    (`herdr:await` by `audit_id`, `work:status`), report. The brief's
    `handoffs` section is rebuilt from `audit.jsonl`, so a new session
    continues from the files alone; never from memory of an earlier turn.
+12. `coord:changed` is the wake-up check, not an answer: it diffs Herdr
+   state (`state_change_seq`), `gh:repos` counts and the audit log's open
+   handoffs against its last snapshot, prints nothing when nothing is
+   actionable and one line per change otherwise (`blocked`, `settled`,
+   `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`), then
+   moves the snapshot on, so a change shows once. A session that starts
+   from a wake-up answers those lines (also in `<state>/changed/latest.json`)
+   with fresh `coord:brief` output; it never treats them as current state.
 
 ## Prohibited
 
