@@ -3,7 +3,7 @@
 # A handoff is matched to its PRs by task_ref and time window, never by the pane title; an agent with a delivered
 # handoff on its current session takes that handoff's verdict, and only an agent without one falls back to its title.
 
-$inv[0] as $inv | $handoffs[0] as $handoffs | $repos[0] as $repos
+$inv[0] as $inv | $handoffs[0].omitted as $omitted | $handoffs[0].handoffs as $handoffs | $repos[0] as $repos
 | def num: if type == "string" and test("^#[0-9]+$") then ltrimstr("#") | tonumber else null end;
 def title_repo: [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first;
 # a PR refers to #N when it closes it, names it in title or body (not OWNER/REPO#N, which is another repo), or its branch
@@ -35,9 +35,9 @@ def pr_view: (.headRefOid // "") as $head
 def agent_at($h; $a): [$inv.hosts[]? | select(.host == $h) | .agents[]? | select(.agent_id == $a)] | first;
 def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
 
-# windows: a handoff owns the PRs naming its task_ref opened from its send until the next handoff to the same pane,
-# except a PR its own agent passed (a >= 9 grade on the head): that agent reviewed it, a concurrent handoff implemented it
-($handoffs | group_by(.host + "/" + .agent_id) | map(sort_by(.sent_at) | . as $g | [range(length) | $g[.] + {until:($g[. + 1].sent_at // null)}]) | add // [] | sort_by(.sent_at)
+# a handoff owns the PRs naming its task_ref opened in its window [sent_at, until), except a PR its own agent passed
+# (a >= 9 grade on the head): that agent reviewed it, a concurrent handoff implemented it
+($handoffs
  | map(. as $h | ($h.task_ref | num) as $n | ($repos[$h.repo // ""] // null) as $d | "\($h.host)/\($h.agent_id)" as $impl
    | agent_at($h.host; $h.agent_id) as $now
    | (if $now == null then (if host_answered($h.host) then "gone" else "unobserved" end)
@@ -48,7 +48,8 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
       else [] end) as $prs
    | [$prs[] | select(.state != "CLOSED" or .stages.merged != null)] as $live_prs
    | (reduce ("implemented", "reviewed", "merged", "live") as $k ({};
-        .[$k] = (if ($live_prs | length) > 0 and all($live_prs[]; .stages[$k] != null) then [$live_prs[] | .stages[$k]] else null end))) as $st
+        .[$k] = (if ($live_prs | length) > 0 and all($live_prs[]; .stages[$k] != null)
+                 then [$live_prs[] | .stages[$k] | if $k == "reviewed" then {url, grade, by, head} else .url end] else null end))) as $st
    | (if ($h.delivered | not) then {v:"unknown", r:["not delivered (outcome \($h.outcome))"]}
       elif $h.repo == null then {v:"unknown", r:["the handoff names no repo (authorized_by.issue_url)"]}
       elif $d == null or $d.error != null then {v:"unknown", r:["GitHub evidence unavailable for \($h.repo)" + (if $d.error then " (\($d.error))" else "" end)]}
@@ -57,7 +58,7 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
       else {v:"unverified", r:[$live_prs[] | select(.stages.merged == null) | "PR #\(.number) open, not merged"]} end) as $verdict
    | ([$d.prs[]?.createdAt] | min) as $oldest
    | $h + {prs:$prs, stages:$st, work_verdict:$verdict.v,
-       evidence_ref:(if $verdict.v == "verified" then $st.merged[0].url else null end),
+       evidence_ref:(if $verdict.v == "verified" then $st.merged[0] else null end),
        task_issue_open:(if $d != null and $d.error == null and $n != null then any($d.issues[]; .number == $n) else null end),
        session_state:$sess, herdr_state:($now.observed_state // null),
        stale:($verdict.v != "verified" and ($sess == "gone" or $sess == "session_changed" or ($h.until != null and ($prs | length) == 0))),
@@ -72,10 +73,10 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
    | ([$hs[] | select(.host == $host and .agent_id == $a.agent_id and .delivered and (.session_id == null or $a.session_id == null or .session_id == $a.session_id))] | last) as $h
    | ($a.observed_state // "unknown") as $s
    | (if $h != null then
-        {by:"handoff", task_ref:$h.task_ref, repo:$h.repo, verdict:$h.work_verdict, refs:[$h.prs[].url], evidence_ref:$h.evidence_ref, stages:$h.stages,
+        {by:"handoff", task_ref:$h.task_ref, repo:$h.repo, verdict:$h.work_verdict, refs:[$h.prs[].url], evidence_ref:$h.evidence_ref,
          reasons:($h.reasons + (if $a.task_ref != null and $a.task_ref != $h.task_ref then ["title names \($a.task_ref); correlated by handoff \($h.handoff_id) to \($h.task_ref)"] else [] end))}
       else ($a.task_ref | num) as $n | (($a.title // "") | title_repo) as $repo | ($repos[$repo // ""] // null) as $d
-        | {by:(if $n != null then "title" else "none" end), task_ref:$a.task_ref, repo:$repo, stages:null}
+        | {by:(if $n != null then "title" else "none" end), task_ref:$a.task_ref, repo:$repo}
         + (if $n == null then {verdict:"unknown", refs:[], reasons:["no task reference (#N) in the agent title"]}
            elif $repo == null then {verdict:"unknown", refs:[], reasons:["title names #\($n) but no OWNER/REPO; run gh:work for the repo to check it"]}
            elif $d == null or $d.error != null then {verdict:"unknown", refs:[], reasons:["GitHub evidence unavailable (\($d.error // "not fetched"))"]}
@@ -85,12 +86,12 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
                elif $merged and ($open | not) then {verdict:"unverified", refs:[$ps[] | select(.mergedAt != null) | .url], reasons:["merged PR names #\($n) but issue #\($n) is still open in \($repo)"]}
                elif $open then {verdict:"unverified", refs:[$ps[] | select(.state == "OPEN") | .url], reasons:(["open PR for #\($n) in \($repo), not merged"] + [$ps[] | select(.state == "OPEN") | select(any((.statusCheckRollup // [])[]; (.conclusion // .state // "") != "SUCCESS")) | "PR #\(.number) has non-green checks"])}
                elif ($is | length) > 0 then {verdict:"unverified", refs:[$is[].url], reasons:["issue #\($n) open in \($repo), no PR found"]}
-               else {verdict:"unknown", refs:[], reasons:["#\($n) not found in \($repo)"]} end
+               else {verdict:"unknown", refs:[], reasons:["#\($n) not found in \($repo)" + (if ($d.prs | length) >= $d.limit then " (only the newest \($d.limit) PRs checked)" else "" end)]} end
              | .evidence_ref = (if .verdict == "verified" then .refs[0] else null end) end) end) as $c
    | {host:$host, machine:$m, agent_id:$a.agent_id, harness:$a.harness, session_id:$a.session_id, title:($a.title // ""), task_ref:$c.task_ref, title_ref:$a.task_ref, repo:$c.repo,
       correlation:{by:$c.by, handoff_id:($h.handoff_id // null)},
       herdr_state:$s, state_change_seq:$a.state_change_seq, observed_at:$at,
       work_verdict:(if $s == "blocked" then "blocked" else $c.verdict end), needs_owner:($s == "blocked"),
-      evidence_ref:(if $s != "blocked" then $c.evidence_ref // null else null end), refs:$c.refs, stages:$c.stages,
+      evidence_ref:(if $s != "blocked" then $c.evidence_ref // null else null end), refs:$c.refs,
       reasons:$c.reasons, sources:[{task:"herdr:inventory", observed_at:$at}]}] as $items
-| {items:$items, handoffs:$hs}
+| {items:$items, handoffs:$hs, handoffs_omitted:$omitted}

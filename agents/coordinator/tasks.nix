@@ -5,6 +5,7 @@
 
 let
   cfg = config.coordinator;
+  handoffsKept = 50;
 in
 {
   imports = [ ../../task-modules/common.nix ];
@@ -22,7 +23,7 @@ in
         # handoffs come from the audit log alone (last attempt per handoff_id with its task_ref, and its outcome line), so a
         # fresh session rebuilds what was sent, to whom and whether it is verified from audit.jsonl; a log that is not JSON
         # lines is reported as a failed source, never shown as "no handoffs"
-        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"; printf '[]\n' > "$tmpd/handoffs.json"
+        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"; printf '{"omitted":0,"handoffs":[]}\n' > "$tmpd/handoffs.json"
         if [ -s "$audit" ]; then
           jq -sc '
             map(select(type == "object")) as $all
@@ -34,8 +35,11 @@ in
                    outcome:($o.outcome // "interrupted"), delivered:(($o.outcome // "") == "delivered"),
                    allowed_actions:($a.allowed_actions // []), authorized_by:$auth, task_ref:($a.task_ref // null),
                    repo:((($auth.issue_url // "") | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first) // $a.repo // null)})
-            | sort_by(.sent_at)' "$audit" > "$tmpd/handoffs.json" 2>/dev/null \
-            || { printf '[]\n' > "$tmpd/handoffs.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines; herdr:message refuses to send until the owner inspects it")}'); }
+            # a handoff owns the PRs opened from its send until the next handoff to the same pane (until); only the newest
+            # ${toString handoffsKept} are evaluated and carried, so the record stays well under the environment size devenv passes it in
+            | group_by(.host + "/" + .agent_id) | map(sort_by(.sent_at) | . as $g | [range(length) | $g[.] + {until:($g[. + 1].sent_at // null)}]) | add // [] | sort_by(.sent_at)
+            | {omitted:([length - ${toString handoffsKept}, 0] | max), handoffs:.[-${toString handoffsKept}:]}' "$audit" > "$tmpd/handoffs.json" 2>/dev/null \
+            || { printf '{"omitted":0,"handoffs":[]}\n' > "$tmpd/handoffs.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines; herdr:message refuses to send until the owner inspects it")}'); }
         fi
         # GitHub evidence: one bounded PR list (all states, comments and reviews) and one open-issue list per repo named by a
         # handoff or an OWNER/REPO#N title. No --search: GitHub's search index misses PRs it has not indexed, a plain list does not
@@ -51,7 +55,7 @@ in
               'if ($p | length) == 1 and ($p[0] | type) == "array" and ($i | length) == 1 and ($i[0] | type) == "array" then {repo:$r, error:null, limit:$l, prs:$p[0], issues:$i[0]} else error end' 2>/dev/null \
             || jq -cn --arg r "$repo" '{repo:$r, error:"gh returned unexpected JSON"}'; fi >> "$tmpd/repos.jsonl"
         done < <(jq -rn --argjson inv "$inv" --slurpfile h "$tmpd/handoffs.json" '
-          ([$h[0][] | .repo // empty] + [$inv.hosts[]?.agents[]? | select(.task_ref != null) | (.title // "") | [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first // empty])
+          ([$h[0].handoffs[] | .repo // empty] + [$inv.hosts[]?.agents[]? | select(.task_ref != null) | (.title // "") | [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first // empty])
           | unique[] | select(test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))')
         jq -sc 'INDEX(.repo)' "$tmpd/repos.jsonl" > "$tmpd/repos.json"
         printf '%s\n' "$inv" > "$tmpd/inv.json"
@@ -61,7 +65,7 @@ in
           + (if $e != null then [{source:"coordinator:audit", error:$e}] else [] end)' <<<"$inv")
         emit "$(jq -c --arg at "$at" --argjson inv "$inv" --argjson f "$failed" --arg a "$audit" --argjson e "$audit_err" \
           '. as $c | {schema_version:1, task:"work:status", observed_at:$at, answered_hosts:($inv.answered_hosts // 0), hosts_total:($inv.hosts_total // 0), machines_configured:($inv.machines_configured // 0),
-            failed_sources:$f, partial:(($f|length) > 0), items:$c.items, handoffs:$c.handoffs, audit_path:$a, handoffs_error:$e}' "$tmpd/corr.json")"
+            failed_sources:$f, partial:(($f|length) > 0), items:$c.items, handoffs:$c.handoffs, handoffs_omitted:$c.handoffs_omitted, audit_path:$a, handoffs_error:$e}' "$tmpd/corr.json")"
       '';
     };
 
@@ -107,10 +111,10 @@ in
           # or unverified handoff with its stages; everything else is in the JSON
           (([.handoffs[] | select(.work_verdict == "verified")]) as $done | ([.handoffs[] | select(.work_verdict != "verified")]) as $open
           | def mark($k): "\($k) \(if .stages[$k] then "✓" else "–" end)";
-          "", "## Handoffs (from the audit log): \(.handoffs|length) total, \($done|length) verified, \($open|length) open",
+          "", "## Handoffs (from the audit log): \((.handoffs|length) + (.handoffs_omitted // 0)) total, \($done|length) verified, \($open|length) open" + (if (.handoffs_omitted // 0) > 0 then " (the oldest \(.handoffs_omitted) not evaluated)" else "" end),
           (if .handoffs_error != null then "- unreadable: \(.handoffs_error.kind) — \(.handoffs_error.message)" elif (.handoffs|length) == 0 then "- none" else
             ($done | group_by([.repo, .task_ref])[] | "- verified \(.[0].repo)\(.[0].task_ref)\(if .[0].task_issue_open then " (still open)" else "" end): merged "
-               + ([.[].stages.merged[]?.url | capture("/pull/(?<n>[0-9]+)$").n | tonumber] | unique | map("#\(.)") | join(" "))),
+               + ([.[].stages.merged[]? | capture("/pull/(?<n>[0-9]+)$").n | tonumber] | unique | map("#\(.)") | join(" "))),
             ($open[-20:][] | "- \(.handoff_id) → \(.host)/\(.agent_id) \(.task_ref // "-") \(.repo // "no repo") | sent \(.sent_at) | \(.outcome) | "
                + ([mark("implemented"), mark("reviewed"), mark("merged"), mark("live")] | join(" ")) + " | work=\(.work_verdict)"
                + (if .stale then " | STALE" else "" end) + (if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)),

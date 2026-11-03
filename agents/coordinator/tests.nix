@@ -109,9 +109,9 @@
         [ "$(h h00000000001 '"\(.work_verdict) \(.evidence_ref) \(.task_issue_open)"')" = "verified https://github.com/sammasak/skills/pull/51 true" ] && [ "$(h h00000000002 '"\(.work_verdict) \(.evidence_ref) \(.task_issue_open)"')" = "verified https://github.com/sammasak/skills/pull/52 true" ] && ok || bad "merged children of an open epic are verified with their PR as evidence_ref (a closed, unmerged PR does not hold it back)"
         [ "$(it wT:p2 '.work_verdict')" = unverified ] && it wT:p2 '.reasons[0]' | grep -q 'still open' && [ "$(it wT:p2 '.correlation.by')" = title ] && ok || bad "a title-only agent on the epic keeps the issue-closed rule ($(it wT:p2 '{work_verdict,reasons}'))"
         # (3) stages are distinct: reviewed needs >= 9 by another agent on the exact head; live needs a Live acceptance note
-        [ "$(h h00000000001 '.stages | "\(.implemented[0].url) \(.reviewed[0].grade) \(.reviewed[0].by) \(.reviewed[0].head[0:7]) \(.merged[0].url) \(.live)"')" = "https://github.com/sammasak/skills/pull/51 9 acer-swift/wR:p1 aaaa111 https://github.com/sammasak/skills/pull/51 null" ] && ok || bad "PR 51: implemented, reviewed (review commit = head), merged, not live ($(h h00000000001 .stages))"
-        [ "$(h h00000000002 '.stages | "\(.reviewed[0].url) \(.live[0].url)"')" = "https://github.com/sammasak/skills/pull/52#issuecomment-522 https://github.com/sammasak/skills/pull/52#issuecomment-523" ] && ok || bad "PR 52: the re-review naming the head counts, the author's 8/10 response does not; live from its note ($(h h00000000002 .stages))"
-        [ "$(h h00000000003 '"\(.work_verdict) \(.evidence_ref) \(.stages.implemented[0].url) \(.stages.reviewed) \(.stages.merged)"')" = "unverified null https://github.com/sammasak/skills/pull/53 null null" ] && ok || bad "PR 53: open; a 9/10 on another head, or unsigned, is not reviewed ($(h h00000000003 '{work_verdict,stages}'))"
+        [ "$(h h00000000001 '.stages | "\(.implemented[0]) \(.reviewed[0].grade) \(.reviewed[0].by) \(.reviewed[0].head[0:7]) \(.merged[0]) \(.live)"')" = "https://github.com/sammasak/skills/pull/51 9 acer-swift/wR:p1 aaaa111 https://github.com/sammasak/skills/pull/51 null" ] && ok || bad "PR 51: implemented, reviewed (review commit = head), merged, not live ($(h h00000000001 .stages))"
+        [ "$(h h00000000002 '.stages | "\(.reviewed[0].url) \(.live[0])"')" = "https://github.com/sammasak/skills/pull/52#issuecomment-522 https://github.com/sammasak/skills/pull/52#issuecomment-523" ] && ok || bad "PR 52: the re-review naming the head counts, the author's 8/10 response does not; live from its note ($(h h00000000002 .stages))"
+        [ "$(h h00000000003 '"\(.work_verdict) \(.evidence_ref) \(.stages.implemented[0]) \(.stages.reviewed) \(.stages.merged)"')" = "unverified null https://github.com/sammasak/skills/pull/53 null null" ] && ok || bad "PR 53: open; a 9/10 on another head, or unsigned, is not reviewed ($(h h00000000003 '{work_verdict,stages}'))"
         [ "$(h h00000000003 '[.prs[].number] | join(",")')" = 53 ] && ok || bad "PR 54, which wB:p1 itself graded 9/10, is a review it did, not its own work ($(h h00000000003 '[.prs[].number]'))"
         [ "$(it wB:p1 '"\(.correlation.by) \(.task_ref) \(.work_verdict)"')" = "handoff #29 unverified" ] && ok || bad "a pane with no ref in its title is correlated by its handoff"
         # (4) stale handoffs: the pane restarted, or is gone; neither is verified and the restarted pane falls back to its title
@@ -126,6 +126,11 @@
         ! grep -qE 'h0000000000[12] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && grep -q 'h00000000004 → .*STALE' <<<"$md" && ok || bad "open handoffs one line each with stages, verified ones not repeated"
         ! grep -q '{"' <<<"$md" && ok || bad "no raw JSON in the Markdown brief"
         ! grep -q -- '--search' "$FAKE_LOG" && [ "$(grep -c '^gh pr list -R sammasak/skills' "$FAKE_LOG")" = 1 ] && ok || bad "one PR list per repo, no search ($(grep '^gh pr' "$FAKE_LOG"))"
+        # (7) only the newest 50 handoffs are carried (the record travels in devenv's environment); the rest are counted
+        for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
+        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 6 q000000000010" ] && grep -q '56 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
         summary
       '';
     };
