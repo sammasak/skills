@@ -18,6 +18,7 @@ tasks:
     - herdr:inspect
     - harness:session-summary
     - gh:work
+    - gh:repos
     - git:recent
     - work:status
     - coord:brief

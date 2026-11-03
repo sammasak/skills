@@ -28,10 +28,14 @@ authorization.
 ## One tick
 
 1. **Discover.** `coord:brief` (agents, `handoffs` rebuilt from
-   `audit.jsonl`, verdicts), then `gh:work` for each repository named by the
-   owner or by an outstanding handoff. When `gh:work` says `truncated: true`,
-   say so in the report and work the visible items; raising
-   `coordinator.ghLimit` is the owner's call.
+   `audit.jsonl`, verdicts, and the `portfolio`: `gh:repos` lists the
+   owner's repositories by recent push with open PR, open issue and
+   approved-issue counts in one call, and the brief runs `gh:work` only for
+   the active ones, an open PR or an approved issue, newest first, up to the
+   cap). Nobody has to name repositories. Then `gh:work` for any other
+   repository an outstanding handoff names. When `gh:repos` or `gh:work` says
+   `truncated: true`, say so in the report and work the visible items;
+   raising `coordinator.ghLimit` is the owner's call.
 2. **Prioritize**, highest first:
    - P0: a delivered handoff whose agent is `blocked` or `needs_owner`
      (report it first, with the exact decision).

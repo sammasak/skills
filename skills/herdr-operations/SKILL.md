@@ -31,6 +31,7 @@ is JSON with `schema_version: 1`; `coord:brief` also prints Markdown.
 | Every agent on this host and on each enabled saved machine (`hosts[].machine`, per-host `reachable` and `error`, `machines_error`) | `devenv tasks run herdr:inventory --show-output` |
 | Bounded terminal excerpt of one agent (cap 200 lines); omit `machine` for this host | `devenv tasks run herdr:inspect --input-json '{"machine":"<label>","agent_id":"<id>","lines":40}'` |
 | What a session on this host was last doing, from the harness's own store (last prompt, last answer, tools, `awaiting_input`) | `devenv tasks run harness:session-summary --input-json '{"harness":"claude","session_id":"<id>","cwd":"<cwd>"}'` |
+| The owner's repositories by recent push with open PR/issue and approved-issue counts (one gh call; `truncated` when the cap is hit) | `devenv tasks run gh:repos --show-output` |
 | Open issues and recent PRs of one repo | `devenv tasks run gh:work --input-json '{"repo":"OWNER/REPO"}'` |
 | Recent commits, dirty files, unpushed work of one checkout | `devenv tasks run git:recent --input-json '{"checkout":"/abs/path"}'` |
 | Per-agent join of Herdr state and GitHub evidence | `devenv tasks run work:status --show-output` |

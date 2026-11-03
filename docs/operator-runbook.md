@@ -67,8 +67,10 @@ contracts the subagent uses are the ones in that working tree.
 
 "ask the coordinator to work the queue" runs one tick of `docs/process.md`:
 discover (`coord:brief`, whose `handoffs` section is rebuilt from
-`audit.jsonl`, and `gh:work` per repository; `truncated: true` means a list
-reached `coordinator.ghLimit` and may have been cut), prioritize, delegate one
+`audit.jsonl` and whose `portfolio` section comes from `gh:repos`, the owner's
+repositories by recent push with open PR/issue and approved-issue counts, plus
+`gh:work` for the active ones only; `truncated: true` means a list reached
+`coordinator.ghLimit` and may have been cut), prioritize, delegate one
 authorized item through the unchanged send gate, follow up one delivered
 handoff, report. A new session continues from `brief/latest.json` and
 `audit.jsonl`; nothing is kept in memory. Codex runs the same contract through

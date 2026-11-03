@@ -27,7 +27,20 @@
         jq '.result.agents[1].terminal_title_stripped = "sammasak/skills #42 settlement tests"' "$FX/herdr/local-two-agents.json" > "$TMP/local.json"
         export FAKE_HERDR_LIST="$TMP/local.json" FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]' FAKE_HERDR_LIST_acer_swift="$FX/herdr/remote-ok.json"
         runb() { run coord:brief "$@"; [ -r "$TMP/state/brief/latest.json" ] && [ "$CODE" -eq 0 ] && OUT=$(cat "$TMP/state/brief/latest.json"); }
+        # the portfolio: three repos from gh:repos; skills (approved issue 43) and nixos-config (open PRs) are active, quiet is not
+        mkdir -p "$TMP/gh"; cp "$FX"/gh/* "$TMP/gh/"; jq '(.[] | select(.number == 43) | .labels) += [{"name":"approved"}]' "$FX/gh/sammasak__skills.issues.json" > "$TMP/gh/sammasak__skills.issues.json"
+        export FAKE_GH_DIR="$TMP/gh" FAKE_GH_REPOS='[{"name":"skills","pushedAt":"2026-11-03T10:18:03Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":1},"issues":{"totalCount":2},"approved":{"totalCount":1}},{"name":"nixos-config","pushedAt":"2026-11-03T11:19:56Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":2},"issues":{"totalCount":12},"approved":{"totalCount":0}},{"name":"quiet","pushedAt":"2026-10-01T00:00:00Z","isArchived":false,"isPrivate":true,"pullRequests":{"totalCount":0},"issues":{"totalCount":3},"approved":{"totalCount":0}}]'
+        : > "$FAKE_LOG"
         runb
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.portfolio | "\(.owner) \(.repos_total) \(.repos_listed) \(.truncated) \(.error)"')" = "sammasak 3 3 false null" ] && ok || bad "portfolio: counts from gh:repos ($(jqr .portfolio))"
+        [ "$(jqr '[.portfolio.active[].repo] | join(",")')" = "sammasak/nixos-config,sammasak/skills" ] && [ "$(jqr '.portfolio.skipped_active|length')" = 0 ] && ok || bad "portfolio: active repos only, newest push first ($(jqr '.portfolio.active'))"
+        [ "$(jqr '.portfolio.active[] | select(.repo=="sammasak/skills") | .approved | map(.number) | join(",")')" = 43 ] && [ "$(jqr '.portfolio.active[] | select(.repo=="sammasak/skills") | .open_pr_list | length')" = 1 ] && ok || bad "portfolio: approved issues and open PRs listed per active repo"
+        grep -q 'issue list -R sammasak/skills' "$FAKE_LOG" && grep -q 'issue list -R sammasak/nixos-config' "$FAKE_LOG" && ! grep -q 'sammasak/quiet' "$FAKE_LOG" && ok || bad "portfolio: gh:work only for active repos ($(grep -c 'sammasak/quiet' "$FAKE_LOG"))"
+        grep -q '## Portfolio (sammasak: 3 of 3 repos' "$TMP/run.log" && grep -q 'sammasak/skills: 1 open PR(s), 1 approved issue(s) → #43' "$TMP/run.log" && ok || bad "portfolio: Markdown section"
+        # gh:repos failing: the brief still succeeds, names the failed source, and the rest is intact
+        FAKE_GH_API_EXIT=1 runb
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.portfolio.error.kind')" = gh_error ] && [ "$(jqr .partial)" = true ] && [ "$(jqr '[.failed_sources[] | select(.source=="gh:repos")] | length')" = 1 ] && grep -q 'unavailable: gh_error' "$TMP/run.log" && ok || bad "portfolio: gh failure is a failed source, not a missing section ($(jqr '{partial,failed_sources}'))"
+        : > "$FAKE_LOG"; runb
         [ "$CODE" -eq 0 ] && ok || bad "brief: exit $CODE ($(grep -E 'FAIL|✖|error|jq:' "$TMP/run.log" | head -3))"
         [ "$(jqr '.items|length')" = 3 ] && [ "$(jqr .answered_hosts)" = 2 ] && [ "$(jqr .machines_configured)" = 1 ] && ok || bad "brief: 3 agents over 2 hosts ($OUT)"
         [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = verified ] && [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .evidence_ref')" != null ] && ok || bad "done + merged PR closing #42 in the named repo => verified"
