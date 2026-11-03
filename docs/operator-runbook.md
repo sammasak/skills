@@ -103,7 +103,8 @@ newly `blocked`; an agent holding a delivered handoff that `settled` (its
 by another session; a `new` agent; a saved machine that went `host …
 unreachable` or came back; a `repo` whose open-PR or approved-issue count
 changed; the `audit` log turning unreadable; a `snapshot` that had to be
-rebuilt. The first run is a baseline (only blocked agents print). A plain
+rebuilt; and `idle`, the fleet having nothing to do while work is left. The
+first run is a baseline (only blocked agents print). A plain
 `coord:changed` reads without consuming; the timer's form,
 `--input-json '{"consume":true}'`, moves the snapshot on, so a change is
 reported once there and kept in `changed/latest.json`. The nixos-config
@@ -126,6 +127,27 @@ history. Only the timer's form, `--input-json '{"consume":true}'`, moves
 the snapshot and spends the budget; the plain `coord:changed` (an owner
 session's read) neither consumes nor spends, so it never takes a change away
 from the timer.
+
+The `idle` line is the one change that needs no transition: when every
+agent on every answering host is idle or done (none working, blocked or
+unknown; an unreachable host or an empty fleet is not idle) and work is left,
+the Coordinator is woken with no human. Work is any of: an open PR in an
+active repo (`gh:repos`, newest push first, at most `portfolioActive` repos)
+or in an open-handoff repo without a signed 9/10 or more on its current head
+by someone other than the agent whose handoff it answers; an issue carrying
+an authorizing label with no open delivered handoff naming it; a delivered
+handoff of the last `openHandoffDays` with no merged PR for its issue opened
+after the send. The fleet test is free; GitHub lists (open PRs with comments,
+open issues, and merged PRs for handoff repos) are fetched only once the
+fleet is idle. The line prints once per distinct fleet+work fingerprint
+(the agents by session plus the work items) and not again until that
+fingerprint differs from the last one printed: a worker flapping between
+working and idle, or the same work seen again, never repeats it, while new
+work, a review landing, or the fleet changing does. It counts against the
+wake budget like any other line. A gh failure while idle skips the check
+for that run and says so under `idle_wake.skipped` in `latest.json`; the
+whole evaluation (`fleet_idle`, `work`, `fingerprint`, `fired`) is there on
+every run.
 
 ## Running the quality role
 
