@@ -21,7 +21,7 @@ docs fix to the agent in pane wF:p2". Claude delegates to `coordinator`
 (or pick it explicitly with `/agents`); it runs
 
 ```bash
-cd ~/claude-code-skills && devenv tasks run coord:brief >/dev/null && cat ~/.local/state/coordinator/brief/latest.md
+cd ~/claude-code-skills && devenv tasks run coord:brief >/dev/null; cat ~/.local/state/coordinator/brief/latest.md
 ```
 
 and answers from the brief, keeping `herdr_state` and `work_verdict`
@@ -29,7 +29,7 @@ separate. The same tasks work without an LLM from the checkout:
 
 ```bash
 cd ~/claude-code-skills
-devenv tasks run coord:brief >/dev/null && cat ~/.local/state/coordinator/brief/latest.md   # this host + every saved Herdr machine
+devenv tasks run coord:brief >/dev/null; cat ~/.local/state/coordinator/brief/latest.md   # this host + every saved Herdr machine
 herdr machine list --json                           # which machines that is (empty on a worker)
 tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message attempt and outcome
 ```
@@ -52,7 +52,9 @@ the send, makes `work_verdict: verified`. Only the newest 50 handoffs are
 evaluated (`handoffs_omitted` counts the rest); an agent whose handoff is
 older reports `correlation.by: omitted`, not a verdict from its title. The
 brief's Markdown is `brief/latest.md` beside `latest.json`; devenv's own
-stdout is every task's JSON, which the command above discards. The pane title is not consulted for
+stdout is every task's JSON, which the command above discards. The `;` is
+deliberate: when no host answers the brief exits 2 and `latest.md` explains
+why; a run that failed before rendering leaves no `latest.md` at all. The pane title is not consulted for
 an agent that holds a handoff, an open epic does not hold back its merged
 children, and the brief prints verified handoffs as one line per `repo#ref`
 and each open one with its `implemented`, `reviewed`, `merged`, `live` stages.

@@ -23,7 +23,8 @@ in
         # handoffs come from the audit log alone (last attempt per handoff_id with its task_ref, and its outcome line), so a
         # fresh session rebuilds what was sent, to whom and whether it is verified from audit.jsonl; a log that is not JSON
         # lines is reported as a failed source, never shown as "no handoffs"
-        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"; printf '{"kept":${toString handoffsKept},"omitted":0,"handoffs":[],"omitted_last":[]}\n' > "$tmpd/handoffs.json"
+        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"
+        no_handoffs() { printf '{"kept":${toString handoffsKept},"omitted":0,"handoffs":[],"omitted_last":[]}\n' > "$tmpd/handoffs.json"; }; no_handoffs
         if [ -s "$audit" ]; then
           jq -sc '
             map(select(type == "object")) as $all
@@ -41,7 +42,7 @@ in
             # for the rest only the newest delivered one per pane is kept, so its agent reports "omitted", not a title guess
             | {kept:${toString handoffsKept}, omitted:([length - ${toString handoffsKept}, 0] | max), handoffs:.[-${toString handoffsKept}:],
                omitted_last:(.[:-${toString handoffsKept}] | map(select(.delivered)) | group_by(.host + "/" + .agent_id) | map(last | {handoff_id, host, agent_id, session_id, task_ref, sent_at}))}' "$audit" > "$tmpd/handoffs.json" 2>/dev/null \
-            || { printf '{"kept":${toString handoffsKept},"omitted":0,"handoffs":[],"omitted_last":[]}\n' > "$tmpd/handoffs.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines; herdr:message refuses to send until the owner inspects it")}'); }
+            || { no_handoffs; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines; herdr:message refuses to send until the owner inspects it")}'); }
         fi
         # GitHub evidence: one bounded PR list (all states, comments and reviews) and one open-issue list per repo named by a
         # handoff or an OWNER/REPO#N title. No --search: GitHub's search index misses PRs it has not indexed, a plain list does not
@@ -76,9 +77,10 @@ in
       after = [ "work:status@completed" "gh:repos@completed" ];
       exec = ''
         ${cfg.prelude}
+        # the previous latest.md goes first: a run that fails before rendering leaves none, never a stale one to read
+        dir="${cfg.stateDir}/brief"; mkdir -p "$dir"; rm -f "$dir/latest.md"
         ws=$(upstream "work:status")
         [ "$ws" != null ] || fail 2 missing "work:status produced no output" '{"task":"coord:brief"}'
-        dir="${cfg.stateDir}/brief"; mkdir -p "$dir"
         # portfolio: gh:repos names the owner's repositories; gh:work runs only for the active ones (an open PR or an
         # issue with an authorizing label), newest push first, at most portfolioActive of them; the rest are named, not
         # fetched. GitHub being down leaves the agent part of the brief whole: the portfolio carries its own error and
@@ -131,8 +133,8 @@ in
           "", "Full JSON: \($f)", "", "## Agents",
           (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 and .correlation.by != "none" then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
-        ' <<<"$brief" > "$dir/latest.md.tmp" && mv "$dir/latest.md.tmp" "$dir/latest.md"
-        cat "$dir/latest.md"
+        ' <<<"$brief" > "$dir/latest.md.tmp" || { rm -f "$dir/latest.md.tmp"; fail 2 internal "coord:brief Markdown render failed" '{"task":"coord:brief"}'; }
+        mv "$dir/latest.md.tmp" "$dir/latest.md" && cat "$dir/latest.md"
         # the brief is the one task whose exit says something: no host answered (not even this one) is a failure
         [ "$(jq -r '((.items|length) > 0) or (.answered_hosts > 0)' <<<"$brief")" = true ] || exit 2
       '';

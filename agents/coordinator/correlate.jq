@@ -73,7 +73,7 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
 | [$inv.hosts[]? | .host as $host | (.machine // null) as $m | .agents[]? | . as $a
    | def mine: select(.host == $host and .agent_id == $a.agent_id and (.session_id == null or $a.session_id == null or .session_id == $a.session_id));
      ([$hs[] | select(.delivered) | mine] | last) as $h
-   | (if $h == null then [($log.omitted_last // [])[] | mine] | last else null end) as $old
+   | (if $h == null then [$log.omitted_last[] | mine] | last else null end) as $old
    | ($a.observed_state // "unknown") as $s
    | (if $h != null then
         {by:"handoff", task_ref:$h.task_ref, repo:$h.repo, verdict:$h.work_verdict, refs:[$h.prs[].url], evidence_ref:$h.evidence_ref,

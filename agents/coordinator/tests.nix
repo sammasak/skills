@@ -57,6 +57,7 @@
         export FAKE_HERDR_EXIT=1 FAKE_HERDR_MACHINES='[]'
         run coord:brief
         [ "$CODE" -ne 0 ] && grep -q 'herdr:inventory' "$TMP/run.log" && ok || bad "herdr down everywhere: brief must fail"
+        grep -q '0/1 answered' "$TMP/state/brief/latest.md" && ok || bad "exit 2 still leaves a fresh latest.md saying why ($(head -c 200 "$TMP/state/brief/latest.md" 2>&1))"
         unset FAKE_HERDR_EXIT
         summary
       '';
@@ -131,9 +132,22 @@
         M="$TMP/state/brief/latest.md"
         [ -s "$M" ] && [ "$(sed -E 's/^\s+//' <<<"$md")" = "$(sed -n '/# Fleet brief/,/^Full JSON:/p' "$M")" ] && ! grep -q '{"' "$M" && ok || bad "latest.md is the printed Markdown, no JSON ($(head -c 300 "$M"))"
         [ $(( $(wc -c < "$M") * 2 )) -le "$(wc -c < "$TMP/run.log")" ] && ok || bad "latest.md is at most half the --show-output bytes ($(wc -c < "$M") vs $(wc -c < "$TMP/run.log"))"
+        mv "$M" "$M.prev"
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 > /dev/null 2> "$TMP/quiet.err"; CODE=$?
         [ "$CODE" -eq 0 ] && grep -q '^# Fleet brief' "$M" && [ "$(wc -c < "$TMP/quiet.err")" -lt 1000 ] && ok || bad "default form (stdout to /dev/null) rewrites latest.md with little else ($CODE, stderr $(wc -c < "$TMP/quiet.err") bytes)"
+        # a Markdown render that fails (here: a merged PR without a URL) fails the task and leaves no latest.md, never the
+        # previous run's file printed as if fresh
+        mkdir -p "$TMP/gh-bad"; cp "$FX"/gh-correlation/*.json "$TMP/gh-bad/"
+        jq 'map(if .number == 52 then .url = null else . end)' "$FX/gh-correlation/sammasak__skills.prs.json" > "$TMP/gh-bad/sammasak__skills.prs.json"
+        printf 'STALE BRIEF FROM AN EARLIER RUN\n' > "$M"
+        FAKE_GH_DIR="$TMP/gh-bad" devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/bad.log" 2>&1; CODE=$?
+        [ "$CODE" -ne 0 ] && [ ! -e "$M" ] && ! grep -q 'STALE BRIEF' "$TMP/bad.log" && grep -q 'Markdown render failed' "$TMP/bad.log" && ok || bad "render failure fails the brief, no stale latest.md ($CODE, $(ls "$TMP/state/brief"))"
+        # the documented default form: ROLE.md spells it out (stdout to /dev/null, then Read latest.md), and no doc gates the
+        # read on exit 0, which would hide the latest.md that explains an exit 2
+        grep -qF 'devenv tasks run coord:brief >/dev/null' agents/coordinator/ROLE.md && grep -qF '~/.local/state/coordinator/brief/latest.md' agents/coordinator/ROLE.md && ok || bad "ROLE.md gives the exact compact form"
+        ! grep -rqF --exclude=tests.nix 'coord:brief >/dev/null &&' agents skills docs && grep -qF 'coord:brief >/dev/null; cat' docs/operator-runbook.md && grep -qF 'coord:brief >/dev/null; cat' skills/herdr-operations/SKILL.md && ok || bad "the default read is not gated on exit 0 ($(grep -rnF --exclude=tests.nix 'coord:brief >/dev/null &&' agents skills docs))"
         # (7) only the newest 50 handoffs are carried (the record travels in devenv's environment); the rest are counted
         for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \

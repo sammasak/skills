@@ -27,7 +27,7 @@ is JSON with `schema_version: 1`; `coord:brief` also prints Markdown.
 
 | Need | Run |
 |---|---|
-| The whole picture: who needs you, every agent with `herdr_state` and `work_verdict` | `devenv tasks run coord:brief >/dev/null && cat ~/.local/state/coordinator/brief/latest.md` (the Markdown; `latest.json` beside it is the full record; `--show-output` also prints every upstream task's JSON, about ten times the size) |
+| The whole picture: who needs you, every agent with `herdr_state` and `work_verdict` | `devenv tasks run coord:brief >/dev/null; cat ~/.local/state/coordinator/brief/latest.md` (the Markdown; `latest.json` beside it is the full record; `--show-output` also prints every upstream task's JSON, more than ten times the size; a non-zero exit still leaves a fresh `latest.md` when the brief rendered, and none when it did not) |
 | Every agent on this host and on each enabled saved machine (`hosts[].machine`, per-host `reachable` and `error`, `machines_error`) | `devenv tasks run herdr:inventory --show-output` |
 | What moved since the last check (the wake-up timer's question): silent when nothing is actionable, else one line per change; the snapshot moves on | `devenv tasks run coord:changed --show-output` (reads without consuming; only the timer passes `--input-json '{"consume":true}'`, which moves the snapshot and spends the wake budget) |
 | Bounded terminal excerpt of one agent (cap 200 lines); omit `machine` for this host | `devenv tasks run herdr:inspect --input-json '{"machine":"<label>","agent_id":"<id>","lines":40}'` |
@@ -77,8 +77,9 @@ inventory as `error.kind: invalid_label` until it is renamed.
   without a PR.
 - Only the newest 50 handoffs in the audit log are evaluated; `handoffs_omitted`
   counts the rest and the brief header says how many. An agent whose latest
-  handoff is among them reports `correlation.by: omitted` and `work_verdict:
-  unknown`, never a verdict from its title.
+  delivered handoff on its current session is among them reports
+  `correlation.by: omitted` and `work_verdict: unknown` (`blocked` when Herdr
+  shows it blocked), never a verdict from its title.
 - `partial: true` means a host did not answer or `herdr machine list` failed:
   `answered_hosts`/`hosts_total`, each `hosts[].error` and `machines_error`
   say what; answer from the hosts that did answer and name the missing ones.

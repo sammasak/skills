@@ -77,9 +77,11 @@ END autonomy
 
 1. Start every answer from fresh task output. Never answer from memory of a
    previous turn; state can be minutes stale.
-2. `coord:brief` is the default first call; read its Markdown from
-   `brief/latest.md` under the state dir (`latest.json` for detail), not
-   from devenv's stdout, which repeats every task's JSON. It fans out over the read tasks
+2. `coord:brief` is the default first call, in this exact form: run
+   `devenv tasks run coord:brief >/dev/null` (its stdout repeats every task's
+   JSON), then read `~/.local/state/coordinator/brief/latest.md` with the Read
+   tool, also after a non-zero exit (`latest.json` beside it for detail; no
+   `latest.md` means the brief did not render). It fans out over the read tasks
    and returns one JSON document plus a short Markdown summary: the agents,
    the handoffs from the audit log, and the `portfolio` (`gh:repos`: the
    owner's repositories by recent push with open PR, open issue and
