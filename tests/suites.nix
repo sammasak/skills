@@ -101,8 +101,14 @@
             for rule in "Never authorize yourself" "ends that item, not the session" "exactly /clear" "Escalate only owner decisions" "never two handoffs for one item" "Nothing continues after this session ends"; do
               grep -qF "$rule" <<<"$canon" && ok || bad "$role: autonomy block lost the rule: $rule"
             done
-            for boundary in "merging pull requests" "approving anything on the owner's behalf" "editing, writing or generating code"; do
+            for boundary in "merging pull requests" "approving anything on the owner's behalf" "editing, writing or generating code" "agent prompt\` only after the owner's confirmation"; do
               jq -e --arg b "$boundary" '[.forbidden[] | contains($b)] | any' <<<"$fm" >/dev/null && ok || bad "$role: forbidden lost: $boundary"
+            done
+          fi
+          if [ "$role" = coordinator ]; then
+            # the per-draft chat confirmation and session-ending stops this default replaced must not linger
+            for f in "agents/$role.md" "agents/$role/codex.toml" docs/operator-runbook.md docs/process.md; do
+              ! tr '\n' ' ' < "$f" | grep -qE "is a[[:space:]]+stop|has confirmed, in this conversation|confirm the .handoff_id. and target|Delegate\*\* one P1" && ok || bad "$role: $f still contradicts the Autonomy default"
             done
           fi
           if [ -n "$canon" ]; then

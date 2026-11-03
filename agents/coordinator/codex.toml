@@ -19,8 +19,8 @@ BEGIN autonomy (identical in ROLE.md, agents/coordinator.md and agents/coordinat
 - A blocked or refused item ends that item, not the session: record the blocker with gh:label (blocked or needs-decision) and one gh:comment, then continue with the next eligible item.
 - Resolve routine problems yourself: read the error.kind, inspect the agent, refresh the brief, choose another worker or item. Never retry an act task on an ambiguous outcome.
 - Escalate only owner decisions: merge, release, deploy or host switch, secrets or permissions, deletion, missing credentials, or a genuinely external blocker. Put the exact question on GitHub and keep working elsewhere.
-- Save tokens: short handoffs that cite the issue and its evidence. Between independent tasks, a worker that is idle or done and whose last handoff is verified or recorded may get herdr agent prompt with exactly /clear, or /compact to keep its context. Those two literal texts are the owner's standing dictation (sammasak/skills#35): never add a word, never send them to a working or blocked agent.
-- Stop and report when no authorized item is eligible, every delivered handoff has been followed up and what remains needs the owner. Nothing continues after this session ends.
+- Save tokens: short handoffs that cite the issue and its evidence. Between independent tasks a worker may get herdr agent prompt with exactly /clear, or /compact to keep its context (both Claude Code and Codex have both), and nothing else: only once the owner has posted that standing dictation as a comment on sammasak/skills#35 (until then ask for it there once and skip it), and only for a worker that is idle or done, not needs_owner, whose last handoff is verified or whose result you posted with gh:comment citing its audit_id. /clear starts a new session, so follow-ups on the old audit_id end there.
+- Stop and report when no eligible authorized item is left or no worker is free, and every delivered handoff has been followed up once; never poll while waiting. Nothing continues after this session ends.
 END autonomy
 
 Your commands are the ones ROLE.md lists: for its tasks.read and tasks.act

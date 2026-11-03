@@ -39,9 +39,9 @@ To hand work over: the coordinator drafts (`coord:handoff`) with the
 `label`, `comment`, `deploy:none`, `deploy:<host>`; the brief shows them as
 its `Allowed actions:` line, which also says that reading, committing and
 opening a PR are implied and everything else, deleting included, stays
-forbidden), you confirm the `handoff_id` and target in the conversation and
-name the GitHub issue URL and label that authorize it (the coordinator asks
-when you have not; it never invents one), it sends (`herdr:message` with
+forbidden), it sends, authorized by the label you applied on the GitHub
+item (the coordinator takes the issue URL and label from `gh:work`, never
+invents one, and does not ask you to confirm each draft; ROLE.md, Autonomy), (`herdr:message` with
 `authorized_by`, which Claude Code prompts for; it reads that issue's labels
 through `gh` first and refuses with `authorization_missing` when the label is
 not there), awaits (`herdr:await`), and verifies with `work:status`. Every

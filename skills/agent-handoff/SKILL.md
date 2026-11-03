@@ -35,7 +35,8 @@ fixed; skipping a step is a boundary violation.
    general "go ahead" from earlier does not count. Note the GitHub issue (or
    PR) URL and the label the owner applied there for this handoff: the send
    records them as `authorized_by`. If the owner has not named an issue URL
-   and a label, ask; never infer or invent one. The authorizing issue is
+   and a label, ask (inside the coordinator role, take them from `gh:work`);
+   never infer or invent one. The authorizing issue is
    usually the handoff's `task_ref`, but it may be a tracker the owner gates
    from. The send fetches that issue's labels through `gh` and refuses with
    `authorization_missing` when the label is not there, when it is one the
@@ -62,7 +63,8 @@ fixed; skipping a step is a boundary violation.
    `agent_not_found`, `agent_changed`, `agent_restarted`,
    `agent_state_unknown`, `duplicate`, `probably_received`, `audit_corrupt`,
    `audit_failed`, `busy`, `timeout`, `command_failed`): nothing was sent; report it verbatim and
-   stop. For `agent_busy`, check with `herdr:inventory` until the agent is
+   stop (inside the coordinator role, every "stop" in this step ends that
+   item, not the session). For `agent_busy`, check with `herdr:inventory` until the agent is
    idle, then send. Otherwise read `outcome`:
    - `delivered` → continue with step 5.
    - `unknown_delivery` or `agent_prompt_stalled` → the text may already sit in
