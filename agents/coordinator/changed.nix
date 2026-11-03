@@ -30,9 +30,9 @@ in
   };
 
   config.tasks."coord:changed" = {
-    description = "Zero-LLM change check for a timer, with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. The plain form reads without consuming; consume=true (the timer's form) moves the snapshot and spends the wake budget.";
-    after = [ "herdr:inventory@completed" ];
-    input = { repos_file = null; consume = false; peek = false; };
+    description = "Zero-LLM change check for a timer, with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts (upstream in the same DAG) and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. The plain form reads without consuming; consume=true (the timer's form) moves the snapshot and spends the wake budget.";
+    after = [ "herdr:inventory@completed" "gh:repos@completed" ];
+    input = { consume = false; peek = false; };
     exec = ''
       ${cfg.prelude}
       ctx='{"task":"coord:changed"}'
@@ -55,17 +55,10 @@ in
       [ "$(jq -r '.answered_hosts // 0' <<<"$inv")" -gt 0 ] || fail 2 nothing_observed "no herdr host answered (not even this one); the snapshot is left as it was" "$ctx"
       printf '%s\n' "$inv" > "$tmpd/inv.json"
 
-      # repos: the gh:repos record when it ran upstream (wired after sammasak/skills#38), else a file holding one, else absent;
-      # a record carrying an error counts as absent for this run and the previous counts are carried forward in the snapshot
+      # repos: the gh:repos record that ran upstream in this DAG (absent only when the task is driven outside it); a record
+      # carrying an error counts as absent for this run and the previous counts are carried forward in the snapshot
       repos=$(upstream "gh:repos"); repos_src=upstream
-      if [ "$repos" = null ]; then
-        rf=$(input .repos_file)
-        if [ -z "$rf" ]; then repos_src=absent
-        elif [[ "$rf" =~ ^/[A-Za-z0-9_./-]+$ ]] && [[ "/$rf/" != *"/../"* ]]; then
-          repos=$(jq -cs 'map(select(type == "object")) | last // empty' "$rf" 2>/dev/null) || repos=""
-          if [ -n "$repos" ]; then repos_src=file; else repos=null; repos_src=unreadable; fi
-        else fail 3 invalid_input "repos_file must be a plain absolute path" "$ctx"; fi
-      fi
+      [ "$repos" != null ] || repos_src=absent
       if [ "$repos" != null ] && ! jq -e '.error == null and (.repos | type) == "array"' <<<"$repos" >/dev/null 2>&1; then repos=null; repos_src=error; fi
       printf '%s\n' "$repos" > "$tmpd/repos.json"
 

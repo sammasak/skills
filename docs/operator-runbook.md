@@ -69,7 +69,9 @@ contracts the subagent uses are the ones in that working tree.
 default; ROLE.md, Autonomy) runs ticks of `docs/process.md` until nothing
 eligible is left:
 discover (`coord:brief`, whose `handoffs` section is rebuilt from
-`audit.jsonl`, and `gh:work` per repository; `truncated: true` means a list
+`audit.jsonl` and whose `portfolio` section comes from `gh:repos`, the owner's
+repositories by recent push with open PR/issue and authorizing-label issue
+counts, plus `gh:work` for the active ones only; `truncated: true` means a list
 reached `coordinator.ghLimit` and may have been cut), prioritize, delegate every
 eligible authorized item through the unchanged send gate, follow up delivered
 handoffs, report; a blocked item is recorded and skipped, not a stop. A new session continues from `brief/latest.json` and
@@ -82,8 +84,7 @@ a `coordinator` agent there. No shell command is involved in loading it.
 ## Waking up without tokens
 
 `coord:changed` is the check a timer runs between sessions. It costs no model
-call: `herdr:inventory` (and, once sammasak/skills#38 is merged and the task
-depends on it, `gh:repos`; until then a `repos_file` holding such a record)
+call: `herdr:inventory` and `gh:repos` (both run upstream in the same DAG)
 plus a jq read of `audit.jsonl`, diffed against
 `~/.local/state/coordinator/changed/snapshot.json`. It prints nothing and
 exits 0 when nothing is actionable; otherwise one line per change: an agent
