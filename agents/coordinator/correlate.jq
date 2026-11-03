@@ -1,29 +1,18 @@
 # work:status correlation (skills #28 slice D). Inputs (slurped): $inv (herdr:inventory), $handoffs (last attempt per handoff_id
 # from audit.jsonl, with its outcome and repo), $repos ({"OWNER/REPO": {prs, issues, error, limit}} from gh), $at.
+# Evidence rules (refs, grade, signer, passes) live in evidence.jq.
 # A handoff is matched to its PRs by task_ref and time window, never by the pane title; an agent with a delivered
 # handoff on its current session takes that handoff's verdict, and only an agent without one falls back to its title.
 
+include "evidence";
 $inv[0] as $inv | $handoffs[0] as $log | $log.omitted as $omitted | $log.handoffs as $handoffs | $repos[0] as $repos
-| def num: if type == "string" and test("^#[0-9]+$") then ltrimstr("#") | tonumber else null end;
-def title_repo: [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first;
-# a PR refers to #N when it closes it, names it in title or body (not OWNER/REPO#N, which is another repo), or its branch
-# carries N as a path or dash segment
-def refs($n): ((.closingIssuesReferences // []) | any(.number == $n))
-  or (((.title // "") + "\n" + (.body // "")) | test("(^|[^A-Za-z0-9_./#-])#\($n)([^0-9]|$)"))
-  or ((.headRefName // "") | test("(^|[/_-])\($n)([/_-]|$)"));
-def grade: [capture("(?<![0-9.])(?<g>10|[0-9])/10(?![0-9])").g] | first | if . == null then null else tonumber end;
-# reviews are signed "(<host> <agent>, …" or "-- <host> <agent>" (one GitHub account for every agent)
-def signer: [capture("(\\(|-- )(?<h>[A-Za-z0-9][A-Za-z0-9.-]*) (?<a>[A-Za-z0-9_]+:[A-Za-z0-9_]+)") | "\(.h)/\(.a)"] | first;
-def notes: . as $p
-  | [((.comments // [])[] | {body:(.body // ""), url:(.url // $p.url), oid:null}),
-     ((.reviews // [])[] | {body:(.body // ""), url:$p.url, oid:(.commit.oid? // null)})]
-  | map(. + {grade:(.body | grade), by:(.body | signer)});
+| def title_repo: [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first;
 
 # per-PR stages; reviewed = a signed grade >= 9 on the PR's head (the review's commit, or the head's short sha in the
 # comment); passed_by names its signers, so a handoff never counts its own agent's grade (see the windows below);
 # live = a comment with a "Live acceptance:" line
 def pr_view: (.headRefOid // "") as $head
-  | [notes[] | select(.grade != null and .grade >= 9 and .by != null and $head != "" and (.oid == $head or (.body | contains($head[0:7]))))] as $passes
+  | passes as $passes
   | ([notes[] | select(.body | test("(^|\\n)[*_> ]*live acceptance:"; "i"))] | last) as $live
   | {number, url, state, head:(if $head == "" then null else $head end), created_at:.createdAt,
      stages:{implemented:{url, opened_at:.createdAt},

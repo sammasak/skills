@@ -151,7 +151,10 @@ END autonomy
    state (`state_change_seq`), `gh:repos` counts and the audit log's open
    handoffs against its last snapshot, prints nothing when nothing is
    actionable and one line per change otherwise (`blocked`, `settled`,
-   `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`). Only
+   `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`, and
+   `idle`: every agent idle or done while an open PR without an independent
+   9/10 on its head, an authorized issue without a handoff or an unverified
+   handoff is left, printed once per fleet+work fingerprint). Only
    the timer's form, `--input-json '{"consume":true}'`, moves the snapshot
    on, so a change shows once there; your own plain call reads without
    consuming and never takes a change away from the timer. It also spaces its own
