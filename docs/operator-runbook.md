@@ -92,10 +92,12 @@ newly `blocked`; an agent holding a delivered handoff that `settled` (its
 by another session; a `new` agent; a saved machine that went `host …
 unreachable` or came back; a `repo` whose open-PR or approved-issue count
 changed; the `audit` log turning unreadable; a `snapshot` that had to be
-rebuilt. The first run is a baseline (only blocked agents print) and every
-run moves the snapshot on, so a change is reported once and kept in
-`changed/latest.json`. The nixos-config module `coordinator-wakeup` runs it
-on a user timer on the coordinator host and starts one headless
+rebuilt. The first run is a baseline (only blocked agents print). A plain
+`coord:changed` reads without consuming; the timer's form,
+`--input-json '{"consume":true}'`, moves the snapshot on, so a change is
+reported once there and kept in `changed/latest.json`. The nixos-config
+module `coordinator-wakeup` runs the consuming form on a user timer on the
+coordinator host and starts one headless
 `claude -p --agent coordinator` session, with a spend cap, only when it
 printed; `systemctl --user disable --now coordinator-wakeup.timer` stops that
 until the next switch.
@@ -109,7 +111,10 @@ keeps the held lines under `wake.pending` with `changes` empty (so a timer
 reading `changes` starts nothing either), and leaves the snapshot untouched,
 so the pending changes come out together on the first allowed run. Past wake times live in `changed/wakes.json`
 (epoch seconds, pruned to the window); an unreadable file counts as no
-history. `peek` neither spends nor checks the budget.
+history. Only the timer's form, `--input-json '{"consume":true}'`, moves
+the snapshot and spends the budget; the plain `coord:changed` (an owner
+session's read) neither consumes nor spends, so it never takes a change away
+from the timer.
 
 ## Running the quality role
 
