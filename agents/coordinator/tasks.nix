@@ -69,7 +69,30 @@ in
         ws=$(upstream "work:status")
         [ "$ws" != null ] || fail 2 missing "work:status produced no output" '{"task":"coord:brief"}'
         dir="${cfg.stateDir}/brief"; mkdir -p "$dir"
-        brief=$(jq -c '. + {task:"coord:brief"}' <<<"$ws")
+        # handoffs come from the audit log alone (last attempt per handoff_id, its outcome line, the draft's task_ref), so a
+        # fresh session rebuilds what was sent, to whom and whether it is verified from this file plus audit.jsonl
+        audit="${cfg.stateDir}/audit.jsonl"; drafts="${cfg.stateDir}/handoffs"; handoffs="[]"
+        if [ -s "$audit" ]; then
+          handoffs=$(jq -sc --arg d "$drafts" --argjson items "$(jq -c '.items // []' <<<"$ws")" '
+            map(select(type == "object")) as $all
+            | ($all | map(select(.phase == "outcome"))) as $outs
+            | [$all[] | select(.phase == "attempt" and (.handoff_id|type) == "string")]
+            | group_by(.handoff_id) | map(last)
+            | map(. as $a | ($outs | map(select(.audit_id == $a.audit_id)) | last) as $o
+                | ($items | map(select(.host == $a.host and .agent_id == $a.agent_id)) | first) as $it
+                | {handoff_id:$a.handoff_id, audit_id:$a.audit_id, host:$a.host, machine:$a.machine, agent_id:$a.agent_id, sent_at:$a.at,
+                   outcome:($o.outcome // "interrupted"), delivered:(($o.outcome // "") == "delivered"),
+                   allowed_actions:($a.allowed_actions // []), authorized_by:(($a.authorized_by // {}) | {issue_url, label}),
+                   task_ref:($a.task_ref // null), herdr_state:($it.herdr_state // null), work_verdict:($it.work_verdict // "unknown"), evidence_ref:($it.evidence_ref // null)})
+            | sort_by(.sent_at)' "$audit" 2>/dev/null) || handoffs="[]"
+          # task_ref lives in the draft file when the attempt line predates it
+          while IFS= read -r hid; do
+            [ -n "$hid" ] && [ -r "$drafts/$hid.json" ] || continue
+            ref=$(jq -r '.task_ref // empty' "$drafts/$hid.json" 2>/dev/null) || ref=""
+            [ -n "$ref" ] && handoffs=$(jq -c --arg h "$hid" --arg r "$ref" 'map(if .handoff_id == $h and .task_ref == null then .task_ref = $r else . end)' <<<"$handoffs")
+          done < <(jq -r '.[] | select(.task_ref == null) | .handoff_id' <<<"$handoffs")
+        fi
+        brief=$(jq -c --argjson h "$handoffs" --arg a "$audit" '. + {task:"coord:brief", handoffs:$h, audit_path:$a}' <<<"$ws")
         printf '%s\n' "$brief" > "$dir/latest.json.tmp" && mv "$dir/latest.json.tmp" "$dir/latest.json"
         printf '%s\n' "$brief" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
         jq -r --arg f "$dir/latest.json" '
@@ -78,6 +101,8 @@ in
           (if .partial then "", "**Partial:** " + ([.failed_sources[] | "\(.source): \(.error.kind) — \(.error.message)"] | join("; ")) else empty end),
           "", "## Needs you",
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else (.[0:10] | map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))")) + (if length > 10 then ["… \(length - 10) more needing you in the JSON"] else [] end) end)[]),
+          "", "## Handoffs (from the audit log)",
+          (if (.handoffs|length) == 0 then "- none" else (.handoffs[-20:][] | "- \(.handoff_id) → \(.host)/\(.agent_id) \(.task_ref // "-") | sent \(.sent_at) | \(.outcome) | work=\(.work_verdict)") end),
           "", "Full JSON: \($f)", "", "## Agents",
           (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)

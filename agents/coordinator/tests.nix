@@ -47,6 +47,59 @@
         summary
       '';
     };
+    "skills:test:tasks:coord-recovery" = {
+      description = "A fresh session rebuilds every handoff (target, outcome, authorization, verdict) from coord:brief + audit.jsonl alone and can await by audit id";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
+        run() { # <task> [args]
+          local task="$1"; shift
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+            --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+        export FAKE_HERDR_LIST="$FX/herdr/local-two-agents.json" FAKE_HERDR_MACHINES='[]' FAKE_HERDR_SESSION=sess-1 FAKE_HERDR_STATE=idle FAKE_HERDR_SEQ=5 FAKE_PROMPT_OUT="$TMP/prompt.txt"
+        export FAKE_GH_LABELS='["assign:implementer"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"assign:implementer"},"actor":{"login":"sammasak"},"created_at":"2026-11-03T09:00:00Z"}]'
+        H=$(hostname -s 2>/dev/null || hostname)
+        # session 1: draft and send one handoff to the local idle agent wF:p1
+        run coord:handoff --input-json '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#28","scope":"increment 1","expected_evidence":"a PR","acceptance":"skills:test green","allowed_actions":["comment","deploy:none"]}'
+        ID=$(jqr .handoff_id); [ "$CODE" -eq 0 ] && [[ "$ID" =~ ^[a-f0-9]{12}$ ]] && ok || bad "draft: $CODE $OUT"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"assign:implementer\"}}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "send: $CODE $OUT"
+        run coord:brief; [ "$CODE" -eq 0 ] && ok || bad "brief after send: $CODE"
+        # session 2: forget everything above; only the two files remain
+        unset ID; B="$TMP/state/brief/latest.json"; A="$TMP/state/audit.jsonl"
+        [ -s "$B" ] && [ -s "$A" ] && ok || bad "state files present"
+        HID=$(jq -r '.handoffs[0].handoff_id' "$B"); AID=$(jq -r '.handoffs[0].audit_id' "$B")
+        [[ "$HID" =~ ^[a-f0-9]{12}$ ]] && [[ "$AID" =~ ^[a-f0-9]{12}$ ]] && [ "$(jq -r '.handoffs|length' "$B")" = 1 ] && ok || bad "brief lists the one handoff ($(jq -c .handoffs "$B"))"
+        [ "$(jq -r '.handoffs[0] | "\(.host)/\(.agent_id) \(.task_ref) \(.outcome) \(.delivered) \(.allowed_actions|join(",")) \(.authorized_by.label) \(.work_verdict)"' "$B")" = "$H/wF:p1 #28 delivered true comment,deploy:none assign:implementer unknown" ] && ok || bad "handoff fields recoverable from the brief ($(jq -c '.handoffs[0]' "$B"))"
+        [ "$(jq -r '.handoffs[0].authorized_by.issue_url' "$B")" = "https://github.com/sammasak/skills/issues/28" ] && [ "$(jq -r .audit_path "$B")" = "$A" ] && ok || bad "authorizing issue and audit path in the brief"
+        # the same facts are in the audit log by itself (attempt + outcome lines share the audit id)
+        [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "attempt") | .handoff_id' "$A")" = "$HID" ] && [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$A")" = delivered ] && ok || bad "audit log alone names handoff and outcome"
+        grep -q '## Handoffs (from the audit log)' "$TMP/run.log" && grep -q "$HID → $H/wF:p1 #28" "$TMP/run.log" && ok || bad "Markdown brief shows the handoff"
+        # follow-up needs only the audit id: await works without the draft or any session memory
+        export FAKE_HERDR_STATE_SEQ="working,idle"; rm -f "$FAKE_LOG.seq"
+        run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .audit_id)" = "$AID" ] && [ "$(jqr .agent_id)" = "wF:p1" ] && [ "$(jqr .herdr_state)" = idle ] && ok || bad "await by audit id from the recovered state ($CODE $OUT)"
+        unset FAKE_HERDR_STATE_SEQ
+        # a second send of the recovered handoff is still refused as a duplicate (the gate is unchanged)
+        run herdr:message --input-json "{\"handoff_id\":\"$HID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"assign:implementer\"}}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = duplicate ] && ok || bad "duplicate still refused after recovery ($OUT)"
+        # an interrupted attempt (no outcome line) shows as interrupted, never as delivered
+        printf '%s\n' '{"audit_id":"aaaaaaaaaaaa","handoff_id":"bbbbbbbbbbbb","phase":"attempt","host":"'"$H"'","machine":null,"agent_id":"wT:p1","at":"2026-11-03T09:10:00Z","allowed_actions":["comment"],"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/29","label":"approved"}}' >> "$A"
+        run coord:brief; B="$TMP/state/brief/latest.json"
+        [ "$(jq -r '.handoffs|length' "$B")" = 2 ] && [ "$(jq -r '.handoffs[] | select(.handoff_id=="bbbbbbbbbbbb") | "\(.outcome) \(.delivered) \(.task_ref)"' "$B")" = "interrupted false null" ] && ok || bad "interrupted attempt recovered honestly ($(jq -c .handoffs "$B"))"
+        summary
+      '';
+    };
     "skills:test:tasks:coord-handoff" = {
       description = "coord:handoff drafts: fields, allowed_actions, stable id, 4000-character cap, machine or local, nothing sent";
       exec = ''
