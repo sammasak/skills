@@ -167,7 +167,7 @@ handoff of the last `openHandoffDays` with no merged PR for its issue opened
 after the send. The fleet test is free; GitHub lists (open PRs with comments,
 open issues, and merged PRs for handoff repos) are fetched only once the
 fleet is idle. The line prints once per distinct fleet+work fingerprint
-(the agents by session plus the work items) and not again until that
+(the agents by pane plus the work items; a new session in the same pane is the same agent) and not again until that
 fingerprint differs from the last one printed: a worker flapping between
 working and idle, or the same work seen again, never repeats it, while new
 work, a review landing, or the fleet changing does. It counts against the
