@@ -39,9 +39,9 @@ To hand work over: the coordinator drafts (`coord:handoff`) with the
 `label`, `comment`, `deploy:none`, `deploy:<host>`; the brief shows them as
 its `Allowed actions:` line, which also says that reading, committing and
 opening a PR are implied and everything else, deleting included, stays
-forbidden), you confirm the `handoff_id` and target in the conversation and
-name the GitHub issue URL and label that authorize it (the coordinator asks
-when you have not; it never invents one), it sends (`herdr:message` with
+forbidden), it sends, authorized by the label you applied on the GitHub
+item (the coordinator takes the issue URL and label from `gh:work`, never
+invents one, and does not ask you to confirm each draft; ROLE.md, Autonomy), (`herdr:message` with
 `authorized_by`, which Claude Code prompts for; it reads that issue's labels
 through `gh` first and refuses with `authorization_missing` when the label is
 not there), awaits (`herdr:await`), and verifies with `work:status`. Every
@@ -65,14 +65,16 @@ contracts the subagent uses are the ones in that working tree.
 
 ## Working the queue
 
-"ask the coordinator to work the queue" runs one tick of `docs/process.md`:
+"ask the coordinator to work the queue" (or any coordinator session, by
+default; ROLE.md, Autonomy) runs ticks of `docs/process.md` until nothing
+eligible is left:
 discover (`coord:brief`, whose `handoffs` section is rebuilt from
 `audit.jsonl` and whose `portfolio` section comes from `gh:repos`, the owner's
-repositories by recent push with open PR/issue and approved-issue counts, plus
-`gh:work` for the active ones only; `truncated: true` means a list reached
-`coordinator.ghLimit` and may have been cut), prioritize, delegate one
-authorized item through the unchanged send gate, follow up one delivered
-handoff, report. A new session continues from `brief/latest.json` and
+repositories by recent push with open PR/issue and authorizing-label issue
+counts, plus `gh:work` for the active ones only; `truncated: true` means a list
+reached `coordinator.ghLimit` and may have been cut), prioritize, delegate every
+eligible authorized item through the unchanged send gate, follow up delivered
+handoffs, report; a blocked item is recorded and skipped, not a stop. A new session continues from `brief/latest.json` and
 `audit.jsonl`; nothing is kept in memory. Codex runs the same contract through
 `agents/coordinator/codex.toml`, a custom-agent file in Codex's `agents_dir`
 format whose instructions point at the same ROLE.md; nixos-config installs it

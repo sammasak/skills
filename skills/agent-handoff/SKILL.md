@@ -28,11 +28,15 @@ fixed; skipping a step is a boundary violation.
    Show the owner the returned `text`, `handoff_id` and target (`host` is the
    machine label, or this hostname) verbatim. Nothing has been sent.
 3. **Confirm**: the owner must say, in this conversation, that this
-   `handoff_id` may go to this `host/agent_id`. Silence, "looks good", or a
+   `handoff_id` may go to this `host/agent_id`. Exception: inside the
+   coordinator role (`agents/coordinator/ROLE.md`, Autonomy) the owner's
+   label on the item replaces this per-draft confirmation; the send gate and
+   its checks are the same. Silence, "looks good", or a
    general "go ahead" from earlier does not count. Note the GitHub issue (or
    PR) URL and the label the owner applied there for this handoff: the send
    records them as `authorized_by`. If the owner has not named an issue URL
-   and a label, ask; never infer or invent one. The authorizing issue is
+   and a label, ask (inside the coordinator role, take them from `gh:work`);
+   never infer or invent one. The authorizing issue is
    usually the handoff's `task_ref`, but it may be a tracker the owner gates
    from. The send fetches that issue's labels through `gh` and refuses with
    `authorization_missing` when the label is not there, when it is one the
@@ -59,7 +63,8 @@ fixed; skipping a step is a boundary violation.
    `agent_not_found`, `agent_changed`, `agent_restarted`,
    `agent_state_unknown`, `duplicate`, `probably_received`, `audit_corrupt`,
    `audit_failed`, `busy`, `timeout`, `command_failed`): nothing was sent; report it verbatim and
-   stop. For `agent_busy`, check with `herdr:inventory` until the agent is
+   stop (inside the coordinator role, every "stop" in this step ends that
+   item, not the session). For `agent_busy`, check with `herdr:inventory` until the agent is
    idle, then send. Otherwise read `outcome`:
    - `delivered` → continue with step 5.
    - `unknown_delivery` or `agent_prompt_stalled` → the text may already sit in
@@ -94,6 +99,7 @@ signature `-- Coordinator (automated; not the owner)`, replacing any
 `-- Coordinator` line the body already had. A comment reports, quotes or
 asks; it never answers, decides, approves or promises in the owner's name.
 Both run only after the owner confirmed, in this conversation, the exact
-label or text and its issue. A `gh` failure is recorded in the audit line and
+label or text and its issue (inside the coordinator role, its Autonomy rules
+instead). A `gh` failure is recorded in the audit line and
 returned as `error.kind` (`command_failed`, `timeout`, `malformed`); report it
 and do not retry blindly.
