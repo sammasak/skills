@@ -59,6 +59,25 @@ an agent that holds a handoff, an open epic does not hold back its merged
 children, and the brief prints verified handoffs as one line per `repo#ref`
 and each open one with its `implemented`, `reviewed`, `merged`, `live` stages.
 
+Workers: `coord:capacity` reports each host's workers, the worker and
+heavy-job slots left and which assignment kinds fit (planning and review on
+opus, implementation on sonnet, mechanical checks on haiku; review and
+implementation take a heavy-job slot). The limits are `coordinator.capacity`
+in `agents/coordinator/spawn.nix`: acer-swift two heavy jobs and three
+workers, lenovo one heavy job and no spawning (the control plane; see
+nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`, `cwd`,
+`authorized_by`) starts one Claude Code worker in its own Herdr workspace
+(`herdr workspace create` + `herdr agent start <kind>-<N> --kind claude --
+--dangerously-skip-permissions --model <the kind's model>`) only for an item
+carrying your label and only when that host's capacity allows; every request
+past input validation writes a `phase: spawn` attempt and an outcome line
+(`started`, `refused` with its reason, `agent_not_ready`, `failed`) to
+`audit.jsonl`. `--dangerously-skip-permissions` starts unattended only where
+Home Manager pre-accepted the bypass and `$HOME` trust dialogs (nixos-config
+`mcp.nix`, `acceptClaudeStartupDialogs`); elsewhere `agent start` returns
+`agent_not_ready` and the workspace stays for you to inspect. The task never
+closes a pane or workspace.
+
 The coordinator's GitHub writes are `gh:label` (add or remove one of
 `needs-decision`, `blocked`, `needs-live` on one issue or PR) and
 `gh:comment` (one comment, at most 4000 characters, signed `Coordinator`;

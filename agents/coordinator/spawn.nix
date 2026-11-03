@@ -1,0 +1,146 @@
+# Worker pool and tiers (sammasak/skills#28 W1): coord:capacity reads, per host, how many workers there are, which
+# are idle or busy, the heavy-job slots left and which assignment kinds fit, with a /clear or /compact hint per
+# worker; coord:spawn starts one new Claude Code worker in its own Herdr workspace (`workspace create` +
+# `agent start`), only for an owner-labelled item, only when that host's capacity allows, audit-logged like a send.
+# No scheduler, queue or store: the fleet is herdr:inventory, the history is audit.jsonl.
+{ lib, config, ... }:
+let
+  cfg = config.coordinator;
+  t = toString cfg.timeoutSeconds;
+  # the shared capacity computation: herdr:inventory (upstream) + limits + the audit log + local context sizes
+  capacity = ''
+    capacity_json() { # <next-json-or-null> -> the coord:capacity record on stdout
+      local tmpd; tmpd=$(mktemp -d)
+      printf '%s\n' "$inv" > "$tmpd/inv.json"
+      if [ -s "${cfg.stateDir}/audit.jsonl" ]; then jq -sc 'map(select(type == "object"))' "${cfg.stateDir}/audit.jsonl" > "$tmpd/audit.json" 2>/dev/null || echo '[]' > "$tmpd/audit.json"; else echo '[]' > "$tmpd/audit.json"; fi
+      # context size of each idle local Claude session: the last assistant turn's input + cache tokens in its own JSONL
+      # (remote session stores are not readable from here: their size stays null)
+      : > "$tmpd/usage.jsonl"
+      while IFS=$'\t' read -r a sid cwd; do
+        [[ "$sid" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] && [[ "$cwd" =~ ^/[A-Za-z0-9_./-]*$ ]] || continue
+        f="${cfg.claudeProjectsDir}/$(printf '%s' "$cwd" | sed -E 's/[^A-Za-z0-9]/-/g')/$sid.jsonl"; [ -r "$f" ] || continue
+        tail -n 400 "$f" | jq -Rc 'fromjson? // empty' 2>/dev/null | jq -sc --arg k "$(local_host)/$a" \
+          '[.[] | select(type == "object" and .message.role? == "assistant" and (.message.usage | type) == "object") | .message.usage] | last
+           | if . == null then empty else {($k): ((.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0))} end' >> "$tmpd/usage.jsonl" 2>/dev/null || true
+      done < <(jq -r --arg h "$(local_host)" '.hosts[]? | select(.host == $h and .machine == null) | .agents[]? | select(.harness == "claude" and .session_id != null and .cwd != null) | [.agent_id, .session_id, .cwd] | @tsv' <<<"$inv")
+      jq -sc 'add // {}' "$tmpd/usage.jsonl" > "$tmpd/usage.json"
+      jq -nc --slurpfile inv "$tmpd/inv.json" --slurpfile audit "$tmpd/audit.json" --slurpfile usage "$tmpd/usage.json" \
+        --argjson cap ${lib.escapeShellArg cfg.capacity} --argjson kinds ${lib.escapeShellArg (builtins.toJSON cfg.kinds)} \
+        --argjson next "$1" --argjson threshold ${toString cfg.hygieneContextTokens} --arg at "$(now_iso)" -f ${./capacity.jq}
+      local rc=$?; rm -rf "$tmpd"; return $rc; }
+  '';
+in
+{
+  imports = [ ../../task-modules/common.nix ];
+
+  options.coordinator.capacity = lib.mkOption {
+    type = lib.types.str;
+    # lenovo is the control plane (one heavy job, no spawning: nixos-config#109, two platform:verify runs killed at
+    # 98 % swap); acer-swift is the worker (two heavy jobs). A host not named here has no capacity and is refused.
+    default = builtins.toJSON {
+      "acer-swift" = { heavy_jobs = 2; max_workers = 3; spawn = true; };
+      "lenovo-21CB001PMX" = { heavy_jobs = 1; max_workers = 2; spawn = false; };
+    };
+    description = "JSON object: per Herdr host label (matched case-insensitively) {heavy_jobs, max_workers, spawn}.";
+  };
+  options.coordinator.kinds = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule { options = {
+      tier = lib.mkOption { type = lib.types.enum [ "opus" "sonnet" "haiku" ]; };
+      model = lib.mkOption { type = lib.types.str; };
+      heavy = lib.mkOption { type = lib.types.bool; description = "Runs heavy gates (nix builds, cargo, full test suites)."; };
+    }; });
+    default = {
+      planning = { tier = "opus"; model = "claude-opus-5-5"; heavy = false; };
+      review = { tier = "opus"; model = "claude-opus-5-5"; heavy = true; };
+      implementation = { tier = "sonnet"; model = "claude-sonnet-5-5"; heavy = true; };
+      mechanical = { tier = "haiku"; model = "claude-haiku-5-5"; heavy = false; };
+    };
+    description = "Assignment kinds: the model tier each one runs on and whether it takes a heavy-job slot. coord:spawn takes the model from here, never from the caller.";
+  };
+  options.coordinator.hygieneContextTokens = lib.mkOption {
+    type = lib.types.ints.positive;
+    default = 150000;
+    description = "An idle worker whose context is at least this many tokens is flagged for /compact (or /clear when the next assignment is independent).";
+  };
+
+  config.tasks."coord:capacity" = {
+    description = "Read-only worker pool: per host the workers (idle/busy/unknown), heavy-job slots and worker slots left, whether a light or heavy spawn is allowed, which assignment kinds fit a spawn or an idle worker, and a /clear or /compact hint per idle worker (optional input next={repo,task_ref}); never fails itself.";
+    after = [ "herdr:inventory@completed" ];
+    input = { next = null; };
+    exec = ''
+      ${cfg.prelude}
+      ${capacity}
+      inv=$(upstream "herdr:inventory")
+      [ "$inv" != null ] || fail 2 missing "herdr:inventory produced no output" '{"task":"coord:capacity"}'
+      next=$(jq -c 'if (.next | type) == "object" then .next | {repo:(.repo // null), task_ref:(.task_ref // null)} else null end' <<<"''${DEVENV_TASK_INPUT:-{\}}" 2>/dev/null) || next=null
+      out=$(capacity_json "''${next:-null}") || fail 2 internal "coord:capacity computation failed" '{"task":"coord:capacity"}'
+      emit "$out"
+    '';
+  };
+
+  config.tasks."coord:spawn" = {
+    description = "ACT: start one Claude Code worker in a new Herdr workspace on a host (machine, or this one), for an owner-labelled item (authorized_by), with the model of its kind; refused (and audited) when the label is missing or the host's capacity does not allow it; never on a host whose spawn is off.";
+    after = [ "herdr:inventory@completed" ];
+    input = { machine = null; kind = null; task_ref = null; cwd = null; authorized_by = null; };
+    exec = ''
+      ${cfg.prelude}
+      ${capacity}
+      m=$(input .machine); kind=$(input .kind); ref=$(input .task_ref); cwd=$(input .cwd)
+      host=$([ -n "$m" ] && printf '%s' "$m" || local_host)
+      auth=$(auth_shape "$(jq -c '.authorized_by // null' <<<"''${DEVENV_TASK_INPUT:-{\}}")")
+      ctx=$(jq -cn --arg h "$host" --arg k "$kind" --arg r "$ref" '{task:"coord:spawn",host:$h,kind:$k,task_ref:$r}')
+      [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "machine label has unsafe characters" "$ctx"
+      model=$(jq -r --arg k "$kind" '.[$k].model // empty' <<<${lib.escapeShellArg (builtins.toJSON cfg.kinds)})
+      [ -n "$model" ] || fail 3 invalid_input "kind must be one of: ${lib.concatStringsSep ", " (lib.attrNames cfg.kinds)}" "$ctx"
+      heavy=$(jq -r --arg k "$kind" '.[$k].heavy' <<<${lib.escapeShellArg (builtins.toJSON cfg.kinds)})
+      [[ "$ref" =~ ^#([0-9]+)$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
+      name="$kind-''${BASH_REMATCH[1]}"
+      [[ "$cwd" =~ ^(/|~/)[A-Za-z0-9_./-]*$ ]] && [[ "$cwd" != *..* ]] || fail 3 invalid_input "cwd must be an absolute or ~/ path with safe characters" "$ctx"
+      [ -n "$auth" ] || fail 3 invalid_input "authorized_by is required: {\"issue_url\":\"https://github.com/OWNER/REPO/issues/N\",\"label\":\"<label the owner applied>\"}" "$ctx"
+      inv=$(upstream "herdr:inventory")
+      [ "$inv" != null ] || fail 2 missing "herdr:inventory produced no output" "$ctx"
+      audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
+      exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another act holds the audit lock" "$ctx"
+      [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 \
+        || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to spawn until the owner inspects $audit" "$ctx"
+      # every request that passes input validation is audited: an attempt line now, an outcome line on any exit
+      aid=$(printf 'spawn|%s|%s|%s' "$host" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
+      jq -cn --arg a "$aid" --arg h "$host" --arg m "$m" --arg n "$name" --arg k "$kind" --arg mo "$model" --argjson hv "$heavy" --arg r "$ref" --arg c "$cwd" --arg at "$at" --argjson auth "$auth" \
+        '{audit_id:$a, phase:"spawn", stage:"attempt", host:$h, machine:(if $m == "" then null else $m end), name:$n, kind:$k, model:$mo, heavy:$hv, task_ref:$r, cwd:$c, at:$at, authorized_by:$auth}' >> "$audit" \
+        || fail 2 audit_failed "could not write the spawn attempt; not spawning" "$ctx"
+      outcome=interrupted; detail='{}'
+      trap 'jq -cn --arg a "$aid" --arg at "$(now_iso)" --arg o "$outcome" --argjson d "$detail" "{audit_id:\$a, phase:\"outcome\", at:\$at, outcome:\$o} + \$d" >> "$audit"' EXIT
+      refuse() { outcome=refused; detail=$(jq -cn --arg k "$1" --arg msg "$2" '{reason:{kind:$k, message:$msg}}'); fail 2 "$1" "$2" "$(jq -c --arg a "$aid" '. + {audit_id:$a}' <<<"$ctx")"; }
+      gh_authorize spawn spawning spawn || refuse "$AUTH_KIND" "$AUTH_MSG"
+      cap=$(capacity_json null) || refuse internal "capacity could not be computed"
+      hc=$(jq -c --arg h "$host" '[.hosts[] | select((.host | ascii_downcase) == ($h | ascii_downcase))] | first' <<<"$cap")
+      [ "$hc" != null ] || refuse host_unknown "host $host is not in the inventory (a saved herdr machine, or this host)"
+      [ "$(jq -r .reachable <<<"$hc")" = true ] || refuse host_unreachable "host $host did not answer; not spawning"
+      if [ "$heavy" = true ]; then want=heavy; else want=light; fi
+      [ "$(jq -r --arg w "$want" '.spawn_ok[$w]' <<<"$hc")" = true ] \
+        || refuse capacity "no $want spawn on $host: $(jq -r '.reasons | join("; ")' <<<"$hc")"
+      # spawn: a workspace of its own (never a split of the coordinator's pane), then the agent in its root pane
+      errf=$(mktemp); rc=0
+      ws=$(herdr_at ${t} "$m" workspace create --cwd "$cwd" --label "$name" --no-focus 2>"$errf" 9>&-) || rc=$?
+      pane=$(jq -r '.result.root_pane.pane_id // .result.root_pane // empty | strings' <<<"$ws" 2>/dev/null || true)
+      wsid=$(jq -r '.result.workspace.workspace_id // empty' <<<"$ws" 2>/dev/null || true)
+      if [ "$rc" -ne 0 ] || [ -z "$pane" ]; then
+        outcome=failed; detail=$(jq -cn --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '{error:("workspace create: " + $e)}'); rm -f "$errf"
+        fail 2 herdr_error "herdr workspace create failed on $host (exit $rc)" "$ctx"; fi
+      rc=0
+      # --dangerously-skip-permissions runs unattended only where Home Manager pre-accepted the bypass and $HOME trust
+      # dialogs (nixos-config mcp.nix, acceptClaudeStartupDialogs); elsewhere the dialog blocks and agent start says agent_not_ready
+      st=$(herdr_at 70 "$m" agent start "$name" --kind claude --pane "$pane" --timeout 60000 -- --dangerously-skip-permissions --model "$model" 2>"$errf" 9>&-) || rc=$?
+      code=$(jq -rs 'map(.error.code? // empty) | first // empty' "$errf" 2>/dev/null || true)
+      detail=$(jq -cn --arg p "$pane" --arg w "$wsid" '{agent_id:$p, workspace_id:(if $w == "" then null else $w end)}')
+      if [ "$rc" -ne 0 ]; then
+        outcome=''${code:-failed}; detail=$(jq -c --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '. + {error:$e}' <<<"$detail"); rm -f "$errf"
+        fail 2 "''${code:-herdr_error}" "herdr agent start failed on $host/$pane (exit $rc; the workspace stays for inspection)" "$(jq -c --arg a "$aid" --arg p "$pane" '. + {audit_id:$a, agent_id:$p}' <<<"$ctx")"; fi
+      rm -f "$errf"
+      ses=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
+      outcome=started; detail=$(jq -c --arg s "$ses" --argjson auth "$auth" '. + {session_id:(if $s == "" then null else $s end), authorized_by:$auth}' <<<"$detail")
+      emit "$(jq -cn --arg a "$aid" --arg h "$host" --arg m "$m" --arg n "$name" --arg k "$kind" --arg mo "$model" --argjson hv "$heavy" --arg r "$ref" --argjson d "$detail" \
+        '{schema_version:1, task:"coord:spawn", audit_id:$a, host:$h, machine:(if $m == "" then null else $m end), name:$n, kind:$k, model:$mo, heavy:$hv, task_ref:$r, outcome:"started"} + $d + {error:null}')"
+    '';
+  };
+}

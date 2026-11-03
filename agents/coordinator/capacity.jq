@@ -1,0 +1,51 @@
+# coord:capacity / coord:spawn (skills #28 W1): per-host worker capacity from herdr:inventory and the configured limits.
+# Inputs: $inv (herdr:inventory, slurped), $cap ({"<host label>": {heavy_jobs, max_workers, spawn}}, matched
+# case-insensitively), $kinds ({"<kind>": {tier, model, heavy}}), $audit (audit.jsonl lines, slurped; [] when none),
+# $usage ({"<host>/<agent_id>": context tokens} for local Claude sessions), $next ({repo, task_ref} or null),
+# $threshold (context tokens that call for /compact or /clear), $at.
+$inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage
+| ($cap | with_entries(.key |= ascii_downcase)) as $cap
+# the last delivered handoff or started spawn per pane and session: what the worker last worked on
+| (($audit | map(select(type == "object")) | INDEX(.[] | select(.phase == "outcome"); .audit_id)) as $out
+   | [$audit[] | select(type == "object" and (.phase == "attempt" or (.phase == "spawn" and .stage == "attempt")))
+      | select(($out[.audit_id | tostring].outcome // "") == "delivered" or ($out[.audit_id | tostring].outcome // "") == "started")
+      | {host, agent_id:(.agent_id // ($out[.audit_id | tostring].agent_id // null)), session_id:(.session_id // ($out[.audit_id | tostring].session_id // null)),
+         task_ref:(.task_ref // null), repo:((.authorized_by.issue_url // "") | [capture("^https://github\\.com/(?<r>[^/]+/[^/]+)/").r] | first), at}]) as $work
+| def last_work($h; $a; $s): [$work[] | select(.host == $h and .agent_id == $a and (.session_id == null or $s == null or .session_id == $s))] | sort_by(.at) | last;
+  def busy: . == "working" or . == "blocked";
+  def idle: . == "idle" or . == "done";
+{schema_version:1, task:"coord:capacity", observed_at:$at, kinds:$kinds, context_threshold:$threshold, next:$next,
+ hosts:[$inv.hosts[]? | . as $hst
+   | ($cap[$hst.host | ascii_downcase] // null) as $c
+   | [$hst.agents[]? | . as $a | ($a.observed_state // "unknown") as $s | last_work($hst.host; $a.agent_id; $a.session_id) as $w
+       | ($usage["\($hst.host)/\($a.agent_id)"] // null) as $tok
+       | ($next != null and $w != null and ($next.repo != $w.repo or $next.task_ref != $w.task_ref)) as $independent
+       | {agent_id:$a.agent_id, harness:$a.harness, herdr_state:$s, session_id:$a.session_id, last_task_ref:($w.task_ref // null), last_repo:($w.repo // null),
+          hygiene:({context_tokens:$tok} + (
+            if ($s | idle | not) then {advice:null, reasons:[]}
+            elif $independent then {advice:"/clear", reasons:["next assignment \($next.repo // "?")\($next.task_ref // "") is independent of its last (\($w.repo // "?")\($w.task_ref // ""))"]
+                                     + (if $tok != null and $tok >= $threshold then ["context \($tok) tokens >= \($threshold)"] else [] end)}
+            elif $tok != null and $tok >= $threshold then {advice:"/compact", reasons:["context \($tok) tokens >= \($threshold)"]}
+            else {advice:null, reasons:[]} end))}] as $ws
+   | ([$ws[] | select(.herdr_state | idle)] | length) as $idle
+   | ([$ws[] | select(.herdr_state | busy)] | length) as $busy
+   # an agent in an unknown state may be running anything: it holds a heavy slot like a busy one
+   | (($ws | length) - $idle - $busy) as $unknown
+   | (if $c == null then 0 else ([$c.max_workers - ($ws | length), 0] | max) end) as $free_w
+   | (if $c == null then 0 else ([$c.heavy_jobs - $busy - $unknown, 0] | max) end) as $free_h
+   | ($hst.reachable != false) as $up
+   | ($up and $c != null and $c.spawn == true and $free_w > 0) as $light
+   | ($light and $free_h > 0) as $heavy
+   | {host:$hst.host, machine:($hst.machine // null), reachable:$up, configured:($c != null),
+      limits:(if $c == null then null else {heavy_jobs:$c.heavy_jobs, max_workers:$c.max_workers, spawn:$c.spawn} end),
+      workers:{total:($ws | length), idle:$idle, busy:$busy, unknown:$unknown, list:$ws},
+      free:{workers:$free_w, heavy_jobs:$free_h},
+      spawn_ok:{light:$light, heavy:$heavy},
+      fits:{spawn:[$kinds | to_entries[] | select(if .value.heavy then $heavy else $light end) | .key],
+            idle_worker:[$kinds | to_entries[] | select($up and $idle > 0 and ((.value.heavy | not) or $free_h > 0)) | .key]},
+      reasons:([if $up | not then "host did not answer" else empty end, if $c == null then "no capacity configured for this host (coordinator.capacity)" else empty end,
+                if $c != null and $c.spawn != true then "spawning is off for this host" else empty end,
+                if $c != null and $free_w == 0 then "\($ws | length) of \($c.max_workers) workers in use" else empty end,
+                if $c != null and $free_h == 0 then "\($busy + $unknown) of \($c.heavy_jobs) heavy-job slots taken" else empty end])}],
+ failed_sources:([$inv.hosts[]? | select(.reachable == false) | {source:("herdr:inventory:" + .host), error}] + (if $inv.machines_error != null then [{source:"herdr:machine-list", error:$inv.machines_error}] else [] end))}
+| .partial = ((.failed_sources | length) > 0)

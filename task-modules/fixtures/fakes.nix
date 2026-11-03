@@ -59,6 +59,13 @@
             [ "''${FAKE_HERDR_MISSING:-}" = "$3" ] && { echo '{"error":{"code":"agent_not_found","message":"no such agent"}}' >&2; exit 1; }
             if [ "''${FAKE_HERDR_WAIT:-reached}" = timeout ] || ! want_state "$s" "$@"; then echo '{"error":{"code":"timeout","message":"state not reached"}}' >&2; exit 1; fi
             agent_info wait "$3" "$s" 9 ;;
+          # coord:spawn: FAKE_HERDR_WS=<id> names the created workspace (root pane <id>:p1); FAKE_HERDR_START=ok|not_ready|fail
+          "workspace create") w="''${FAKE_HERDR_WS:-wN}"; printf '{"id":"cli:workspace:create","result":{"type":"workspace_created","workspace":{"workspace_id":"%s"},"tab":{"tab_id":"%s:t1"},"root_pane":{"pane_id":"%s:p1"}}}\n' "$w" "$w" "$w" ;;
+          "agent start") case "''${FAKE_HERDR_START:-ok}" in
+              ok) printf '{"id":"cli:agent:start","result":{"type":"agent_started","agent":{"name":"%s","pane_id":"%s","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"%s"},"agent_status":"idle"}}}\n' "$3" "$7" "''${FAKE_HERDR_SESSION:-sess-new}" ;;
+              not_ready) echo '{"error":{"code":"agent_not_ready","message":"agent blocked during startup"}}' >&2; exit 1 ;;
+              *) echo '{"error":{"code":"pane_not_available","message":"pane is not at a shell prompt"}}' >&2; exit 1 ;;
+            esac ;;
           *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
         esac
         exit "''${FAKE_HERDR_EXIT:-0}"

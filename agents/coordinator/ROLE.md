@@ -23,10 +23,12 @@ tasks:
     - work:status
     - coord:brief
     - coord:changed
+    - coord:capacity
     - coord:handoff
     - herdr:await
   act:
     - herdr:message
+    - coord:spawn
     - gh:label
     - gh:comment
 forbidden:
@@ -164,6 +166,22 @@ END autonomy
    with fresh `coord:brief` output; it never treats them as current state.
    A snapshot it had to rebuild forgets which handoffs were already
    reported, so each open one may print `settled` once more.
+13. Workers and tiers: `coord:capacity` says, per host, how many workers
+   there are (idle, busy, unknown), the worker and heavy-job slots left
+   (`coordinator.capacity`: acer-swift two heavy jobs and three workers,
+   lenovo one heavy job and no spawning), whether a light or heavy spawn is
+   allowed, which assignment kinds fit (`planning` and `review` on opus,
+   `implementation` on sonnet, `mechanical` on haiku; review and
+   implementation are heavy) and, per idle worker, a `hygiene.advice` of
+   `/clear` (its next assignment, given as `next={repo,task_ref}`, is
+   independent of its last) or `/compact` (context at or over
+   `hygieneContextTokens`). Prefer an idle worker; when none fits and the
+   item is labelled, `coord:spawn` starts one in its own Herdr workspace with
+   the kind's model (never one you pick). It refuses, and audits the refusal,
+   when the label is missing, the host is unreachable or unknown, spawning is
+   off there, or no slot is left; never retry a refused spawn on another host
+   without reading `coord:capacity` again. Send `/clear` or `/compact` only
+   under the Autonomy rule above.
 
 ## Prohibited
 
