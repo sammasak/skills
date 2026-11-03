@@ -3,7 +3,7 @@
 # A handoff is matched to its PRs by task_ref and time window, never by the pane title; an agent with a delivered
 # handoff on its current session takes that handoff's verdict, and only an agent without one falls back to its title.
 
-$inv[0] as $inv | $handoffs[0].omitted as $omitted | $handoffs[0].handoffs as $handoffs | $repos[0] as $repos
+$inv[0] as $inv | $handoffs[0] as $log | $log.omitted as $omitted | $log.handoffs as $handoffs | $repos[0] as $repos
 | def num: if type == "string" and test("^#[0-9]+$") then ltrimstr("#") | tonumber else null end;
 def title_repo: [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first;
 # a PR refers to #N when it closes it, names it in title or body (not OWNER/REPO#N, which is another repo), or its branch
@@ -68,13 +68,19 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
          + (if $d != null and (($d.prs | length) >= $d.limit) and $oldest != null and $oldest > $h.sent_at then ["PR list cut at \($d.limit); PRs opened before \($oldest) not checked"] else [] end))})
 ) as $hs
 
-# agents: the latest delivered handoff to this pane on its current session wins over the title
+# agents: the latest delivered handoff to this pane on its current session wins over the title; one beyond the evaluated
+# window is reported as omitted (unknown), never replaced by a title guess
 | [$inv.hosts[]? | .host as $host | (.machine // null) as $m | .agents[]? | . as $a
-   | ([$hs[] | select(.host == $host and .agent_id == $a.agent_id and .delivered and (.session_id == null or $a.session_id == null or .session_id == $a.session_id))] | last) as $h
+   | def mine: select(.host == $host and .agent_id == $a.agent_id and (.session_id == null or $a.session_id == null or .session_id == $a.session_id));
+     ([$hs[] | select(.delivered) | mine] | last) as $h
+   | (if $h == null then [$log.omitted_last[] | mine] | last else null end) as $old
    | ($a.observed_state // "unknown") as $s
    | (if $h != null then
         {by:"handoff", task_ref:$h.task_ref, repo:$h.repo, verdict:$h.work_verdict, refs:[$h.prs[].url], evidence_ref:$h.evidence_ref,
          reasons:($h.reasons + (if $a.task_ref != null and $a.task_ref != $h.task_ref then ["title names \($a.task_ref); correlated by handoff \($h.handoff_id) to \($h.task_ref)"] else [] end))}
+      elif $old != null then
+        {by:"omitted", task_ref:$old.task_ref, repo:null, verdict:"unknown", refs:[], evidence_ref:null,
+         reasons:["its handoff \($old.handoff_id) (\($old.task_ref // "no ref"), sent \($old.sent_at)) is older than the \($log.kept) newest evaluated; not judged by its title"]}
       else ($a.task_ref | num) as $n | (($a.title // "") | title_repo) as $repo | ($repos[$repo // ""] // null) as $d
         | {by:(if $n != null then "title" else "none" end), task_ref:$a.task_ref, repo:$repo}
         + (if $n == null then {verdict:"unknown", refs:[], reasons:["no task reference (#N) in the agent title"]}
@@ -89,7 +95,7 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
                else {verdict:"unknown", refs:[], reasons:["#\($n) not found in \($repo)" + (if ($d.prs | length) >= $d.limit then " (only the newest \($d.limit) PRs checked)" else "" end)]} end
              | .evidence_ref = (if .verdict == "verified" then .refs[0] else null end) end) end) as $c
    | {host:$host, machine:$m, agent_id:$a.agent_id, harness:$a.harness, session_id:$a.session_id, title:($a.title // ""), task_ref:$c.task_ref, title_ref:$a.task_ref, repo:$c.repo,
-      correlation:{by:$c.by, handoff_id:($h.handoff_id // null)},
+      correlation:{by:$c.by, handoff_id:($h.handoff_id // $old.handoff_id // null)},
       herdr_state:$s, state_change_seq:$a.state_change_seq, observed_at:$at,
       work_verdict:(if $s == "blocked" then "blocked" else $c.verdict end), needs_owner:($s == "blocked"),
       evidence_ref:(if $s != "blocked" then $c.evidence_ref // null else null end), refs:$c.refs,
