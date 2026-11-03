@@ -204,6 +204,11 @@
           '{"audit_id":"a5","handoff_id":"eeeeeeeeeeee","phase":"outcome","at":"2026-01-01T00:00:01Z","outcome":"delivered"}' >> "$AUDIT"
         set_agent wF:p1 '.state_change_seq = 141 | .agent_status = "idle"'
         run; [ -z "$LINES" ] && [ "$(snapq '.open_handoffs | has("eeeeeeeeeeee")')" = false ] && ok || bad "a handoff older than openHandoffDays is not open ($LINES)"
+        # (16b) a saved machine removed from herdr is said once, naming its open handoffs; the next run is silent
+        handoff 444444444444 acer-swift wA:p2 "#9" 2026-11-03T10:09:00Z
+        FAKE_HERDR_MACHINES='[]' run; [ "$LINES" = "host acer-swift no longer listed (1 agents, open handoffs 444444444444)" ] && ok || bad "removed machine ($LINES)"
+        FAKE_HERDR_MACHINES='[]' run; [ -z "$LINES" ] && ok || bad "removed machine: silent after ($LINES)"
+        run; [ "$LINES" = "host acer-swift now listed (1 agents)" ] && ok || bad "machine back ($LINES)"
         # (17) a concurrent run waits on the lock; a held lock past the wait is busy, and nothing moved
         ( exec 8>"$TMP/state/changed/.lock"; flock 8; sleep 14 ) & LOCKER=$!; sleep 0.5
         cp "$TMP/state/changed/snapshot.json" "$TMP/snap-before.json"; run; wait "$LOCKER"

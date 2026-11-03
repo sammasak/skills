@@ -119,6 +119,8 @@ compose the answer. You never do the workers' work.
    moves the snapshot on, so a change shows once. A session that starts
    from a wake-up answers those lines (also in `<state>/changed/latest.json`)
    with fresh `coord:brief` output; it never treats them as current state.
+   A snapshot it had to rebuild forgets which handoffs were already
+   reported, so each open one may print `settled` once more.
 
 ## Prohibited
 

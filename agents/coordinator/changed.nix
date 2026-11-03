@@ -54,10 +54,10 @@ in
       audit="${cfg.stateDir}/audit.jsonl"; audit_state=absent; printf '{}\n' > "$tmpd/open.json"
       if [ -s "$audit" ]; then
         if jq -sc --argjson cut "$(( $(now_epoch) - ${toString cfg.openHandoffDays} * 86400 ))" '
-            map(select(type == "object")) as $all | ($all | map(select(.phase == "outcome"))) as $outs
+            map(select(type == "object")) as $all | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $byid
             | [$all[] | select(.phase == "attempt" and (.handoff_id | type) == "string" and (.host | type) == "string" and (.agent_id | type) == "string")]
             | group_by(.handoff_id) | map(last)
-            | map(. as $a | ($outs | map(select(.audit_id == $a.audit_id)) | last) as $o | select(($o.outcome // "") == "delivered")
+            | map(. as $a | ($byid[$a.audit_id] // null) as $o | select(($o.outcome // "") == "delivered")
                   | select(((.at // "") | try fromdateiso8601 catch 0) >= $cut)
                   | {key:.handoff_id, value:{host:.host, agent_id:.agent_id, task_ref:(.task_ref // null), sent_at:(.at // null)}})
             | from_entries' "$audit" > "$tmpd/open.json" 2>/dev/null; then audit_state=ok; else printf '{}\n' > "$tmpd/open.json"; audit_state=unreadable; fi
@@ -117,6 +117,8 @@ in
                   | select(($hc.agents[$a] // null) == null) | ($byagent[$h + "/" + $a] // null) as $ho | select($ho != null)
                   | {kind:"gone", host:$h, agent_id:$a, handoff_id:$ho.handoff_id, line:("gone " + n($h) + "/" + n($a) + " " + ref($ho) + " handoff " + n($ho.handoff_id) + " no longer listed")})
               end),
+          (($p.hosts // {}) | to_entries[] | select(($c.hosts[.key] // null) == null) | .value as $hp
+            | {kind:"host", host:$hp.host, line:("host " + n($hp.host) + " no longer listed (" + n($hp.agents | length) + " agents" + ([$hp.agents | keys[] | $byagent[$hp.host + "/" + .] // empty | .handoff_id] | if length == 0 then "" else ", open handoffs " + (map(n(.)) | join(" ")) end) + ")")}),
           (if $c.repos != null and ($p.repos // null) != null then
              ($c.repos | to_entries[] | .key as $r | .value as $rc | ($p.repos[$r] // null) as $rp
                | if $rp == null then (if $rc.active then {kind:"repo", repo:$r, line:("repo " + n($r) + " active: open_prs " + n($rc.open_prs) + " approved_issues " + n($rc.approved_issues))} else empty end)
