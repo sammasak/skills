@@ -30,7 +30,7 @@ in
   };
 
   config.tasks."coord:changed" = {
-    description = "Zero-LLM change check for a timer, with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts (upstream in the same DAG) and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. The plain form reads without consuming; consume=true (the timer's form) moves the snapshot and spends the wake budget.";
+    description = "Zero-LLM change check for a timer (and the idle-fleet-with-work wake, once per fleet+work fingerprint), with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts (upstream in the same DAG) and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. The plain form reads without consuming; consume=true (the timer's form) moves the snapshot and spends the wake budget.";
     after = [ "herdr:inventory@completed" "gh:repos@completed" ];
     input = { consume = false; peek = false; };
     exec = ''
@@ -72,7 +72,8 @@ in
             | group_by(.handoff_id) | map(last)
             | map(. as $a | ($byid[$a.audit_id | tostring] // null) as $o | select(($o.outcome // "") == "delivered")
                   | select(((.at // "") | try fromdateiso8601 catch 0) >= $cut)
-                  | {key:.handoff_id, value:{host:.host, agent_id:.agent_id, task_ref:(.task_ref // null), sent_at:(.at // null)}})
+                  | {key:.handoff_id, value:{host:.host, agent_id:.agent_id, task_ref:(.task_ref // null), sent_at:(.at // null),
+                                              repo:(((.authorized_by.issue_url // "") | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first) // null)}})
             | from_entries' "$audit" > "$tmpd/open.json" 2>/dev/null; then audit_state=ok; else printf '{}\n' > "$tmpd/open.json"; audit_state=unreadable; fi
       fi
 
@@ -95,13 +96,47 @@ in
                                 else ($p.hosts[$k].agents // {}) end)}}) | from_entries),
            repos:(if $repos == null then ($p.repos // null) else ($repos.repos | map({key:.repo, value:{open_prs:(.open_prs // 0), approved_issues:(.approved_issues // 0), active:(.active // false)}}) | from_entries) end),
            open_handoffs:$open, closed_handoffs:(($p.closed_handoffs // {}) | with_entries(select(.key as $k | $open | has($k)))),
-           audit_ok:($as != "unreadable")}' > "$tmpd/cur.json" || fail 2 malformed "herdr:inventory record has an unexpected shape" "$ctx"
+           audit_ok:($as != "unreadable"), idle_wake:($p.idle_wake // null)}' > "$tmpd/cur.json" || fail 2 malformed "herdr:inventory record has an unexpected shape" "$ctx"
 
-      jq -c --argjson baseline "$baseline" --argjson reset "$reset" --arg snap "$snap" --arg audit "$audit" --slurpfile P "$tmpd/prev.json" '
-        $P[0] as $p | . as $c
+      # F1 (sammasak/skills#28): an idle fleet with work left wakes the Coordinator once per distinct fleet+work fingerprint.
+      # The fleet test costs nothing (the inventory); GitHub is asked only when every agent is idle/done: the open PRs (with
+      # comments and reviews, for grades) and open issues of each active repo (newest push first, at most portfolioActive)
+      # and of each open-handoff repo, plus the merged PRs of the handoff repos (verification). A gh failure skips the
+      # condition for this run and is recorded under idle_wake.skipped, never guessed around
+      fleet=$(jq -c '[.hosts[]? | select(.reachable == true) | .agents[]?] as $a | all(.hosts[]?; .reachable == true) and ($a | length) > 0 and all($a[]; .observed_state == "idle" or .observed_state == "done")' "$tmpd/inv.json")
+      skipped=null; : > "$tmpd/work.jsonl"
+      if [ "$fleet" = true ]; then
+        if [ "$repos_src" != upstream ]; then skipped=$(jq -cn --arg s "$repos_src" '"gh:repos unavailable (\($s)); the active repos are unknown"')
+        else
+          gh_list() { timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} "$@" 2>/dev/null; }
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue; rc=0; printf '[]\n' > "$tmpd/m.json"
+            gh_list pr list -R "$repo" --state open --limit ${toString cfg.ghLimit} --json number,title,body,state,createdAt,url,headRefName,headRefOid,closingIssuesReferences,comments,reviews > "$tmpd/p.json" \
+              || { rc=$?; skipped=$(jq -cn --arg r "$repo" --arg c "$rc" '"gh pr list -R \($r) --state open exited \($c)"'); break; }
+            gh_list issue list -R "$repo" --state open --limit ${toString cfg.ghLimit} --json number,url,labels > "$tmpd/i.json" \
+              || { rc=$?; skipped=$(jq -cn --arg r "$repo" --arg c "$rc" '"gh issue list -R \($r) exited \($c)"'); break; }
+            if jq -e --arg r "$repo" 'any(.[]; .repo == $r)' "$tmpd/open.json" >/dev/null; then
+              gh_list pr list -R "$repo" --state merged --limit ${toString cfg.ghLimit} --json number,title,body,mergedAt,createdAt,headRefName,closingIssuesReferences > "$tmpd/m.json" \
+                || { rc=$?; skipped=$(jq -cn --arg r "$repo" --arg c "$rc" '"gh pr list -R \($r) --state merged exited \($c)"'); break; }
+            fi
+            jq -cn --arg r "$repo" --slurpfile p "$tmpd/p.json" --slurpfile i "$tmpd/i.json" --slurpfile m "$tmpd/m.json" \
+              'if ($p[0] | type) == "array" and ($i[0] | type) == "array" and ($m[0] | type) == "array" then {repo:$r, prs:$p[0], issues:$i[0], merged:$m[0]} else error end' >> "$tmpd/work.jsonl" 2>/dev/null \
+              || { skipped=$(jq -cn --arg r "$repo" '"gh returned unexpected JSON for \($r)"'); break; }
+          done < <(jq -rn --slurpfile R "$tmpd/repos.json" --slurpfile O "$tmpd/open.json" --argjson cap ${toString cfg.portfolioActive} \
+                     '([$R[0].repos[] | select(.active) | .repo] | .[:$cap]) + [$O[0][] | .repo // empty] | unique[]')
+        fi
+      fi
+      jq -sc 'INDEX(.repo)' "$tmpd/work.jsonl" > "$tmpd/work.json"
+      jq -nc -L ${./.} --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson skipped "$skipped" \
+        --slurpfile inv "$tmpd/inv.json" --slurpfile work "$tmpd/work.json" --slurpfile open "$tmpd/open.json" --slurpfile prev "$tmpd/prev.json" \
+        -f ${./.}/idle.jq > "$tmpd/idle.json" || fail 2 malformed "idle-fleet check failed" "$ctx"
+
+      jq -c --argjson baseline "$baseline" --argjson reset "$reset" --arg snap "$snap" --arg audit "$audit" --slurpfile P "$tmpd/prev.json" --slurpfile W "$tmpd/idle.json" '
+        $P[0] as $p | $W[0] as $w | . as $c
         | def safe: tostring | gsub("[^A-Za-z0-9_:.@/#-]"; "?") | .[0:80];
           def ref(a): ((a.task_ref // "-") | safe);
           def n(x): (x | safe);
+          def refs3(a): ((a[:3] | map(n(.)) | join(", ")) + (if (a | length) > 3 then ", +" + n((a | length) - 3) + " more" else "" end));
           # handoffs still open and not yet reported, the most recently sent one per agent
           ($c.open_handoffs | to_entries | map(select(.key as $k | ($c.closed_handoffs | has($k)) | not)) | sort_by(.value.sent_at // "")
              | map({key:(.value.host + "/" + .value.agent_id), value:(.value + {handoff_id:.key})}) | from_entries) as $byagent
@@ -139,17 +174,23 @@ in
                    {kind:"repo", repo:$r, line:("repo " + n($r) + " open_prs " + n($rp.open_prs) + "→" + n($rc.open_prs) + " approved_issues " + n($rp.approved_issues) + "→" + n($rc.approved_issues))}
                  else empty end)
            else empty end),
-          (if ($c.audit_ok | not) and ($p.audit_ok != false) then {kind:"audit", line:("audit " + $audit + " unreadable (not JSON lines); herdr:message refuses to send until the owner inspects it")} else empty end)
+          (if ($c.audit_ok | not) and ($p.audit_ok != false) then {kind:"audit", line:("audit " + $audit + " unreadable (not JSON lines); herdr:message refuses to send until the owner inspects it")} else empty end),
+          (if $w.fired then {kind:"idle", line:("idle " + n($w.agents) + " agents idle/done on " + n($w.hosts) + " host(s); work left: "
+             + ([(if ($w.work.open_prs | length) > 0 then n($w.work.open_prs | length) + " open PR(s) without a 9/10 review (" + refs3($w.work.open_prs) + ")" else empty end),
+                 (if ($w.work.approved_issues | length) > 0 then n($w.work.approved_issues | length) + " approved issue(s) without a handoff (" + refs3($w.work.approved_issues) + ")" else empty end),
+                 (if ($w.work.unverified_handoffs | length) > 0 then n($w.work.unverified_handoffs | length) + " unverified handoff(s) (" + refs3($w.work.unverified_handoffs) + ")" else empty end)] | join(", ")))}
+           else empty end)
         ]' "$tmpd/cur.json" > "$tmpd/changes.json" || fail 2 malformed "snapshot diff failed" "$ctx"
 
-      # a reported handoff is closed from now on
-      jq -c --arg at "$at" --slurpfile C "$tmpd/changes.json" '
-        .closed_handoffs += ([$C[0][] | select(.kind == "settled" or .kind == "gone" or .kind == "replaced") | {key:.handoff_id, value:{kind, at:$at}}] | from_entries)' "$tmpd/cur.json" > "$tmpd/next.json" || fail 2 malformed "snapshot update failed" "$ctx"
+      # a reported handoff is closed from now on; a fired idle line is not repeated until the fleet or the work changes
+      jq -c --arg at "$at" --slurpfile C "$tmpd/changes.json" --slurpfile W "$tmpd/idle.json" '
+        .closed_handoffs += ([$C[0][] | select(.kind == "settled" or .kind == "gone" or .kind == "replaced") | {key:.handoff_id, value:{kind, at:$at}}] | from_entries)
+        | if $W[0].fired then .idle_wake = {fingerprint:$W[0].fingerprint, at:$at} else . end' "$tmpd/cur.json" > "$tmpd/next.json" || fail 2 malformed "snapshot update failed" "$ctx"
       jq -cn --arg at "$at" --argjson b "$baseline" --argjson r "$reset" --argjson ck "$consume" --arg rs "$repos_src" --arg as "$audit_state" --arg s "$snap" \
-         --slurpfile C "$tmpd/changes.json" --slurpfile I "$tmpd/inv.json" --slurpfile N "$tmpd/next.json" '
+         --slurpfile C "$tmpd/changes.json" --slurpfile I "$tmpd/inv.json" --slurpfile N "$tmpd/next.json" --slurpfile W "$tmpd/idle.json" '
         {schema_version:1, task:"coord:changed", observed_at:$at, baseline:$b, snapshot_reset:$r, consume:$ck, snapshot:$s,
          sources:{herdr:{answered_hosts:($I[0].answered_hosts // 0), hosts_total:($I[0].hosts_total // 0)}, repos:$rs, audit:$as},
-         open_handoffs:(($N[0].open_handoffs | length) - ($N[0].closed_handoffs | length)), changes:$C[0]}' > "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
+         open_handoffs:(($N[0].open_handoffs | length) - ($N[0].closed_handoffs | length)), idle_wake:$W[0], changes:$C[0]}' > "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
       # the wake budget (wakes.json: epoch seconds of past printing runs, pruned to the window): a printing run within the
       # min gap of the last one, or beyond the hourly cap, is deferred: nothing printed, snapshot untouched, so its changes
       # stay pending and surface together on the first allowed run. A non-consuming read never spends or checks the budget.

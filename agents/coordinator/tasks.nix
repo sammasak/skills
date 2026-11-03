@@ -63,7 +63,7 @@ in
         jq -sc 'INDEX(.repo)' "$tmpd/repos.jsonl" > "$tmpd/repos.json"
         printf '%s\n' "$inv" > "$tmpd/inv.json"
         jq -nc --slurpfile inv "$tmpd/inv.json" --slurpfile handoffs "$tmpd/handoffs.json" --slurpfile repos "$tmpd/repos.json" --arg at "$at" \
-          -f ${./correlate.jq} > "$tmpd/corr.json" || fail 2 internal "work:status correlation failed" '{"task":"work:status"}'
+          -L ${./.} -f ${./.}/correlate.jq > "$tmpd/corr.json" || fail 2 internal "work:status correlation failed" '{"task":"work:status"}'
         failed=$(jq -c --argjson e "$audit_err" '[(.hosts[] | select(.reachable == false) | {source:("herdr:inventory:" + .host), error})] + (if .machines_error != null then [{source:"herdr:machine-list", error:.machines_error}] else [] end)
           + (if $e != null then [{source:"coordinator:audit", error:$e}] else [] end)' <<<"$inv")
         emit "$(jq -c --arg at "$at" --argjson inv "$inv" --argjson f "$failed" --arg a "$audit" --argjson e "$audit_err" \

@@ -117,6 +117,8 @@
           exit 0
         fi
         case "$1 $2" in "issue list") kind="issues" ;; "pr list") kind="prs" ;; *) echo "fake gh: unsupported $*" >&2; exit 2 ;; esac
+        # FAKE_GH_LIST_EXIT fails the list calls alone (the GraphQL repo query above keeps answering)
+        [ -n "''${FAKE_GH_LIST_EXIT:-}" ] && { echo "gh: HTTP 502 Bad Gateway" >&2; exit "$FAKE_GH_LIST_EXIT"; }
         # like gh: --limit N cuts the list silently at N
         state=""; limit=30; prev=""; for a in "$@"; do case "$prev" in --state) state="$a" ;; --limit|-L) limit="$a" ;; esac; prev="$a"; done
         f="''${FAKE_GH_DIR:?}/''${repo//\//__}.$kind.json"
