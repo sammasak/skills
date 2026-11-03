@@ -126,11 +126,21 @@
         ! grep -qE 'h0000000000[12] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && grep -q 'h00000000004 → .*STALE' <<<"$md" && ok || bad "open handoffs one line each with stages, verified ones not repeated"
         ! grep -q '{"' <<<"$md" && ok || bad "no raw JSON in the Markdown brief"
         ! grep -q -- '--search' "$FAKE_LOG" && [ "$(grep -c '^gh pr list -R sammasak/skills' "$FAKE_LOG")" = 1 ] && ok || bad "one PR list per repo, no search ($(grep '^gh pr' "$FAKE_LOG"))"
+        # the default read is latest.md (the runbook sends devenv's stdout JSON to /dev/null): the same Markdown, at most half
+        # of what --show-output prints
+        M="$TMP/state/brief/latest.md"
+        [ -s "$M" ] && [ "$(sed -E 's/^\s+//' <<<"$md")" = "$(sed -n '/# Fleet brief/,/^Full JSON:/p' "$M")" ] && ! grep -q '{"' "$M" && ok || bad "latest.md is the printed Markdown, no JSON ($(head -c 300 "$M"))"
+        [ $(( $(wc -c < "$M") * 2 )) -le "$(wc -c < "$TMP/run.log")" ] && ok || bad "latest.md is at most half the --show-output bytes ($(wc -c < "$M") vs $(wc -c < "$TMP/run.log"))"
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 > /dev/null 2> "$TMP/quiet.err"; CODE=$?
+        [ "$CODE" -eq 0 ] && grep -q '^# Fleet brief' "$M" && [ "$(wc -c < "$TMP/quiet.err")" -lt 1000 ] && ok || bad "default form (stdout to /dev/null) rewrites latest.md with little else ($CODE, stderr $(wc -c < "$TMP/quiet.err") bytes)"
         # (7) only the newest 50 handoffs are carried (the record travels in devenv's environment); the rest are counted
         for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 6 q000000000010" ] && grep -q '56 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
+        # an agent whose handoff fell out of the evaluated window says so, rather than being judged by its (wrong) title
+        [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.work_verdict) \(.evidence_ref)"')" = "omitted h00000000002 #28 unknown null" ] && it wA:p1 '.reasons[0]' | grep -q 'older than the 50 newest evaluated' && ok || bad "omitted handoff reported as omitted ($(it wA:p1 '{correlation,task_ref,work_verdict,reasons}'))"
         summary
       '';
     };

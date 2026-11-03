@@ -23,7 +23,7 @@ in
         # handoffs come from the audit log alone (last attempt per handoff_id with its task_ref, and its outcome line), so a
         # fresh session rebuilds what was sent, to whom and whether it is verified from audit.jsonl; a log that is not JSON
         # lines is reported as a failed source, never shown as "no handoffs"
-        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"; printf '{"omitted":0,"handoffs":[]}\n' > "$tmpd/handoffs.json"
+        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"; printf '{"kept":${toString handoffsKept},"omitted":0,"handoffs":[],"omitted_last":[]}\n' > "$tmpd/handoffs.json"
         if [ -s "$audit" ]; then
           jq -sc '
             map(select(type == "object")) as $all
@@ -38,8 +38,10 @@ in
             # a handoff owns the PRs opened from its send until the next handoff to the same pane (until); only the newest
             # ${toString handoffsKept} are evaluated and carried, so the record stays well under the environment size devenv passes it in
             | group_by(.host + "/" + .agent_id) | map(sort_by(.sent_at) | . as $g | [range(length) | $g[.] + {until:($g[. + 1].sent_at // null)}]) | add // [] | sort_by(.sent_at)
-            | {omitted:([length - ${toString handoffsKept}, 0] | max), handoffs:.[-${toString handoffsKept}:]}' "$audit" > "$tmpd/handoffs.json" 2>/dev/null \
-            || { printf '{"omitted":0,"handoffs":[]}\n' > "$tmpd/handoffs.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines; herdr:message refuses to send until the owner inspects it")}'); }
+            # for the rest only the newest delivered one per pane is kept, so its agent reports "omitted", not a title guess
+            | {kept:${toString handoffsKept}, omitted:([length - ${toString handoffsKept}, 0] | max), handoffs:.[-${toString handoffsKept}:],
+               omitted_last:(.[:-${toString handoffsKept}] | map(select(.delivered)) | group_by(.host + "/" + .agent_id) | map(last | {handoff_id, host, agent_id, session_id, task_ref, sent_at}))}' "$audit" > "$tmpd/handoffs.json" 2>/dev/null \
+            || { printf '{"kept":${toString handoffsKept},"omitted":0,"handoffs":[],"omitted_last":[]}\n' > "$tmpd/handoffs.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines; herdr:message refuses to send until the owner inspects it")}'); }
         fi
         # GitHub evidence: one bounded PR list (all states, comments and reviews) and one open-issue list per repo named by a
         # handoff or an OWNER/REPO#N title. No --search: GitHub's search index misses PRs it has not indexed, a plain list does not
@@ -101,9 +103,11 @@ in
         brief=$(jq -c --argjson p "$portfolio" '. + {task:"coord:brief", portfolio:$p}' <<<"$ws")
         printf '%s\n' "$brief" > "$dir/latest.json.tmp" && mv "$dir/latest.json.tmp" "$dir/latest.json"
         printf '%s\n' "$brief" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
+        # the Markdown is the default read (latest.md): devenv's stdout carries every task's JSON, which the runbook's
+        # default command sends to /dev/null; latest.json keeps the full record
         jq -r --arg f "$dir/latest.json" '
           "# Fleet brief (\(.observed_at))",
-          "", "Hosts: this one" + (if .machines_configured > 0 then " + \(.machines_configured) saved herdr machine(s)" else " only (no saved herdr machines: `herdr machine add <ssh-target> --label <name>` on the coordinator host adds workers)" end) + "; \(.answered_hosts)/\(.hosts_total) answered",
+          "", "Hosts: this one" + (if .machines_configured > 0 then " + \(.machines_configured) saved herdr machine(s)" else " only (`herdr machine add` adds workers)" end) + "; \(.answered_hosts)/\(.hosts_total) answered",
           (if .partial then "", "**Partial:** " + ([.failed_sources[] | "\(.source): \(.error.kind) — \(.error.message)"] | join("; ")) else empty end),
           "", "## Needs you",
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else (.[0:10] | map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))")) + (if length > 10 then ["… \(length - 10) more needing you in the JSON"] else [] end) end)[]),
@@ -125,9 +129,10 @@ in
            else (.portfolio.active[] | "- \(.repo): \(.open_prs) open PR(s), \(.approved_issues) approved issue(s)" + (if (.approved|length) > 0 then " → " + ([.approved[] | "#\(.number) \(.title)"] | join("; ")) else "" end) + (if .error != null then " (gh:work: \(.error.kind))" else "" end)) end),
           (if (.portfolio.skipped_active|length) > 0 then "- active but not expanded (cap \(.portfolio.active|length)): \(.portfolio.skipped_active | join(", "))" else empty end),
           "", "Full JSON: \($f)", "", "## Agents",
-          (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
+          (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 and .correlation.by != "none" then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
-        ' <<<"$brief"
+        ' <<<"$brief" > "$dir/latest.md.tmp" && mv "$dir/latest.md.tmp" "$dir/latest.md"
+        cat "$dir/latest.md"
         # the brief is the one task whose exit says something: no host answered (not even this one) is a failure
         [ "$(jq -r '((.items|length) > 0) or (.answered_hosts > 0)' <<<"$brief")" = true ] || exit 2
       '';
