@@ -47,6 +47,90 @@
         summary
       '';
     };
+    "skills:test:tasks:coord-evidence" = {
+      description = "Discovery of running Claude and Codex agents (harness, session) through to a draft and the agent_changed refusal; verified only from a merged PR, never from herdr done/idle or a worker saying done";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
+        run() { # <task> [args]
+          local task="$1"; shift
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+            --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+        H=$(hostname -s 2>/dev/null || hostname); LOCAL="$FX/herdr/local-two-agents.json"
+        export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]'
+        export FAKE_HERDR_LIST="$LOCAL" FAKE_HERDR_LIST_acer_swift="$FX/herdr/remote-ok.json" FAKE_PROMPT_OUT="$TMP/prompt.txt"
+        export FAKE_GH_LABELS='["approved"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"approved"},"actor":{"login":"sammasak"},"created_at":"2026-11-03T09:00:00Z"}]'
+        AUTH='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/28","label":"approved"}'
+
+        # (a) discovery: running agents of both harnesses on this host and on the saved machine, each with its session
+        run herdr:inventory
+        [ "$CODE" -eq 0 ] && [ "$(jqr .answered_hosts)" = 2 ] && ok || bad "inventory: $CODE $OUT"
+        [ "$(jqr '.hosts[] | select(.machine==null) | .agents[] | select(.agent_id=="wF:p1") | "\(.harness) \(.session_id) \(.observed_state)"')" = "claude 11111111-1111-4111-8111-111111111111 working" ] && ok || bad "local claude agent discovered with its session ($OUT)"
+        [ "$(jqr '.hosts[] | select(.machine==null) | .agents[] | select(.agent_id=="wT:p1") | "\(.harness) \(.session_id) \(.observed_state)"')" = "codex thr_2222 done" ] && ok || bad "local codex agent discovered with its session ($OUT)"
+        [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[] | select(.agent_id=="wA:p2") | "\(.harness) \(.session_id) \(.observed_state) \(.approval_required)"')" = "claude 33333333-3333-4333-8333-333333333333 blocked true" ] && ok || bad "remote claude agent discovered through --machine with its session ($OUT)"
+        [ "$(jqr '[.hosts[].agents[] | select(.session_id == null)] | length')" = 0 ] && ok || bad "every discovered agent carries a session_id"
+        RSESS=$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0].session_id'); CSESS=$(jqr '.hosts[] | select(.machine==null) | .agents[] | select(.agent_id=="wT:p1") | .session_id')
+        # the brief carries harness and session for the same three agents
+        run coord:brief; B="$TMP/state/brief/latest.json"
+        [ "$CODE" -eq 0 ] && [ "$(jq -r '[.items[] | "\(.host)/\(.agent_id) \(.harness) \(.session_id)"] | sort | join(";")' "$B")" = "$(printf '%s;%s;%s' "$H/wF:p1 claude 11111111-1111-4111-8111-111111111111" "$H/wT:p1 codex thr_2222" "acer-swift/wA:p2 claude 33333333-3333-4333-8333-333333333333" | tr ';' '\n' | sort | paste -sd';')" ] && ok || bad "brief items carry harness and session_id ($(jq -c '[.items[] | {host,agent_id,harness,session_id}]' "$B"))"
+        # session carried from the inventory record into the draft, for a remote claude agent and a local codex agent
+        run coord:handoff --input-json "{\"machine\":\"acer-swift\",\"agent_id\":\"wA:p2\",\"session_id\":\"$RSESS\",\"task_ref\":\"#28\",\"scope\":\"s\",\"expected_evidence\":\"e\",\"acceptance\":\"a\",\"allowed_actions\":[\"comment\"]}"
+        IDR=$(jqr .handoff_id); [ "$CODE" -eq 0 ] && [ "$(jqr .session_id)" = "$RSESS" ] && [ "$(jqr .machine)" = acer-swift ] && ok || bad "remote draft carries the inventory session ($OUT)"
+        run coord:handoff --input-json "{\"agent_id\":\"wT:p1\",\"session_id\":\"$CSESS\",\"task_ref\":\"#28\",\"scope\":\"s\",\"expected_evidence\":\"e\",\"acceptance\":\"a\",\"allowed_actions\":[\"comment\"]}"
+        IDC=$(jqr .handoff_id); [ "$CODE" -eq 0 ] && [ "$(jqr .session_id)" = "thr_2222" ] && [ "$(jqr .machine)" = null ] && ok || bad "codex draft carries the inventory session ($OUT)"
+        # the send refuses agent_changed when the pane now runs another session, and nothing is prompted
+        export FAKE_HERDR_STATE=idle FAKE_HERDR_SEQ=9 FAKE_HERDR_SESSION="44444444-4444-4444-8444-444444444444"; : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$IDR\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = agent_changed ] && jqr .error.message | grep -q "$RSESS" && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "agent_changed refused, nothing sent ($CODE $OUT)"
+        [ ! -s "$TMP/state/audit.jsonl" ] || [ "$(grep -c '"phase":"attempt"' "$TMP/state/audit.jsonl")" = 0 ] && ok || bad "agent_changed leaves no attempt in the audit log"
+        # the same draft is delivered once the pane runs the drafted session again; the codex agent is a first-class target too
+        export FAKE_HERDR_SESSION="$RSESS"; : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$IDR\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr .session_id)" = "$RSESS" ] && grep -q '^herdr(machine=acer-swift) agent prompt wA:p2' "$FAKE_LOG" && ok || bad "matching session delivered ($CODE $OUT)"
+        export FAKE_HERDR_SESSION="thr_2222"; : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$IDC\",\"confirm\":\"$H/wT:p1\",$AUTH}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr .session_id)" = thr_2222 ] && grep -q '^herdr agent prompt wT:p1' "$FAKE_LOG" && ok || bad "codex agent delivered on its session ($CODE $OUT)"
+        unset FAKE_HERDR_SESSION
+
+        # (b) completion vs verification: four done/idle agents whose titles (what a worker "says") all claim completion
+        #   wF:p1 "#16 done": open PR 17 + merged PR 13 for #16          -> unverified (open PR)
+        #   wT:p1 "#43 DONE": merged PR 12 names #43, issue 43 still open -> unverified (issue open)
+        #   wX:p3 "#99 finished": nothing on GitHub                       -> unknown
+        #   wY:p4 "#42": merged PR 15 closes #42, issue closed            -> verified, evidence_ref = that PR
+        jq '.result.agents as $a | .result.agents = [
+              ($a[0] | .agent_status = "done" | .terminal_title_stripped = "sammasak/skills #16 done, all green"),
+              ($a[1] | .agent_status = "done" | .terminal_title_stripped = "sammasak/skills #43 DONE and verified by me"),
+              ($a[0] | .pane_id = "wX:p3" | .agent_status = "idle" | .terminal_title_stripped = "sammasak/skills #99 finished"),
+              ($a[1] | .pane_id = "wY:p4" | .agent_status = "done" | .terminal_title_stripped = "sammasak/skills #42 settlement tests")]' "$LOCAL" > "$TMP/claims.json"
+        export FAKE_HERDR_LIST="$TMP/claims.json" FAKE_HERDR_MACHINES='[]'; : > "$FAKE_LOG"
+        run coord:brief; B="$TMP/state/brief/latest.json"
+        v() { jq -r --arg a "$1" '.items[] | select(.agent_id==$a) | "\(.herdr_state) \(.work_verdict) \(.evidence_ref)"' "$B"; }
+        [ "$CODE" -eq 0 ] && [ "$(jq -r '.items|length' "$B")" = 4 ] && ok || bad "brief over four claiming agents: $CODE"
+        [ "$(v wF:p1)" = "done unverified null" ] && jq -r '.items[] | select(.agent_id=="wF:p1") | .reasons[0]' "$B" | grep -q 'open PR' && ok || bad "open PR: done agent is unverified, no evidence_ref ($(v wF:p1))"
+        [ "$(v wT:p1)" = "done unverified null" ] && jq -r '.items[] | select(.agent_id=="wT:p1") | .reasons[0]' "$B" | grep -q 'still open' && ok || bad "merged PR but open issue: unverified ($(v wT:p1))"
+        [ "$(v wX:p3)" = "idle unknown null" ] && ok || bad "nothing on GitHub: unknown ($(v wX:p3))"
+        [ "$(v wY:p4)" = "done verified https://github.com/sammasak/skills/pull/15" ] && ok || bad "merged PR closing the issue: verified with that PR as evidence_ref ($(v wY:p4))"
+        # three agents share herdr_state=done and still get three different verdicts: the fields are independent
+        [ "$(jq -r '[.items[] | select(.herdr_state=="done") | .work_verdict] | sort | unique | join(",")' "$B")" = "unverified,verified" ] && [ "$(jq -r '[.items[] | has("herdr_state") and has("work_verdict")] | all' "$B")" = true ] && ok || bad "herdr_state and work_verdict are separate fields"
+        # evidence_ref is set only on verified items, and only ever to a merged PR URL
+        [ "$(jq -r '[.items[] | select(.work_verdict != "verified") | .evidence_ref] | all(. == null)' "$B")" = true ] && [ "$(jq -r '[.items[] | select(.work_verdict == "verified") | .evidence_ref] | all(test("^https://github.com/.+/pull/[0-9]+$"))' "$B")" = true ] && ok || bad "evidence_ref only from merged PRs"
+        # what the worker says in its pane is never consulted: no agent read during status/brief, only list + gh
+        ! grep -q 'agent read' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/skills --state all --search 16' "$FAKE_LOG" && ok || bad "verdicts come from gh, never from pane text ($(grep -c . "$FAKE_LOG") calls)"
+        # none of the completion claims needs the owner; nothing is "done" in the Markdown either
+        [ "$(jq -r '[.items[] | .needs_owner] | any' "$B")" = false ] && grep -q 'wF:p1 claude #16 | herdr=done | work=unverified' "$TMP/run.log" && ok || bad "Markdown keeps herdr=done beside work=unverified"
+        summary
+      '';
+    };
     "skills:test:tasks:coord-recovery" = {
       description = "A fresh session rebuilds every handoff (target, outcome, authorization, verdict) from coord:brief + audit.jsonl alone and can await by audit id";
       exec = ''
