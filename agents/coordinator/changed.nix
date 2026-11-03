@@ -57,7 +57,7 @@ in
             map(select(type == "object")) as $all | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $byid
             | [$all[] | select(.phase == "attempt" and (.handoff_id | type) == "string" and (.host | type) == "string" and (.agent_id | type) == "string")]
             | group_by(.handoff_id) | map(last)
-            | map(. as $a | ($byid[$a.audit_id] // null) as $o | select(($o.outcome // "") == "delivered")
+            | map(. as $a | ($byid[$a.audit_id | tostring] // null) as $o | select(($o.outcome // "") == "delivered")
                   | select(((.at // "") | try fromdateiso8601 catch 0) >= $cut)
                   | {key:.handoff_id, value:{host:.host, agent_id:.agent_id, task_ref:(.task_ref // null), sent_at:(.at // null)}})
             | from_entries' "$audit" > "$tmpd/open.json" 2>/dev/null; then audit_state=ok; else printf '{}\n' > "$tmpd/open.json"; audit_state=unreadable; fi
