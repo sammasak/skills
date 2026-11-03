@@ -183,8 +183,9 @@ END autonomy
    item's kind (or is unknown, for a worker the owner started) and that
    `fits.idle_worker` lists. When none fits and the item carries the owner's
    label, call `coord:spawn` with `machine` (omit for this host), `kind`,
-   `task_ref` (`#N`, the item's own number), an absolute `cwd` (the checkout
-   on that host) and `authorized_by` (that item's issue URL and the owner's
+   `task_ref` (`#N`, the item's own number), an absolute `cwd` (`$HOME` on
+   that host, the only folder whose trust dialog is pre-accepted; the
+   handoff names the checkout) and `authorized_by` (that item's issue URL and the owner's
    label, the same object you will give `herdr:message`). It starts the
    worker with the kind's model, never one you pick. A `started` spawn has
    no assignment yet: draft with `coord:handoff` for the returned `agent_id`

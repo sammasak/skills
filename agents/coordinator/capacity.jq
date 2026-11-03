@@ -14,10 +14,10 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage
       | select(($out[.audit_id | tostring].outcome // "") == "delivered" or ($out[.audit_id | tostring].outcome // "") == "started")
       | {host, agent_id:(.agent_id // ($out[.audit_id | tostring].agent_id // null)), session_id:(.session_id // ($out[.audit_id | tostring].session_id // null)),
          task_ref:(.task_ref // null), repo:((.authorized_by.issue_url // "") | [capture("^https://github\\.com/(?<r>[^/]+/[^/]+)/").r] | first), at}]) as $work
-# the kind of each pane a spawn started, and the spawns still in flight
+# the kind of each pane a spawn created (started, or left blocked at startup), and the spawns still in flight
 | (($audit | map(select(type == "object")) | INDEX(.[] | select(.phase == "outcome"); .audit_id)) as $out
    | [$audit[] | select(type == "object" and .phase == "spawn" and .stage == "attempt")] as $sp
-   | {kind_of:([$sp[] | ($out[.audit_id | tostring] // null) as $o | select(($o.outcome // "") == "started" and ($o.agent_id | type) == "string")
+   | {kind_of:([$sp[] | ($out[.audit_id | tostring] // null) as $o | select(($o.agent_id | type) == "string")
                 | {key:(.host + "/" + $o.agent_id), value:.kind}] | from_entries),
       inflight:[$sp[] | select($out[.audit_id | tostring] == null and (((.at // "") | try fromdateiso8601 catch 0) >= $now - 120)) | {host, kind}]}) as $spawns
 | def heavy_kind: . != null and ($kinds[.].heavy // false);
