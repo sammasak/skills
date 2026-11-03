@@ -30,13 +30,18 @@ in
   };
 
   config.tasks."coord:changed" = {
-    description = "Zero-LLM change check for a timer, with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts (upstream in the same DAG) and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. peek=true reports without moving the snapshot.";
+    description = "Zero-LLM change check for a timer, with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts (upstream in the same DAG) and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. The plain form reads without consuming; consume=true (the timer's form) moves the snapshot and spends the wake budget.";
     after = [ "herdr:inventory@completed" "gh:repos@completed" ];
-    input = { peek = false; };
+    input = { consume = false; peek = false; };
     exec = ''
       ${cfg.prelude}
       ctx='{"task":"coord:changed"}'
-      peek=$(input .peek); case "$peek" in true|false|"") ;; *) fail 3 invalid_input "peek must be true or false" "$ctx" ;; esac; [ "$peek" = true ] || peek=false
+      # the plain form reads without consuming (an owner session's call must never take a change away from the timer);
+      # only consume:true, the timer's form, moves the snapshot and spends the wake budget. peek:true is the older
+      # spelling of the plain form and still accepted.
+      consume=$(input .consume); case "$consume" in true|false|"") ;; *) fail 3 invalid_input "consume must be true or false" "$ctx" ;; esac; [ "$consume" = true ] || consume=false
+      peek=$(input .peek); case "$peek" in true|false|"") ;; *) fail 3 invalid_input "peek must be true or false" "$ctx" ;; esac
+      [ "$peek" = true ] && [ "$consume" = true ] && fail 3 invalid_input "peek:true and consume:true contradict each other" "$ctx"
       inv=$(upstream "herdr:inventory")
       [ "$inv" != null ] || fail 2 missing "herdr:inventory produced no output" "$ctx"
       dir="${cfg.stateDir}/changed"; mkdir -p "$dir" || fail 2 state_unwritable "cannot create $dir" "$ctx"
@@ -140,19 +145,19 @@ in
       # a reported handoff is closed from now on
       jq -c --arg at "$at" --slurpfile C "$tmpd/changes.json" '
         .closed_handoffs += ([$C[0][] | select(.kind == "settled" or .kind == "gone" or .kind == "replaced") | {key:.handoff_id, value:{kind, at:$at}}] | from_entries)' "$tmpd/cur.json" > "$tmpd/next.json" || fail 2 malformed "snapshot update failed" "$ctx"
-      jq -cn --arg at "$at" --argjson b "$baseline" --argjson r "$reset" --argjson pk "$peek" --arg rs "$repos_src" --arg as "$audit_state" --arg s "$snap" \
+      jq -cn --arg at "$at" --argjson b "$baseline" --argjson r "$reset" --argjson ck "$consume" --arg rs "$repos_src" --arg as "$audit_state" --arg s "$snap" \
          --slurpfile C "$tmpd/changes.json" --slurpfile I "$tmpd/inv.json" --slurpfile N "$tmpd/next.json" '
-        {schema_version:1, task:"coord:changed", observed_at:$at, baseline:$b, snapshot_reset:$r, peek:$pk, snapshot:$s,
+        {schema_version:1, task:"coord:changed", observed_at:$at, baseline:$b, snapshot_reset:$r, consume:$ck, snapshot:$s,
          sources:{herdr:{answered_hosts:($I[0].answered_hosts // 0), hosts_total:($I[0].hosts_total // 0)}, repos:$rs, audit:$as},
          open_handoffs:(($N[0].open_handoffs | length) - ($N[0].closed_handoffs | length)), changes:$C[0]}' > "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
       # the wake budget (wakes.json: epoch seconds of past printing runs, pruned to the window): a printing run within the
       # min gap of the last one, or beyond the hourly cap, is deferred: nothing printed, snapshot untouched, so its changes
-      # stay pending and surface together on the first allowed run. peek never spends or checks the budget.
+      # stay pending and surface together on the first allowed run. A non-consuming read never spends or checks the budget.
       wakes="$dir/wakes.json"; now=$(now_epoch); gap=${toString cfg.wakeMinGapSeconds}; cap=${toString cfg.wakeMaxPerHour}
       window=$(( gap > 3600 ? gap : 3600 ))
       recent=$(jq -c --argjson now "$now" --argjson w "$window" '[.[]? | numbers | select(. > $now - $w)]' "$wakes" 2>/dev/null) || recent='[]'
       nchanges=$(jq 'length' "$tmpd/changes.json"); deferred=false; reason=null; next_at=null
-      if [ "$peek" = false ] && [ "$nchanges" -gt 0 ]; then
+      if [ "$consume" = true ] && [ "$nchanges" -gt 0 ]; then
         last=$(jq -r 'max // 0' <<<"$recent"); hour=$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")
         if [ "$gap" -gt 0 ] && [ $((now - last)) -lt "$gap" ]; then deferred=true; reason='"min_gap"'; next_at=$((last + gap))
         elif [ "$hour" -ge "$cap" ]; then deferred=true; reason='"per_hour_cap"'; next_at=$(( $(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | min' <<<"$recent") + 3600 )); fi
@@ -163,16 +168,16 @@ in
       # reads .changes instead of stdout starts no session either
       jq -c --argjson w "$wake" 'if $w.deferred then . + {wake:($w + {pending:.changes}), changes:[]} else . + {wake:$w} end' "$tmpd/rec.json" > "$tmpd/rec2.json" && mv "$tmpd/rec2.json" "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
       # record and lines first, the snapshot last: a failure here repeats a change on the next run rather than losing it
-      if [ "$peek" = false ]; then cp "$tmpd/rec.json" "$tmpd/latest.json" && mv "$tmpd/latest.json" "$dir/latest.json" || fail 2 state_unwritable "cannot write $dir/latest.json" "$ctx"; fi
+      if [ "$consume" = true ]; then cp "$tmpd/rec.json" "$tmpd/latest.json" && mv "$tmpd/latest.json" "$dir/latest.json" || fail 2 state_unwritable "cannot write $dir/latest.json" "$ctx"; fi
       cat "$tmpd/rec.json" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
       if [ "$deferred" = true ]; then exit 0; fi
       # stdout is the contract for the timer: empty when nothing is actionable, one line per change otherwise
       jq -r '.changes[].line' "$tmpd/rec.json"
       # the wake is spent after the lines are out: a crash in between repeats the wake rather than swallowing it
-      if [ "$peek" = false ] && [ "$nchanges" -gt 0 ]; then
+      if [ "$consume" = true ] && [ "$nchanges" -gt 0 ]; then
         jq -cn --argjson r "$recent" --argjson now "$now" '$r + [$now]' > "$tmpd/wakes.json" && mv "$tmpd/wakes.json" "$wakes" || fail 2 state_unwritable "cannot write $wakes" "$ctx"
       fi
-      if [ "$peek" = false ]; then mv "$tmpd/next.json" "$snap" || fail 2 state_unwritable "cannot write $snap" "$ctx"; fi
+      if [ "$consume" = true ]; then mv "$tmpd/next.json" "$snap" || fail 2 state_unwritable "cannot write $snap" "$ctx"; fi
     '';
   };
 }

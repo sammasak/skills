@@ -75,9 +75,13 @@
         handoff() { # <id> <host> <agent> <ref> <at>: one delivered handoff appended to the audit log
           printf '%s\n' "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"task_ref\":\"$4\",\"phase\":\"attempt\",\"host\":\"$2\",\"machine\":null,\"agent_id\":\"$3\",\"at\":\"$5\"}" \
             "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$5\",\"outcome\":\"delivered\"}" >> "$AUDIT"; }
-        run() { # [args] -> CODE, LINES (what coord:changed printed), OUT (latest.json)
+        run() { # [--input-json <object>] [args] -> CODE, LINES (what coord:changed printed), OUT (latest.json)
+          # the suite's default is the timer's consuming form (a caller's object is merged over it); `run --plain` is
+          # the interactive form, no input at all
+          local in=(--input-json '{"consume":true}')
+          if [ "''${1:-}" = --plain ]; then in=(); shift; elif [ "''${1:-}" = --input-json ]; then in=(--input-json "$(jq -cn --argjson u "$2" '{consume:true} + $u')"); shift 2; fi
           devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
-            --option coordinator.stateDir:string "''${STATE:-$TMP/state}" --option coordinator.timeoutSeconds:int 2 $BUDGET --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+            --option coordinator.stateDir:string "''${STATE:-$TMP/state}" --option coordinator.timeoutSeconds:int 2 $BUDGET "''${in[@]}" --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot) ' "$TMP/run.log" | sed -E 's/^\s+//')
           # everything the task wrote to stdout, as devenv shows it between its own two marker lines
           STDOUT=$(sed -n '/Running coord:changed$/,/Running coord:changed in /p' "$TMP/run.log" | grep -vE 'Running coord:changed' | sed -E 's/^\s+//' | grep . || true)
@@ -205,10 +209,17 @@
         echo '{"schema_version":7}' > "$TMP/state/changed/snapshot.json"
         run; [ "$CODE" -eq 0 ] && [ "$(jqr .snapshot_reset)" = true ] && [ "$(jqr .baseline)" = true ] && [ "$LINES" = "snapshot $TMP/state/changed/snapshot.json was unreadable; baseline rebuilt" ] && ok || bad "snapshot reset ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "after the reset: silent ($LINES)"
-        # (14) peek reports without consuming: the next real run still prints the same line
+        # (14) the plain form is the interactive read: it reports without consuming, so an owner session that runs
+        #      coord:changed never takes a change away from the timer; only consume:true (the timer's form) moves the snapshot
         set_agent wF:p1 '.state_change_seq = 139 | .agent_status = "blocked"'
-        run --input-json '{"peek":true}'; [ "$CODE" -eq 0 ] && [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && [ "$(jqr .peek)" != true ] && ok || bad "peek prints but does not write latest.json ($LINES $(jqr .peek))"
-        run; [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && [ "$(jqr .peek)" = false ] && ok || bad "after a peek the change is still reported ($LINES)"
+        snap_before=$(sha256sum "$TMP/state/changed/snapshot.json" | cut -c1-16); latest_before=$(sha256sum "$TMP/state/changed/latest.json" | cut -c1-16)
+        run --plain; [ "$CODE" -eq 0 ] && [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && [ "$(sha256sum "$TMP/state/changed/snapshot.json" | cut -c1-16)" = "$snap_before" ] && [ "$(sha256sum "$TMP/state/changed/latest.json" | cut -c1-16)" = "$latest_before" ] && ok || bad "the plain form prints the change and leaves snapshot.json and latest.json untouched ($LINES)"
+        run --plain; [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && ok || bad "a second plain read still sees the change: interactive reads do not advance the timer's snapshot ($LINES)"
+        run --input-json '{"peek":true,"consume":false}'; [ "$CODE" -eq 0 ] && [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && [ "$(sha256sum "$TMP/state/changed/snapshot.json" | cut -c1-16)" = "$snap_before" ] && ok || bad "peek:true still means the non-consuming read ($LINES)"
+        run --input-json '{"peek":true}'; [ "$CODE" -ne 0 ] && grep -q invalid_input "$TMP/run.log" && ok || bad "peek:true with consume:true is refused as a contradiction ($CODE)"
+        run; [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && [ "$(jqr .consume)" = true ] && [ "$(sha256sum "$TMP/state/changed/snapshot.json" | cut -c1-16)" != "$snap_before" ] && ok || bad "consume:true reports the change, records consume in latest.json and moves the snapshot ($LINES $(jqr .consume))"
+        run; [ -z "$LINES" ] && ok || bad "after the consuming run the change is gone ($LINES)"
+        run --input-json '{"consume":"yes"}'; [ "$CODE" -ne 0 ] && grep -q invalid_input "$TMP/run.log" && ok || bad "consume must be a boolean ($CODE)"
         run --input-json '{"peek":"yes"}'; [ "$CODE" -ne 0 ] && grep -q invalid_input "$TMP/run.log" && ok || bad "peek must be a boolean ($CODE)"
         # (15) text from herdr never breaks the one-line contract: a session id with a newline and words is flattened
         handoff 333333333333 "$H" wT:p1 "#42" 2026-11-03T10:08:00Z
@@ -260,9 +271,9 @@
         [ "$(jqr '.wake | "\(.deferred) \(.reason) \(.wakes_last_hour)"')" = "true per_hour_cap 3" ] && [ "$(jqr '.wake.next_allowed_at | type')" = string ] && [ "$(jqr '.wake.pending | length')" -ge 8 ] && grep -q '^new .*wN:p3 ' <<<"$(jqr '.wake.pending[].line')" && ok || bad "burst: a deferred run records why, when, and keeps every pending change under wake.pending ($(jqr .wake) pending=$(jqr '.wake.pending|length'))"
         before=$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16); add_agent "wN:p11" "burst-11"; run
         [ -z "$STDOUT" ] && [ "$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16)" = "$before" ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && ok || bad "burst: a deferred run prints nothing, keeps the snapshot byte-identical and spends no wake"
-        # peek while deferred: reports everything pending, spends nothing, moves nothing
-        run --input-json '{"peek":true}'
-        [ "$CODE" -eq 0 ] && [ "$(nlines)" -ge 9 ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && [ "$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16)" = "$before" ] && ok || bad "peek never spends the wake budget and never consumes ($(nlines) lines)"
+        # a plain read while deferred: reports everything pending, spends nothing, moves nothing
+        run --plain
+        [ "$CODE" -eq 0 ] && [ "$(nlines)" -ge 9 ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && [ "$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16)" = "$before" ] && ok || bad "a plain read never spends the wake budget and never consumes ($(nlines) lines)"
         # the hour passes: the pending changes come out together in one printing run, then silence
         jq -c 'map(. - 3601)' "$STATE/changed/wakes.json" > "$STATE/changed/wakes.tmp" && mv "$STATE/changed/wakes.tmp" "$STATE/changed/wakes.json"
         run

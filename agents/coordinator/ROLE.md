@@ -144,8 +144,10 @@ END autonomy
    state (`state_change_seq`), `gh:repos` counts and the audit log's open
    handoffs against its last snapshot, prints nothing when nothing is
    actionable and one line per change otherwise (`blocked`, `settled`,
-   `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`), then
-   moves the snapshot on, so a change shows once. It also spaces its own
+   `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`). Only
+   the timer's form, `--input-json '{"consume":true}'`, moves the snapshot
+   on, so a change shows once there; your own plain call reads without
+   consuming and never takes a change away from the timer. It also spaces its own
    printing runs (`wakeMinGapSeconds`, `wakeMaxPerHour`): a deferred run
    prints nothing, keeps the snapshot, and says why in `latest.json`
    (`wake.deferred`, `wake.reason`, `wake.next_allowed_at`; the held lines
