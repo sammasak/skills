@@ -105,8 +105,9 @@ per tick: a printing run within `coordinator.wakeMinGapSeconds` (300) of the
 last one, or beyond `coordinator.wakeMaxPerHour` (6) in a sliding hour, is
 deferred: it prints nothing, records `wake.deferred`, `wake.reason`
 (`min_gap` or `per_hour_cap`) and `wake.next_allowed_at` in `latest.json`,
-and leaves the snapshot untouched, so the pending changes come out together
-on the first allowed run. Past wake times live in `changed/wakes.json`
+keeps the held lines under `wake.pending` with `changes` empty (so a timer
+reading `changes` starts nothing either), and leaves the snapshot untouched,
+so the pending changes come out together on the first allowed run. Past wake times live in `changed/wakes.json`
 (epoch seconds, pruned to the window); an unreadable file counts as no
 history. `peek` neither spends nor checks the budget.
 

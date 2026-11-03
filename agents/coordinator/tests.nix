@@ -237,9 +237,14 @@
           add_agent "wN:p$i" "burst-$i"; run
           [ "$CODE" -eq 0 ] || bad "burst: run $i exit $CODE"
           if [ -n "$STDOUT" ]; then woke=$((woke+1)); else deferred=$((deferred+1)); fi
+          # the contract a timer relies on: .changes equals what was printed, so a deferred run leaves it empty
+          [ "$(jqr '.wake.deferred')" = true ] && [ "$(jqr '.changes | length')" != 0 ] && bad "burst: run $i deferred but latest.json .changes holds $(jqr '.changes | length') line(s)"
+          [ "$(jqr '.wake.deferred')" = false ] && [ "$(jqr '.changes | length')" != "$(nlines)" ] && bad "burst: run $i printed $(nlines) line(s) but .changes holds $(jqr '.changes | length')"
         done
+        deferred_empty=$(jqr 'if .wake.deferred then (.changes | length) else -1 end')
+        [ "$deferred_empty" = 0 ] && ok || bad "a deferred run leaves .changes empty (a timer reading .changes must start nothing; got $deferred_empty)"
         [ "$woke" = 2 ] && [ "$deferred" = 8 ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && ok || bad "burst: 10 new agents in a minute wake at most wakeMaxPerHour sessions (woke=$woke deferred=$deferred, cap 3 incl. baseline)"
-        [ "$(jqr '.wake | "\(.deferred) \(.reason) \(.wakes_last_hour)"')" = "true per_hour_cap 3" ] && [ "$(jqr '.wake.next_allowed_at | type')" = string ] && [ "$(jqr '.changes | length')" -ge 8 ] && ok || bad "burst: a deferred run records why, when, and keeps every pending change in latest.json ($(jqr .wake) $(jqr '.changes|length'))"
+        [ "$(jqr '.wake | "\(.deferred) \(.reason) \(.wakes_last_hour)"')" = "true per_hour_cap 3" ] && [ "$(jqr '.wake.next_allowed_at | type')" = string ] && [ "$(jqr '.wake.pending | length')" -ge 8 ] && grep -q '^new .*wN:p3 ' <<<"$(jqr '.wake.pending[].line')" && ok || bad "burst: a deferred run records why, when, and keeps every pending change under wake.pending ($(jqr .wake) pending=$(jqr '.wake.pending|length'))"
         before=$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16); add_agent "wN:p11" "burst-11"; run
         [ -z "$STDOUT" ] && [ "$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16)" = "$before" ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && ok || bad "burst: a deferred run prints nothing, keeps the snapshot byte-identical and spends no wake"
         # peek while deferred: reports everything pending, spends nothing, moves nothing
@@ -256,7 +261,7 @@
         run; [ "$(nlines)" = 1 ] && ok || bad "gap: baseline wake"
         add_agent "wG:p1" "gap-1"; run
         last=$(jq -r 'max' "$STATE/changed/wakes.json")
-        [ -z "$STDOUT" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true min_gap" ] && [ "$(jqr '.wake.next_allowed_at | fromdateiso8601')" = "$((last + 300))" ] && ok || bad "min gap defers the next wake until last+gap ($(jqr .wake))"
+        [ -z "$STDOUT" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true min_gap" ] && [ "$(jqr '.wake.next_allowed_at | fromdateiso8601')" = "$((last + 300))" ] && [ "$(jqr '.changes | length')" = 0 ] && [ "$(jqr '.wake.pending | length')" = 1 ] && ok || bad "min gap defers the next wake until last+gap, .changes empty, the line under wake.pending ($(jqr .wake) changes=$(jqr '.changes|length'))"
         jq -c 'map(. - 301)' "$STATE/changed/wakes.json" > "$STATE/changed/wakes.tmp" && mv "$STATE/changed/wakes.tmp" "$STATE/changed/wakes.json"
         run; [ "$(nlines)" = 1 ] && grep -q '^new .*wG:p1 ' <<<"$LINES" && ok || bad "min gap: once the gap has passed the pending change prints ($LINES)"
         # a wakes.json that is not JSON is treated as no history (the budget cannot lock the timer out for good)
