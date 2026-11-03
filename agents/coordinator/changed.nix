@@ -10,14 +10,27 @@ in
 {
   imports = [ ../../task-modules/common.nix ];
 
+  # The wake budget: a timer may start a model session only when this task prints, so the task itself spaces its
+  # printing runs (min gap) and caps them per hour; a deferred run prints nothing and leaves the snapshot where it is, so
+  # the changes stay pending and come out together once the budget allows.
+  options.coordinator.wakeMinGapSeconds = lib.mkOption {
+    type = lib.types.ints.unsigned;
+    default = 300;
+    description = "Minimum seconds between two printing (wake) runs of coord:changed; 0 disables the gap.";
+  };
+  options.coordinator.wakeMaxPerHour = lib.mkOption {
+    type = lib.types.ints.positive;
+    default = 6;
+    description = "Maximum printing (wake) runs of coord:changed in any sliding hour.";
+  };
   options.coordinator.openHandoffDays = lib.mkOption {
-    type = lib.types.int;
+    type = lib.types.ints.positive;
     default = 7;
     description = "A delivered handoff older than this no longer counts as open for coord:changed.";
   };
 
   config.tasks."coord:changed" = {
-    description = "Zero-LLM change check for a timer: diffs herdr agent state (state_change_seq), gh:repos counts and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. peek=true reports without moving the snapshot.";
+    description = "Zero-LLM change check for a timer, with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. peek=true reports without moving the snapshot.";
     after = [ "herdr:inventory@completed" ];
     input = { repos_file = null; peek = false; };
     exec = ''
@@ -32,6 +45,8 @@ in
       tmpd=$(mktemp -d "$dir/.run.XXXXXX") || fail 2 state_unwritable "cannot create a temp dir in $dir" "$ctx"
       trap 'rm -rf "$tmpd"' EXIT
       exec 8>"$dir/.lock"; flock -w 10 8 || fail 2 busy "another coord:changed run holds $dir/.lock" "$ctx"
+      # under the lock no other run is alive, so any other .run.* dir is the leftover of a killed run
+      for stale in "$dir"/.run.*; do [ -d "$stale" ] && [ "$stale" != "$tmpd" ] && rm -rf "$stale"; done
       [ "$(jq -r '.answered_hosts // 0' <<<"$inv")" -gt 0 ] || fail 2 nothing_observed "no herdr host answered (not even this one); the snapshot is left as it was" "$ctx"
       printf '%s\n' "$inv" > "$tmpd/inv.json"
 
@@ -137,11 +152,30 @@ in
         {schema_version:1, task:"coord:changed", observed_at:$at, baseline:$b, snapshot_reset:$r, peek:$pk, snapshot:$s,
          sources:{herdr:{answered_hosts:($I[0].answered_hosts // 0), hosts_total:($I[0].hosts_total // 0)}, repos:$rs, audit:$as},
          open_handoffs:(($N[0].open_handoffs | length) - ($N[0].closed_handoffs | length)), changes:$C[0]}' > "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
+      # the wake budget (wakes.json: epoch seconds of past printing runs, pruned to the window): a printing run within the
+      # min gap of the last one, or beyond the hourly cap, is deferred: nothing printed, snapshot untouched, so its changes
+      # stay pending and surface together on the first allowed run. peek never spends or checks the budget.
+      wakes="$dir/wakes.json"; now=$(now_epoch); gap=${toString cfg.wakeMinGapSeconds}; cap=${toString cfg.wakeMaxPerHour}
+      window=$(( gap > 3600 ? gap : 3600 ))
+      recent=$(jq -c --argjson now "$now" --argjson w "$window" '[.[]? | numbers | select(. > $now - $w)]' "$wakes" 2>/dev/null) || recent='[]'
+      nchanges=$(jq 'length' "$tmpd/changes.json"); deferred=false; reason=null; next_at=null
+      if [ "$peek" = false ] && [ "$nchanges" -gt 0 ]; then
+        last=$(jq -r 'max // 0' <<<"$recent"); hour=$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")
+        if [ "$gap" -gt 0 ] && [ $((now - last)) -lt "$gap" ]; then deferred=true; reason='"min_gap"'; next_at=$((last + gap))
+        elif [ "$hour" -ge "$cap" ]; then deferred=true; reason='"per_hour_cap"'; next_at=$(( $(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | min' <<<"$recent") + 3600 )); fi
+      fi
+      wake=$(jq -cn --argjson d "$deferred" --argjson r "$reason" --argjson n "$next_at" --argjson h "$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")" --argjson g "$gap" --argjson c "$cap" \
+        '{deferred:$d, reason:$r, next_allowed_at:(if $n == null then null else ($n | todate) end), wakes_last_hour:$h, min_gap_seconds:$g, max_per_hour:$c}')
+      jq -c --argjson w "$wake" '. + {wake:$w}' "$tmpd/rec.json" > "$tmpd/rec2.json" && mv "$tmpd/rec2.json" "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
       # record and lines first, the snapshot last: a failure here repeats a change on the next run rather than losing it
       if [ "$peek" = false ]; then cp "$tmpd/rec.json" "$tmpd/latest.json" && mv "$tmpd/latest.json" "$dir/latest.json" || fail 2 state_unwritable "cannot write $dir/latest.json" "$ctx"; fi
       cat "$tmpd/rec.json" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
+      if [ "$deferred" = true ]; then exit 0; fi
       # stdout is the contract for the timer: empty when nothing is actionable, one line per change otherwise
       jq -r '.changes[].line' "$tmpd/rec.json"
+      if [ "$peek" = false ] && [ "$nchanges" -gt 0 ]; then
+        jq -cn --argjson r "$recent" --argjson now "$now" '$r + [$now]' > "$tmpd/wakes.json" && mv "$tmpd/wakes.json" "$wakes" || fail 2 state_unwritable "cannot write $wakes" "$ctx"
+      fi
       if [ "$peek" = false ]; then mv "$tmpd/next.json" "$snap" || fail 2 state_unwritable "cannot write $snap" "$ctx"; fi
     '';
   };

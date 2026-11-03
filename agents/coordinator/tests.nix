@@ -63,15 +63,19 @@
             "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$5\",\"outcome\":\"delivered\"}" >> "$AUDIT"; }
         run() { # [args] -> CODE, LINES (what coord:changed printed), OUT (latest.json)
           devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
-            --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+            --option coordinator.stateDir:string "''${STATE:-$TMP/state}" --option coordinator.timeoutSeconds:int 2 $BUDGET --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot) ' "$TMP/run.log" | sed -E 's/^\s+//')
-          OUT=$(cat "$TMP/state/changed/latest.json" 2>/dev/null); [ -n "$OUT" ] || OUT='{}'
+          # everything the task wrote to stdout, as devenv shows it between its own two marker lines
+          STDOUT=$(sed -n '/Running coord:changed$/,/Running coord:changed in /p' "$TMP/run.log" | grep -vE 'Running coord:changed' | sed -E 's/^\s+//' | grep . || true)
+          OUT=$(cat "''${STATE:-$TMP/state}/changed/latest.json" 2>/dev/null); [ -n "$OUT" ] || OUT='{}'
         }
         nlines() { if [ -z "$LINES" ]; then echo 0; else grep -c . <<<"$LINES"; fi; }
         jqr() { jq -r "$1" <<<"$OUT"; }
-        snapq() { jq -r "$1" "$TMP/state/changed/snapshot.json"; }
+        snapq() { jq -r "$1" "''${STATE:-$TMP/state}/changed/snapshot.json"; }
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
         H=$(hostname -s 2>/dev/null || hostname)
+        # the wake budget is off for the change-detection cases (they run many changes within seconds); the budget cases set it
+        BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000'
         LOCAL="$TMP/local.json"; cp "$FX/herdr/local-two-agents.json" "$LOCAL"
         set_agent() { # <pane_id> <jq update of that agent object>
           jq --arg p "$1" "(.result.agents[] | select(.pane_id == \$p)) |= ($2)" "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"; }
@@ -91,9 +95,11 @@
         [ "$LINES" = "blocked acer-swift/wA:p2 #7 claude seq 40 handoff bbbbbbbbbbbb needs the owner" ] && ok || bad "baseline prints only the blocked agent ($LINES)"
         [ "$(jq -r --arg h "$H" '[.hosts["~" + $h].agents["wF:p1"].seq, .hosts["acer-swift"].agents["wA:p2"].state, .audit_ok] | map(tostring) | join(" ")' "$TMP/state/changed/snapshot.json")" = "135 blocked true" ] && ok || bad "snapshot content: $(cat "$TMP/state/changed/snapshot.json")"
         ! grep -qE '^\s*\{"schema_version":1,"task":"coord:changed"' "$TMP/run.log" && ok || bad "the JSON record stays off stdout (it lives in latest.json and the task output)"
+        [ "$STDOUT" = "$LINES" ] && ok || bad "stdout carries only change lines (baseline) ($STDOUT)"
         # (2) nothing moved: silence
         run
         [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(jqr '.changes | length')" = 0 ] && [ "$(jqr .baseline)" = false ] && ok || bad "unchanged fleet prints nothing ($LINES)"
+        [ -z "$STDOUT" ] && ok || bad "stdout is empty when nothing is actionable (the timer's contract) ($STDOUT)"
         # (3) an agent without an open handoff turns: not actionable
         set_agent wF:p1 '.state_change_seq = 136 | .agent_status = "idle"'
         run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && ok || bad "seq change on an agent without a handoff is silent ($LINES)"
@@ -216,6 +222,47 @@
         [ -z "$(ls -d "$TMP"/state/changed/.run.* 2>/dev/null)" ] && ok || bad "temp dirs cleaned up"
         # (18) read-only and model-free: only herdr agent list calls, no gh call, nothing sent
         grep -q 'agent list' "$FAKE_LOG" && ! grep -qE 'agent (prompt|send-keys|start)|^gh ' "$FAKE_LOG" && ok || bad "only herdr agent list calls ($(sort -u "$FAKE_LOG" | head -n 5))"
+
+        # --- wake budget: printing runs are what start a model session, so they are spaced and capped; a deferred run
+        #     prints nothing and leaves the snapshot alone, so its changes stay pending and come out together later
+        export STATE="$TMP/state-burst"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$FX/herdr/local-two-agents.json" "$LOCAL"
+        # the earlier cases removed the saved machine; the budget cases need the blocked remote agent back for their baseline
+        export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]' FAKE_HERDR_LIST_acer_swift="$FX/herdr/remote-ok.json"; unset FAKE_HERDR_EXIT FAKE_HERDR_EXIT_acer_swift
+        add_agent() { jq --arg p "$1" --arg s "$2" '.result.agents += [(.result.agents[0] | .pane_id = $p | .agent_session.value = $s | .agent_status = "idle" | .state_change_seq = 1)]' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"; }
+        BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 3'
+        run   # baseline: the blocked agent prints, wake 1 of 3
+        [ "$CODE" -eq 0 ] && [ "$(nlines)" = 1 ] && [ "$(jqr '.wake | "\(.deferred) \(.wakes_last_hour) \(.max_per_hour)"')" = "false 0 3" ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 1 ] && ok || bad "burst: baseline is wake 1 ($(jqr .wake))"
+        woke=0; deferred=0
+        for i in $(seq 1 10); do
+          add_agent "wN:p$i" "burst-$i"; run
+          [ "$CODE" -eq 0 ] || bad "burst: run $i exit $CODE"
+          if [ -n "$STDOUT" ]; then woke=$((woke+1)); else deferred=$((deferred+1)); fi
+        done
+        [ "$woke" = 2 ] && [ "$deferred" = 8 ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && ok || bad "burst: 10 new agents in a minute wake at most wakeMaxPerHour sessions (woke=$woke deferred=$deferred, cap 3 incl. baseline)"
+        [ "$(jqr '.wake | "\(.deferred) \(.reason) \(.wakes_last_hour)"')" = "true per_hour_cap 3" ] && [ "$(jqr '.wake.next_allowed_at | type')" = string ] && [ "$(jqr '.changes | length')" -ge 8 ] && ok || bad "burst: a deferred run records why, when, and keeps every pending change in latest.json ($(jqr .wake) $(jqr '.changes|length'))"
+        before=$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16); add_agent "wN:p11" "burst-11"; run
+        [ -z "$STDOUT" ] && [ "$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16)" = "$before" ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && ok || bad "burst: a deferred run prints nothing, keeps the snapshot byte-identical and spends no wake"
+        # peek while deferred: reports everything pending, spends nothing, moves nothing
+        run --input-json '{"peek":true}'
+        [ "$CODE" -eq 0 ] && [ "$(nlines)" -ge 9 ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 3 ] && [ "$(sha256sum "$STATE/changed/snapshot.json" | cut -c1-16)" = "$before" ] && ok || bad "peek never spends the wake budget and never consumes ($(nlines) lines)"
+        # the hour passes: the pending changes come out together in one printing run, then silence
+        jq -c 'map(. - 3601)' "$STATE/changed/wakes.json" > "$STATE/changed/wakes.tmp" && mv "$STATE/changed/wakes.tmp" "$STATE/changed/wakes.json"
+        run
+        [ "$CODE" -eq 0 ] && [ "$(nlines)" -ge 9 ] && grep -q '^new .*wN:p3 ' <<<"$LINES" && grep -q '^new .*wN:p11 ' <<<"$LINES" && ! grep -q 'wN:p2 ' <<<"$LINES" && [ "$(jqr .wake.deferred)" = false ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 1 ] && ok || bad "deferred changes are announced together once the window passes ($(nlines) lines, wakes $(jq -c . "$STATE/changed/wakes.json"), deferred=$(jqr .wake.deferred)) LINES=[$(tr "\n" "|" <<<"$LINES")]"
+        run; [ -z "$STDOUT" ] && ok || bad "after the catch-up run nothing is pending ($STDOUT)"
+        # min gap: the second wake inside the gap is deferred until last+gap, honoured once aged
+        export STATE="$TMP/state-gap"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$FX/herdr/local-two-agents.json" "$LOCAL"
+        BUDGET='--option coordinator.wakeMinGapSeconds:int 300 --option coordinator.wakeMaxPerHour:int 100'
+        run; [ "$(nlines)" = 1 ] && ok || bad "gap: baseline wake"
+        add_agent "wG:p1" "gap-1"; run
+        last=$(jq -r 'max' "$STATE/changed/wakes.json")
+        [ -z "$STDOUT" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true min_gap" ] && [ "$(jqr '.wake.next_allowed_at | fromdateiso8601')" = "$((last + 300))" ] && ok || bad "min gap defers the next wake until last+gap ($(jqr .wake))"
+        jq -c 'map(. - 301)' "$STATE/changed/wakes.json" > "$STATE/changed/wakes.tmp" && mv "$STATE/changed/wakes.tmp" "$STATE/changed/wakes.json"
+        run; [ "$(nlines)" = 1 ] && grep -q '^new .*wG:p1 ' <<<"$LINES" && ok || bad "min gap: once the gap has passed the pending change prints ($LINES)"
+        # a wakes.json that is not JSON is treated as no history (the budget cannot lock the timer out for good)
+        echo 'garbage' > "$STATE/changed/wakes.json"; add_agent "wG:p2" "gap-2"; run
+        [ "$(nlines)" = 1 ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 1 ] && ok || bad "unreadable wakes.json counts as no history ($LINES)"
+        unset STATE
         summary
       '';
     };
