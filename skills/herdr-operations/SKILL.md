@@ -56,11 +56,22 @@ inventory as `error.kind: invalid_label` until it is renamed.
 ## Reading the output
 
 - `herdr_state` is Herdr's word (`idle|working|blocked|done|unknown`).
-- `work_verdict` comes only from GitHub: `verified` (a merged PR closes or
-  names the agent's `#N` in the `OWNER/REPO` its title names), `unverified`
-  (open PR or open issue only), `blocked` (Herdr shows an approval/question
-  UI), `unknown` (no `OWNER/REPO` or `#N` in the title, or GitHub unreachable;
-  `reasons` says which).
+- `work_verdict` comes only from GitHub. An agent with a delivered handoff on
+  its current session (audit log, matched by host, pane and Herdr session) is
+  judged by that handoff, whatever its title says (`correlation.by:
+  handoff`); only an agent without one falls back to an `OWNER/REPO #N` title
+  (`correlation.by: title`). `verified` (the handoff's PRs are merged, or for
+  a title: a merged PR and the issue closed), `unverified` (an open PR or open
+  issue), `blocked` (Herdr shows an approval/question UI), `unknown` (no
+  evidence, or GitHub unreachable; `reasons` says which). `evidence_ref` is a
+  merged PR URL, set only on `verified`.
+- Each handoff carries `stages`, distinct and each `null` until met:
+  `implemented` (a PR naming its `task_ref` opened from the send until the
+  next handoff to that pane), `reviewed` (a grade of 9/10 or more on the PR's
+  exact head, signed by another agent), `merged` (the merged PR URLs), `live`
+  (a PR comment with a `Live acceptance:` line). Children of an epic that stays
+  open are verified per handoff; `stale: true` marks a handoff whose pane is
+  gone, restarted, or superseded without a PR.
 - `partial: true` means a host did not answer or `herdr machine list` failed:
   `answered_hosts`/`hosts_total`, each `hosts[].error` and `machines_error`
   say what; answer from the hosts that did answer and name the missing ones.

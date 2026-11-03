@@ -61,6 +61,79 @@
         summary
       '';
     };
+    "skills:test:tasks:coord-correlation" = {
+      description = "work:status correlates by handoff (task_ref, repo, session, send window), not the pane title: a wrong title, an open epic with merged children, stale handoffs, and distinct implemented/reviewed/merged/live stages; the brief stays compact";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh-correlation" FAKE_HERDR_MACHINES='[]'
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+        H=$(hostname -s 2>/dev/null || hostname)
+        # panes now: wA:p1 carries a title naming the wrong issue; wB:p1 has no ref at all; wG:p1 was restarted (new
+        # session) since its handoff; wT:p2 is title-only on the open epic
+        jq '.result.agents[0] as $t | .result.agents = [
+              ($t | .pane_id = "wA:p1" | .agent_status = "done" | .agent_session.value = "sA" | .terminal_title_stripped = "sammasak/skills #99 unrelated wrong title"),
+              ($t | .pane_id = "wB:p1" | .agent_status = "idle" | .agent_session.value = "sB" | .terminal_title_stripped = "working on it"),
+              ($t | .pane_id = "wG:p1" | .agent_status = "idle" | .agent_session.value = "new" | .terminal_title_stripped = "sammasak/skills #30 thing"),
+              ($t | .pane_id = "wT:p2" | .agent_status = "done" | .agent_session.value = "sT" | .terminal_title_stripped = "sammasak/skills #28 epic")]' \
+          "$FX/herdr/local-two-agents.json" > "$TMP/list.json"
+        export FAKE_HERDR_LIST="$TMP/list.json"
+        mkdir -p "$TMP/state"; A="$TMP/state/audit.jsonl"
+        handoff() { # <id> <agent> <session> <ref> <at> [outcome]
+          local n="''${4#\#}"
+          printf '%s\n' "{\"audit_id\":\"a$1\",\"handoff_id\":\"$1\",\"task_ref\":\"$4\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"$2\",\"session_id\":\"$3\",\"at\":\"$5\",\"allowed_actions\":[\"comment\"],\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/$n\",\"label\":\"approved\"}}" >> "$A"
+          [ "''${6:-delivered}" = none ] || printf '%s\n' "{\"audit_id\":\"a$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$5\",\"outcome\":\"''${6:-delivered}\"}" >> "$A"; }
+        handoff h00000000001 wA:p1 sA "#28" 2026-11-03T10:00:00Z     # owns PR 51 (opened 10:30), not 50 (before) nor 49 (nixos-config#28)
+        handoff h00000000002 wA:p1 sA "#28" 2026-11-03T12:00:00Z     # owns PR 52 (12:30)
+        handoff h00000000003 wB:p1 sB "#29" 2026-11-03T14:00:00Z     # PR 53: open, its 9/10 names another head
+        handoff h00000000004 wG:p1 old "#30" 2026-11-03T09:30:00Z    # pane restarted since: stale
+        handoff h00000000005 wZ:p9 sZ "#31" 2026-11-03T09:40:00Z     # pane gone: stale
+        handoff h00000000006 wB:p1 sB "#29" 2026-11-03T08:00:00Z none # attempt without an outcome: interrupted, superseded by 003
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
+        B="$TMP/state/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
+        q() { jq -r "$1" "$B"; }
+        h() { jq -r --arg i "$1" ".handoffs[] | select(.handoff_id == \$i) | $2" "$B"; }
+        it() { jq -r --arg a "$1" ".items[] | select(.agent_id == \$a) | $2" "$B"; }
+        [ "$CODE" -eq 0 ] && [ "$(q '.handoffs | length')" = 6 ] && ok || bad "brief over six handoffs: $CODE $(grep -E 'error|jq:' "$TMP/run.log" | head -3)"
+        # (1) the wrong title loses to the handoff on the pane's session
+        [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.title_ref) \(.work_verdict) \(.evidence_ref)"')" = "handoff h00000000002 #28 #99 verified https://github.com/sammasak/skills/pull/52" ] && ok || bad "wrong title: correlated by handoff ($(it wA:p1 '{correlation,task_ref,title_ref,work_verdict,evidence_ref}'))"
+        it wA:p1 '.reasons | join(";")' | grep -q 'title names #99; correlated by handoff h00000000002 to #28' && ok || bad "wrong title is named in the reasons"
+        # (2) the open epic does not hide its merged children: each handoff owns the PRs opened in its window
+        [ "$(h h00000000001 '[.prs[].number] | join(",")')" = 48,51 ] && [ "$(h h00000000002 '[.prs[].number] | join(",")')" = 52 ] && ok || bad "send windows: 51 (and the abandoned 48) to the first handoff, 52 to the second ($(h h00000000001 '[.prs[].number]') $(h h00000000002 '[.prs[].number]'))"
+        [ "$(h h00000000001 '"\(.work_verdict) \(.evidence_ref) \(.task_issue_open)"')" = "verified https://github.com/sammasak/skills/pull/51 true" ] && [ "$(h h00000000002 '"\(.work_verdict) \(.evidence_ref) \(.task_issue_open)"')" = "verified https://github.com/sammasak/skills/pull/52 true" ] && ok || bad "merged children of an open epic are verified with their PR as evidence_ref (a closed, unmerged PR does not hold it back)"
+        [ "$(it wT:p2 '.work_verdict')" = unverified ] && it wT:p2 '.reasons[0]' | grep -q 'still open' && [ "$(it wT:p2 '.correlation.by')" = title ] && ok || bad "a title-only agent on the epic keeps the issue-closed rule ($(it wT:p2 '{work_verdict,reasons}'))"
+        # (3) stages are distinct: reviewed needs >= 9 by another agent on the exact head; live needs a Live acceptance note
+        [ "$(h h00000000001 '.stages | "\(.implemented[0]) \(.reviewed[0].grade) \(.reviewed[0].by) \(.reviewed[0].head[0:7]) \(.merged[0]) \(.live)"')" = "https://github.com/sammasak/skills/pull/51 9 acer-swift/wR:p1 aaaa111 https://github.com/sammasak/skills/pull/51 null" ] && ok || bad "PR 51: implemented, reviewed (review commit = head), merged, not live ($(h h00000000001 .stages))"
+        [ "$(h h00000000002 '.stages | "\(.reviewed[0].url) \(.live[0])"')" = "https://github.com/sammasak/skills/pull/52#issuecomment-522 https://github.com/sammasak/skills/pull/52#issuecomment-523" ] && ok || bad "PR 52: the re-review naming the head counts, the author's 8/10 response does not; live from its note ($(h h00000000002 .stages))"
+        [ "$(h h00000000003 '"\(.work_verdict) \(.evidence_ref) \(.stages.implemented[0]) \(.stages.reviewed) \(.stages.merged)"')" = "unverified null https://github.com/sammasak/skills/pull/53 null null" ] && ok || bad "PR 53: open; a 9/10 on another head, or unsigned, is not reviewed ($(h h00000000003 '{work_verdict,stages}'))"
+        [ "$(h h00000000003 '[.prs[].number] | join(",")')" = 53 ] && ok || bad "PR 54, which wB:p1 itself graded 9/10, is a review it did, not its own work ($(h h00000000003 '[.prs[].number]'))"
+        [ "$(it wB:p1 '"\(.correlation.by) \(.task_ref) \(.work_verdict)"')" = "handoff #29 unverified" ] && ok || bad "a pane with no ref in its title is correlated by its handoff"
+        # (4) stale handoffs: the pane restarted, or is gone; neither is verified and the restarted pane falls back to its title
+        [ "$(h h00000000004 '"\(.stale) \(.session_state) \(.work_verdict)"')" = "true session_changed unknown" ] && [ "$(it wG:p1 '.correlation.by')" = title ] && ok || bad "restarted pane: stale handoff, item by title ($(h h00000000004 '{stale,session_state}') $(it wG:p1 .correlation))"
+        [ "$(h h00000000005 '"\(.stale) \(.session_state)"')" = "true gone" ] && ok || bad "gone pane: stale ($(h h00000000005 '{stale,session_state}'))"
+        [ "$(h h00000000006 '"\(.delivered) \(.outcome) \(.work_verdict) \(.stale)"')" = "false interrupted unknown true" ] && ok || bad "interrupted, superseded attempt: unknown and stale ($(h h00000000006 '{delivered,outcome,work_verdict,stale}'))"
+        # (5) verified always carries a merged PR as evidence_ref, and nothing else does
+        [ "$(q '[.handoffs[], .items[] | select(.work_verdict == "verified") | .evidence_ref | test("^https://github.com/.+/pull/[0-9]+$")] | all')" = true ] && [ "$(q '[.handoffs[], .items[] | select(.work_verdict != "verified") | .evidence_ref] | all(. == null)')" = true ] && ok || bad "evidence_ref invariant"
+        # (6) the brief is compact: one line for the verified children of the epic, one per open handoff, no JSON
+        md=$(sed -n '/# Fleet brief/,/^\s*Full JSON:/p' "$TMP/run.log")
+        grep -q -- '- verified sammasak/skills#28 (still open): merged #51 #52$' <<<"$md" && ok || bad "verified children summarised per repo#ref ($(grep -A9 '## Handoffs' <<<"$md"))"
+        ! grep -qE 'h0000000000[12] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && grep -q 'h00000000004 → .*STALE' <<<"$md" && ok || bad "open handoffs one line each with stages, verified ones not repeated"
+        ! grep -q '{"' <<<"$md" && ok || bad "no raw JSON in the Markdown brief"
+        ! grep -q -- '--search' "$FAKE_LOG" && [ "$(grep -c '^gh pr list -R sammasak/skills' "$FAKE_LOG")" = 1 ] && ok || bad "one PR list per repo, no search ($(grep '^gh pr' "$FAKE_LOG"))"
+        # (7) only the newest 50 handoffs are carried (the record travels in devenv's environment); the rest are counted
+        for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
+        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 6 q000000000010" ] && grep -q '56 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
+        summary
+      '';
+    };
     "skills:test:tasks:coord-changed" = {
       description = "coord:changed over fake herdr and an audit log: silent when nothing is actionable; one line per blocked/settled/gone/new/replaced agent, host, repo-count, audit and snapshot change, each reported once; handoffs close on their first report; peek does not consume; lines are sanitised";
       exec = ''
@@ -360,6 +433,8 @@
               ($a[1] | .agent_status = "done" | .terminal_title_stripped = "sammasak/skills #43 DONE and verified by me"),
               ($a[0] | .pane_id = "wX:p3" | .agent_status = "idle" | .terminal_title_stripped = "sammasak/skills #99 finished"),
               ($a[1] | .pane_id = "wY:p4" | .agent_status = "done" | .terminal_title_stripped = "sammasak/skills #42 settlement tests")]' "$LOCAL" > "$TMP/claims.json"
+        # title-only correlation: no handoff reaches these panes (the sends above went to the same pane ids)
+        rm -f "$TMP/state/audit.jsonl"
         export FAKE_HERDR_LIST="$TMP/claims.json" FAKE_HERDR_MACHINES='[]'; : > "$FAKE_LOG"
         run coord:brief; B="$TMP/state/brief/latest.json"
         v() { jq -r --arg a "$1" '.items[] | select(.agent_id==$a) | "\(.herdr_state) \(.work_verdict) \(.evidence_ref)"' "$B"; }
@@ -373,7 +448,7 @@
         # evidence_ref is set only on verified items, and only ever to a merged PR URL
         [ "$(jq -r '[.items[] | select(.work_verdict != "verified") | .evidence_ref] | all(. == null)' "$B")" = true ] && [ "$(jq -r '[.items[] | select(.work_verdict == "verified") | .evidence_ref] | all(test("^https://github.com/.+/pull/[0-9]+$"))' "$B")" = true ] && ok || bad "evidence_ref only from merged PRs"
         # what the worker says in its pane is never consulted: no agent read during status/brief, only list + gh
-        ! grep -q 'agent read' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/skills --state all --search 16' "$FAKE_LOG" && ok || bad "verdicts come from gh, never from pane text ($(grep -c . "$FAKE_LOG") calls)"
+        ! grep -q 'agent read' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/skills --state all --limit' "$FAKE_LOG" && ! grep -q -- '--search' "$FAKE_LOG" && ok || bad "verdicts come from gh, never from pane text ($(grep -c . "$FAKE_LOG") calls)"
         # none of the completion claims needs the owner; nothing is "done" in the Markdown either
         [ "$(jq -r '[.items[] | .needs_owner] | any' "$B")" = false ] && grep -q 'wF:p1 claude #16 | herdr=done | work=unverified' "$TMP/run.log" && ok || bad "Markdown keeps herdr=done beside work=unverified"
         summary
@@ -417,7 +492,7 @@
         [ "$(jq -r '.handoffs[0].authorized_by.issue_url' "$B")" = "https://github.com/sammasak/skills/issues/28" ] && [ "$(jq -r .audit_path "$B")" = "$A" ] && ok || bad "authorizing issue and audit path in the brief"
         # the same facts are in the audit log by itself (attempt + outcome lines share the audit id)
         [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "attempt") | .handoff_id' "$A")" = "$HID" ] && [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$A")" = delivered ] && ok || bad "audit log alone names handoff and outcome"
-        grep -q '## Handoffs (from the audit log)' "$TMP/run.log" && grep -q "$HID → $H/wF:p1 #28" "$TMP/run.log" && ok || bad "Markdown brief shows the handoff"
+        grep -q '## Handoffs (from the audit log)' "$TMP/run.log" && grep -q "$HID → $H/wF:p1 #28" "$TMP/run.log" && ok || bad "Markdown brief shows the handoff ($(grep -A3 "## Handoffs" "$TMP/run.log"))"
         # follow-up needs only the audit id: await works without the draft or any session memory
         export FAKE_HERDR_STATE_SEQ="working,idle"; rm -f "$FAKE_LOG.seq"
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"
