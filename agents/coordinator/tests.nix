@@ -475,6 +475,13 @@
         # (4) a flapping worker (working, idle, working, idle) with the same work left never fires again
         for s in working idle working idle; do set_agent wZ:p1 ".agent_status = \"$s\" | .state_change_seq += 1"; run; [ -z "$LINES" ] || bad "flapping worker ($s): $LINES"; done
         [ "$(fp)" = "$FP1" ] && [ "$(jq 'length' "$TMP/state/changed/wakes.json")" = 1 ] && ok || bad "flapping spends no wake (wakes $(jq -c . "$TMP/state/changed/wakes.json"))"
+        # (4b) a worker's session changing (/clear, a harness restart) in the same pane is the same fleet: silent; a new pane is not
+        set_agent wZ:p1 '.agent_session.value = "zzzz-after-clear" | .state_change_seq += 1'
+        run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(fp)" = "$FP1" ] && ok || bad "a new session in the same pane keeps the fingerprint ($LINES)"
+        jq '.result.agents += [(.result.agents[0] | .pane_id = "wY:p1" | .agent_session.value = "yyyy" | .agent_status = "idle" | .state_change_seq = 1 | .terminal_title_stripped = "fresh")]' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
+        run; grep -q '^idle 4 agents idle/done on 1 host(s); work left: ' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "a new pane is a new fleet: fires ($LINES)"
+        jq 'del(.result.agents[] | select(.pane_id == "wY:p1"))' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
+        run; [ "$(fp)" = "$FP1" ] && ok || bad "the pane gone again: the earlier fleet fingerprint ($LINES)"
         # (5) new work (another ungraded PR) is a new fingerprint: one line, listing capped at three refs; then silence
         pr sammasak/skills 65 OPEN 6565656565656565656565656565656565656565 "$T3" null "more" '[]' '[]' | skills_prs
         run; [ "$(nlines)" = 1 ] && grep -q '^idle 3 agents idle/done on 1 host(s); work left: 4 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64, +1 more), 2 approved' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "new work fires once, refs capped ($LINES)"

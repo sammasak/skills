@@ -4,19 +4,24 @@
 # GitHub was not asked or did not answer, else null). Output: the idle_wake record; fired means the line prints this run.
 include "evidence";
 $inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev
-| [$inv.hosts[]? | .host as $h | .agents[]? | {id:($h + "/" + .agent_id + "/" + ((.session_id // "-") | tostring)), state:(.observed_state // "unknown")}] as $agents
+# an agent is its pane (host/agent_id), not its session: /clear and a harness restart keep the pane and must not buy a
+# new wake for the same work; herdr never reuses a pane id, so a new worker still changes the fingerprint
+| [$inv.hosts[]? | .host as $h | .agents[]? | {id:($h + "/" + .agent_id), state:(.observed_state // "unknown")}] as $agents
 # idle: every host answered, at least one agent, every agent idle or done (blocked, working and unknown are not idle)
 | (all($inv.hosts[]?; .reachable == true) and ($agents | length) > 0 and all($agents[]; .state == "idle" or .state == "done")) as $idle
 | ($open | to_entries | map(.value + {handoff_id:.key})) as $hs
 | (if $idle and $skipped == null then
      # a PR's implementer: the agent holding an open handoff for the issue the PR names, sent before the PR was opened;
-     # its own grade is a review it did, not an independent one
+     # its own grade is a review it did, not an independent one (a handoff older than openHandoffDays is not seen here,
+     # so its implementer's self-grade would count: under-wakes only)
      def impl($r): . as $pr | [$hs[] | select(.repo == $r) | (.task_ref | num) as $n | select($n != null and ($pr | refs($n)) and ($pr.createdAt // "") >= (.sent_at // "")) | .host + "/" + .agent_id];
      {open_prs:[$work | to_entries[] | .key as $r | .value.prs[] | select(.state == "OPEN") | . as $pr | ($pr | impl($r)) as $i
                  | select(any($pr | passes[]; .by as $b | ($i | index($b)) == null) | not) | $r + "#" + (.number | tostring)],
       approved_issues:[$work | to_entries[] | .key as $r | .value.issues[] | .number as $num
                  | select(any((.labels // [])[]; (.name // "") as $l | ($labels | index($l)) != null))
                  | select(any($hs[]; .repo == $r and (.task_ref | num) == $num) | not) | $r + "#" + ($num | tostring)],
+      # verified = any merged PR naming the issue, opened after the send (no per-pane window as in work:status: on a shared
+      # epic one agent's merged PR clears the others' handoffs, which can only under-wake, never wake wrongly)
       unverified_handoffs:[$hs[] | . as $h | (.task_ref | num) as $n
                  | (if $n == null or .repo == null then false
                     else (($work[.repo].merged // []) | any(.[]; .mergedAt != null and refs($n) and ((.createdAt // "") >= ($h.sent_at // "")))) end) as $verified
