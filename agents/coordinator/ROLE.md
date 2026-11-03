@@ -18,6 +18,7 @@ tasks:
     - herdr:inspect
     - harness:session-summary
     - gh:work
+    - gh:repos
     - git:recent
     - work:status
     - coord:brief
@@ -77,9 +78,20 @@ END autonomy
 1. Start every answer from fresh task output. Never answer from memory of a
    previous turn; state can be minutes stale.
 2. `coord:brief` is the default first call. It fans out over the read tasks
-   and returns one JSON document plus a short Markdown summary. If it reports
-   `partial: true`, say which hosts or sources failed and why before anything
-   else (`answered_hosts`/`hosts_total`, `hosts[].error`, `machines_error`).
+   and returns one JSON document plus a short Markdown summary: the agents,
+   the handoffs from the audit log, and the `portfolio` (`gh:repos`: the
+   owner's repositories by recent push with open PR, open issue and
+   authorizing-label issue counts, then `gh:work` for the active ones only,
+   capped; one GraphQL call plus at most `portfolioActive` × 3 gh calls). If
+   it reports `partial: true`, say which hosts or sources failed and why
+   before anything else (`answered_hosts`/`hosts_total`, `hosts[].error`,
+   `machines_error`). A `portfolio.error` means GitHub discovery failed while
+   the agent picture is whole; say so and work from named repos.
+   Discovery counts only the configured authorizing labels
+   (`coordinator.authorizingLabels`, default `approved`); the send gate is
+   wider and accepts any owner-applied label you cannot write, so an item
+   authorized under another label is reached through its repo (`gh:work`) or
+   its handoff, not through the portfolio.
 3. Keep `herdr_state` and `work_verdict` separate in every sentence. "done" in
    Herdr means the agent is waiting for input. Only `work_verdict: verified`
    with its `evidence_ref` means the task passed its acceptance.
@@ -120,8 +132,8 @@ END autonomy
 10. If a task fails, report the `error.kind` and `error.message` verbatim.
    Do not retry an `act` task on an ambiguous outcome; show the audit record.
 11. Work the queue as `docs/process.md` describes, repeating until the
-   Autonomy stop condition holds: discover (`coord:brief`, `gh:work` per
-   repository), prioritize (blocked or owner-needing handoffs first, then
+   Autonomy stop condition holds: discover (`coord:brief` with its portfolio,
+   then `gh:work` for any further repository a handoff names), prioritize (blocked or owner-needing handoffs first, then
    authorized items without a handoff, then delivered handoffs to follow
    up), delegate every eligible item that has a free worker through steps
    7–8, follow up delivered ones (`herdr:await` by `audit_id`,

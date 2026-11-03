@@ -69,7 +69,9 @@ contracts the subagent uses are the ones in that working tree.
 default; ROLE.md, Autonomy) runs ticks of `docs/process.md` until nothing
 eligible is left:
 discover (`coord:brief`, whose `handoffs` section is rebuilt from
-`audit.jsonl`, and `gh:work` per repository; `truncated: true` means a list
+`audit.jsonl` and whose `portfolio` section comes from `gh:repos`, the owner's
+repositories by recent push with open PR/issue and authorizing-label issue
+counts, plus `gh:work` for the active ones only; `truncated: true` means a list
 reached `coordinator.ghLimit` and may have been cut), prioritize, delegate every
 eligible authorized item through the unchanged send gate, follow up delivered
 handoffs, report; a blocked item is recorded and skipped, not a stop. A new session continues from `brief/latest.json` and
