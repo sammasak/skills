@@ -81,9 +81,13 @@
           # included, as if the server ignored isArchived:false), cut at n like a page; FAKE_GH_GRAPHQL_RAW replaces the answer
           if [ "$2" = graphql ]; then
             [ -n "''${FAKE_GH_GRAPHQL_RAW:-}" ] && { printf '%s\n' "$FAKE_GH_GRAPHQL_RAW"; exit 0; }
-            n=100; prev=""; for a in "$@"; do case "$prev" in -F|--field) case "$a" in n=*) n="''${a#n=}" ;; esac ;; esac; prev="$a"; done
+            # like GitHub: `labels` arrives as a list only through repeated -F labels[]=<label>; each fixture node carries
+            # issue_labels (one label list per open issue) and `approved.totalCount` is computed against the requested list,
+            # so a query that never sends the list reads 0
+            n=100; req='[]'; prev=""; for a in "$@"; do case "$prev" in -F|--field) case "$a" in n=*) n="''${a#n=}" ;; "labels[]="*) req=$(jq -c --arg l "''${a#labels[]=}" '. + [$l]' <<<"$req") ;; esac ;; esac; prev="$a"; done
             [ -n "''${FAKE_GH_IGNORE_N:-}" ] && n=1000   # a server that ignores first:n, to prove the client-side cap
-            jq -c --argjson n "$n" '{data:{repositoryOwner:{repositories:{totalCount:length, nodes:.[:$n]}}}}' <<<"''${FAKE_GH_REPOS:-[]}"
+            jq -c --argjson n "$n" --argjson req "$req" '{data:{repositoryOwner:{repositories:{totalCount:length,
+              nodes:(.[:$n] | map(. + {approved:{totalCount:([(.issue_labels // [])[] | select(any(.[]; . as $l | ($req | index($l)) != null))] | length)}} | del(.issue_labels)))}}}}' <<<"''${FAKE_GH_REPOS:-[]}"
             exit 0
           fi
           method=GET; path=""; body=""; prev=""

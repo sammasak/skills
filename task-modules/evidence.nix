@@ -33,7 +33,9 @@ in
         # one query instead of one gh call per repo: counts come from GitHub, nothing is paged or stored here; the
         # authorizing labels are the configured list (coordinator.authorizingLabels), passed as a typed variable
         q='query($owner:String!,$n:Int!,$labels:[String!]!){ repositoryOwner(login:$owner){ repositories(first:$n, orderBy:{field:PUSHED_AT,direction:DESC}, isArchived:false, ownerAffiliations:OWNER){ totalCount nodes{ name pushedAt isArchived isPrivate pullRequests(states:OPEN){totalCount} issues(states:OPEN){totalCount} approved: issues(states:OPEN, labels:$labels){totalCount} } } } }'
-        raw=$(timeout -k 1 ${ts} ${cfg.ghCommand} api graphql -f query="$q" -F owner="$owner" -F n="$limit" -f labels=${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} 2>"$errf") || rc=$?
+        # a GraphQL list variable is built from repeated -F labels[]=<label>; a single -f would send one string, which
+        # GitHub coerces to a one-element list holding the literal JSON text and every count reads 0
+        raw=$(timeout -k 1 ${ts} ${cfg.ghCommand} api graphql -f query="$q" -F owner="$owner" -F n="$limit" ${lib.concatMapStringsSep " " (l: "-F " + lib.escapeShellArg ("labels[]=" + l)) cfg.authorizingLabels} 2>"$errf") || rc=$?
         msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
         [ "$rc" -eq 0 ] || { observe_error gh_error "gh api graphql exited $rc''${msg:+: $msg}" "$ctx"; exit 0; }
         # archived repos are dropped here too, and the cap is applied here too, so a server that ignored either argument
