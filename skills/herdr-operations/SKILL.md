@@ -32,6 +32,7 @@ is JSON with `schema_version: 1`; `coord:brief` also prints Markdown.
 | What moved since the last check (the wake-up timer's question): silent when nothing is actionable, else one line per change; the snapshot moves on | `devenv tasks run coord:changed --show-output` |
 | Bounded terminal excerpt of one agent (cap 200 lines); omit `machine` for this host | `devenv tasks run herdr:inspect --input-json '{"machine":"<label>","agent_id":"<id>","lines":40}'` |
 | What a session on this host was last doing, from the harness's own store (last prompt, last answer, tools, `awaiting_input`) | `devenv tasks run harness:session-summary --input-json '{"harness":"claude","session_id":"<id>","cwd":"<cwd>"}'` |
+| The owner's repositories by recent push with open PR/issue and approved-issue counts (one gh call; `truncated` when the cap is hit) | `devenv tasks run gh:repos --show-output` |
 | Open issues and recent PRs of one repo | `devenv tasks run gh:work --input-json '{"repo":"OWNER/REPO"}'` |
 | Recent commits, dirty files, unpushed work of one checkout | `devenv tasks run git:recent --input-json '{"checkout":"/abs/path"}'` |
 | Per-agent join of Herdr state and GitHub evidence | `devenv tasks run work:status --show-output` |

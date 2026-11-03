@@ -63,8 +63,8 @@ in
     };
 
     "coord:brief" = {
-      description = "Owner-facing brief: items needing input first, then every agent with herdr_state and work_verdict.";
-      after = [ "work:status@completed" ];
+      description = "Owner-facing brief: items needing input first, every agent with herdr_state and work_verdict, handoffs from the audit log, and the owner's portfolio (gh:repos, gh:work for active repos only).";
+      after = [ "work:status@completed" "gh:repos@completed" ];
       exec = ''
         ${cfg.prelude}
         ws=$(upstream "work:status")
@@ -89,8 +89,29 @@ in
             | sort_by(.sent_at)' "$audit" 2>/dev/null) \
             || { handoffs="[]"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines; herdr:message refuses to send until the owner inspects it")}'); }
         fi
-        brief=$(jq -c --argjson h "$handoffs" --arg a "$audit" --argjson e "$audit_err" \
-          '. + {task:"coord:brief", handoffs:$h, audit_path:$a, handoffs_error:$e}
+        # portfolio: gh:repos names the owner's repositories; gh:work runs only for the active ones (an open PR or an
+        # issue with an authorizing label), newest push first, at most portfolioActive of them; the rest are named, not
+        # fetched. GitHub being down leaves the agent part of the brief whole: the portfolio carries its own error and
+        # is not a failed source of the fleet picture
+        repos=$(upstream "gh:repos"); portfolio_err="null"; active="[]"; skipped="[]"; ptotal=0; plisted=0; ptrunc=false
+        if [ "$repos" = null ]; then portfolio_err='{"kind":"missing","message":"gh:repos produced no output"}'
+        elif [ "$(jq -r '.error != null' <<<"$repos")" = true ]; then portfolio_err=$(jq -c .error <<<"$repos")
+        else
+          ptotal=$(jq -r '.total // 0' <<<"$repos"); plisted=$(jq -r '.listed // 0' <<<"$repos"); ptrunc=$(jq -r '.truncated // false' <<<"$repos")
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            if [ "$(jq -r length <<<"$active")" -ge ${toString cfg.portfolioActive} ]; then skipped=$(jq -c --arg r "$repo" '. + [$r]' <<<"$skipped"); continue; fi
+            w=$(gh_work_json "$repo")
+            active=$(jq -c --argjson w "$w" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson r "$(jq -c --arg r "$repo" '[.repos[] | select(.repo == $r)] | first' <<<"$repos")" \
+              '. + [$r + {error:$w.error, truncated:($w.truncated // false),
+                          approved:([$w.issues[]? | select(any((.labels // [])[]; . as $l | ($labels | index($l)) != null)) | {number, title, url, labels}]),
+                          open_pr_list:([$w.prs[]? | select(.state == "OPEN") | {number, title, url, review_decision, draft, checks}])}]' <<<"$active")
+          done < <(jq -r '.repos[] | select(.active) | .repo' <<<"$repos")
+        fi
+        portfolio=$(jq -cn --arg o "${cfg.ghOwner}" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson t "$ptotal" --argjson l "$plisted" --argjson tr "$ptrunc" --argjson a "$active" --argjson s "$skipped" --argjson e "$portfolio_err" \
+          '{owner:$o, authorizing_labels:$labels, repos_total:$t, repos_listed:$l, truncated:$tr, active:$a, skipped_active:$s, error:$e}')
+        brief=$(jq -c --argjson h "$handoffs" --arg a "$audit" --argjson e "$audit_err" --argjson p "$portfolio" \
+          '. + {task:"coord:brief", handoffs:$h, audit_path:$a, handoffs_error:$e, portfolio:$p}
            | if $e != null then .partial = true | .failed_sources += [{source:"coordinator:audit", error:$e}] else . end' <<<"$ws")
         printf '%s\n' "$brief" > "$dir/latest.json.tmp" && mv "$dir/latest.json.tmp" "$dir/latest.json"
         printf '%s\n' "$brief" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
@@ -102,6 +123,11 @@ in
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else (.[0:10] | map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))")) + (if length > 10 then ["… \(length - 10) more needing you in the JSON"] else [] end) end)[]),
           "", "## Handoffs (from the audit log)",
           (if .handoffs_error != null then "- unreadable: \(.handoffs_error.kind) — \(.handoffs_error.message)" elif (.handoffs|length) == 0 then "- none" else (.handoffs[-20:][] | "- \(.handoff_id) → \(.host)/\(.agent_id) \(.task_ref // "-") | sent \(.sent_at) | \(.outcome) | work=\(.work_verdict)") end),
+          "", "## Portfolio (\(.portfolio.owner): \(.portfolio.repos_listed) of \(.portfolio.repos_total) repos by recent push\(if .portfolio.truncated then ", truncated at the cap" else "" end); authorizing labels: \(.portfolio.authorizing_labels | join(", ")))",
+          (if .portfolio.error != null then "- unavailable (agents above are unaffected): \(.portfolio.error.kind) — \(.portfolio.error.message)"
+           elif (.portfolio.active|length) == 0 then "- no repo with an open PR or an approved issue"
+           else (.portfolio.active[] | "- \(.repo): \(.open_prs) open PR(s), \(.approved_issues) approved issue(s)" + (if (.approved|length) > 0 then " → " + ([.approved[] | "#\(.number) \(.title)"] | join("; ")) else "" end) + (if .error != null then " (gh:work: \(.error.kind))" else "" end)) end),
+          (if (.portfolio.skipped_active|length) > 0 then "- active but not expanded (cap \(.portfolio.active|length)): \(.portfolio.skipped_active | join(", "))" else empty end),
           "", "Full JSON: \($f)", "", "## Agents",
           (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
