@@ -52,7 +52,8 @@ in
             . + [{host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, harness:$rest.harness, session_id:$rest.session_id, title:$t, task_ref:(if $r == "" then null else $r end),
                   herdr_state:$s, state_change_seq:$rest.state_change_seq, observed_at:$at,
                   work_verdict:(if $s == "blocked" then "blocked" else $e.verdict end), needs_owner:($s == "blocked"),
-                  evidence_ref:($e.refs | first // null), reasons:$e.reasons, sources:[{task:"herdr:inventory", observed_at:$at}]}]' <<<"$items")
+                  evidence_ref:(if $s != "blocked" and $e.verdict == "verified" then ($e.refs | first // null) else null end), refs:$e.refs,
+                  reasons:$e.reasons, sources:[{task:"herdr:inventory", observed_at:$at}]}]' <<<"$items")
         done < <(jq -c '.hosts[] | .host as $h | (.machine // "") as $m | .agents[] | {h:$h, m:$m, a:.agent_id, t:(.title // ""), r:(.task_ref // ""), s:(.observed_state // "unknown"), rest:{harness, session_id, state_change_seq}}' <<<"$inv")
         failed=$(jq -c '[(.hosts[] | select(.reachable == false) | {source:("herdr:inventory:" + .host), error})] + (if .machines_error != null then [{source:"herdr:machine-list", error:.machines_error}] else [] end)' <<<"$inv")
         emit "$(jq -cn --arg at "$at" --argjson inv "$inv" --argjson items "$items" --argjson f "$failed" \
