@@ -26,7 +26,7 @@
       '';
     };
     "skills:test:contract" = {
-      description = "ROLE.md <-> adapters <-> tasks agreement for every role";
+      description = "ROLE.md <-> adapters (Claude, Codex) <-> tasks agreement and adapter parity for every role";
       exec = ''
         # Contract test: every role's ROLE.md frontmatter and its Claude adapter agree, and every
         # named skill/task exists (needs yq-go, jq).
@@ -67,8 +67,24 @@
                 jq -e '.hooks == null' <<<"$afm" >/dev/null && ok || bad "$role: claude adapter must not wire hooks (the owner's permission prompt is the gate)"
                 jq -e '.permissionMode == "default"' <<<"$afm" >/dev/null && ok || bad "$role: claude adapter must keep permissionMode default (prompts)"
                 ;;
+              codex)
+                f="agents/$role/AGENTS.md"; [ -f "$f" ] || { bad "$role: codex adapter $f missing"; continue; }
+                grep -q "agents/$role/ROLE.md" "$f" && ok || bad "$role: codex adapter does not point at agents/$role/ROLE.md"
+                for s in $(jq -r '.skills[]' <<<"$fm"); do grep -q "skills/$s/SKILL.md" "$f" && ok || bad "$role: codex adapter does not name skill $s to read"; done
+                # thin adapter: no second copy of the contract (no frontmatter, no task list of its own)
+                head -1 "$f" | grep -qv '^---' && ! grep -qE '^(tasks|forbidden|evidence|skills):' "$f" && ok || bad "$role: codex adapter must not restate the contract"
+                ;;
               *) bad "$role: unknown adapter $adapter" ;;
             esac
+          done
+          # adapter parity: every adapter points at the same ROLE.md, and any task name an adapter mentions is in the contract
+          # (so neither adapter can widen or narrow the task list on its own)
+          allowed=$(jq -r '[.tasks.read[], (.tasks.run // [])[], .tasks.act[]] | .[]' <<<"$fm")
+          for f in "agents/$role.md" "agents/$role/AGENTS.md"; do
+            [ -f "$f" ] || continue
+            grep -q "agents/$role/ROLE.md" "$f" && ok || bad "$role: $f does not name agents/$role/ROLE.md"
+            stray=$(grep -oE '\b(coord|gh|herdr|work|harness|git|quality):[a-z][a-z-]*' "$f" | sort -u | grep -vxF -f <(printf '%s\n' "$allowed") || true)
+            [ -z "$stray" ] && ok || bad "$role: $f names tasks outside the contract: $(tr '\n' ' ' <<<"$stray")"
           done
         done
 
