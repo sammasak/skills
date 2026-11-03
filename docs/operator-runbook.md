@@ -81,9 +81,14 @@ died before writing one. A request refused earlier (`invalid_input`, a
 missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
 has no assignment until the coordinator hands it one (`coord:handoff`,
 `herdr:message`). `--dangerously-skip-permissions` starts unattended only where
-Home Manager pre-accepted the bypass and `$HOME` trust dialogs (nixos-config
-`mcp.nix`, `acceptClaudeStartupDialogs`); elsewhere `agent start` returns
-`agent_not_ready` and the workspace stays for you to inspect. The task never
+user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code
+2.1.300 no longer reads `~/.claude.json`'s `bypassPermissionsModeAccepted`)
+and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` only
+(nixos-config `mcp.nix`, `acceptClaudeStartupDialogs`), so spawn in `$HOME`
+and name the checkout in the handoff. Elsewhere `agent start` returns
+`agent_not_ready` and the workspace stays for you to inspect. A host
+configured with spawning off is refused as `capacity` whether or not it is
+in the inventory. The task never
 closes a pane or workspace.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of

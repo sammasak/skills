@@ -129,6 +129,10 @@ in
         trap 'exec 9>>"$audit.lock"; flock -w 30 9 || true; jq -cn --arg a "$aid" --arg at "$(now_iso)" --arg o "$outcome" --argjson d "$detail" "{audit_id:\$a, phase:\"outcome\", at:\$at, outcome:\$o} + \$d" >> "$audit"' EXIT; }
       refuse() { attempt; outcome=refused; detail=$(jq -cn --arg k "$1" --arg msg "$2" '{reason:{kind:$k, message:$msg}}'); fail "''${3:-2}" "$1" "$2" "$(jq -c --arg a "$aid" '. + {audit_id:$a}' <<<"$ctx")"; }
       [ -z "$refusal" ] || refuse "$(jq -r .kind <<<"$refusal")" "$(jq -r .message <<<"$refusal")" "$(jq -r '.exit // 2' <<<"$refusal")"
+      # a host configured with spawning off is refused on its configuration, before it has to be in the inventory (lenovo,
+      # the control plane, is no saved machine on the worker it would be asked from)
+      [ "$(jq -r --arg h "$host" 'with_entries(.key |= ascii_downcase) | .[$h | ascii_downcase] | if . == null then "unset" else (.spawn == true | tostring) end' <<<${lib.escapeShellArg cfg.capacity})" != false ] \
+        || refuse capacity "no spawn on $host: spawning is off for this host (coordinator.capacity)"
       # the inventory is from before the lock: re-read this host's agents now, so two spawns never decide on one snapshot
       # (a spawn still in flight holds its slots through its attempt line, see capacity.jq)
       [ "$(jq -r --arg h "$host" 'any(.hosts[]?; (.host | ascii_downcase) == ($h | ascii_downcase))' <<<"$inv")" = true ] \
@@ -160,8 +164,8 @@ in
         outcome=failed; detail=$(jq -cn --arg p "$pane" '{error:"workspace create returned an unsafe pane id", returned_pane:($p | .[0:80])}'); rm -f "$errf"
         fail 2 herdr_error "herdr workspace create on $host returned an unsafe pane id; not starting an agent there" "$ctx"; fi
       rc=0
-      # --dangerously-skip-permissions runs unattended only where Home Manager pre-accepted the bypass and $HOME trust
-      # dialogs (nixos-config mcp.nix, acceptClaudeStartupDialogs); elsewhere the dialog blocks and agent start says agent_not_ready
+      # --dangerously-skip-permissions runs unattended only where user settings carry skipDangerousModePermissionPrompt and
+      # cwd's trust dialog was accepted (Home Manager pre-trusts $HOME only); elsewhere agent start says agent_not_ready
       st=$(herdr_at 70 "$m" agent start "$name" --kind claude --pane "$pane" --timeout 60000 -- --dangerously-skip-permissions --model "$model" 2>"$errf") || rc=$?
       code=$(jq -rs 'map(.error.code? // empty | strings) | first // empty' "$errf" 2>/dev/null | tr -cd 'A-Za-z0-9_' || true)
       detail=$(jq -cn --arg p "$pane" --arg w "$wsid" '{agent_id:$p, workspace_id:(if $w == "" then null else $w end)}')

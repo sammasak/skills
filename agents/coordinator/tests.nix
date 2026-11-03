@@ -76,8 +76,8 @@
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
         H=$(hostname -s 2>/dev/null || hostname)
         # this host is the control plane (one heavy job, three workers, no spawning); worker-a takes two heavy jobs and three
-        # workers; down-b does not answer; anything else has no capacity
-        CAP=$(jq -cn --arg h "$H" '{($h): {heavy_jobs:1, max_workers:3, spawn:false}, "worker-a": {heavy_jobs:2, max_workers:3, spawn:true}, "down-b": {heavy_jobs:2, max_workers:3, spawn:true}}')
+        # workers; down-b does not answer; off-c (no saved machine) never spawns; anything else has no capacity
+        CAP=$(jq -cn --arg h "$H" '{($h): {heavy_jobs:1, max_workers:3, spawn:false}, "worker-a": {heavy_jobs:2, max_workers:3, spawn:true}, "down-b": {heavy_jobs:2, max_workers:3, spawn:true}, "off-c": {heavy_jobs:1, max_workers:2, spawn:false}}')
         jq '(.result.agents[] | select(.pane_id == "wF:p1")) |= (.agent_status = "idle") | (.result.agents[] | select(.pane_id == "wT:p1")) |= (.agent_status = "working")' "$FX/herdr/local-two-agents.json" > "$TMP/local.json"
         cp "$FX/herdr/remote-ok.json" "$TMP/worker-a.json"
         export FAKE_HERDR_LIST="$TMP/local.json" FAKE_HERDR_LIST_worker_a="$TMP/worker-a.json" \
@@ -158,6 +158,7 @@
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = capacity ] && jqr .error.message | grep -q 'spawning is off' && ! grep -q 'workspace create' "$FAKE_LOG" && [ "$(lines)" = $((n + 2)) ] && ok || bad "no spawn on the control plane ($CODE $OUT)"
         spawn down-b mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = host_unreachable ] && ok || bad "unreachable host refused ($OUT)"
         spawn nowhere mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = host_unknown ] && ok || bad "unknown host refused as host_unknown ($OUT)"
+        spawn off-c mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = capacity ] && jqr .error.message | grep -q 'spawning is off' && ok || bad "a spawn-off host outside the inventory refused on its configuration, not as host_unknown ($OUT)"
         # (7) authorization: the label must be on the issue, not one the coordinator writes, applied by the owner, and on the
         #     item itself; refused and audited, no herdr call
         jq '.result.agents = [.result.agents[0]]' "$FX/herdr/remote-ok.json" > "$TMP/worker-a.json"; : > "$FAKE_HERDR_STARTED"
@@ -189,8 +190,11 @@
         [ "$(jq -sr '[.[] | select(.phase == "outcome" and (.audit_id | test("^[a-f0-9]{12}$"))) | .outcome] | unique - ["started","refused","agent_not_ready","failed","interrupted"] | length' "$A")" = 0 ] && ok || bad "spawn outcomes stay in the closed set ($(jq -sr '[.[] | select(.phase == "outcome") | .outcome] | unique' "$A"))"
         # (10) the spawned worker's assignment is its history: next=#29 makes the idle new worker a /clear candidate
         printf '%s\n' '{"pane_id":"wN:p1","agent":"claude","agent_status":"idle","agent_session":{"agent":"claude","kind":"id","value":"sess-new"},"cwd":"/home/lukas"}' > "$FAKE_HERDR_STARTED"
+        # wR:p1, the agent_not_ready spawn of (9), still sits blocked at startup: it keeps its kind, so it holds no heavy slot
+        printf '%s\n' '{"pane_id":"wR:p1","agent":"claude","agent_status":"blocked","cwd":"/home/lukas"}' >> "$FAKE_HERDR_STARTED"
         run coord:capacity --input-json '{"next":{"repo":"sammasak/skills","task_ref":"#29"}}'
         [ "$(hq worker-a '.workers.list[] | select(.agent_id == "wN:p1") | "\(.last_task_ref) \(.last_repo) \(.hygiene.advice)"')" = "#28 sammasak/skills /clear" ] && ok || bad "spawned worker carries its task_ref ($(hq worker-a '.workers.list'))"
+        [ "$(hq worker-a '.workers.list[] | select(.agent_id == "wR:p1") | "\(.kind) \(.herdr_state)"')" = "mechanical blocked" ] && ok || bad "a spawn left blocked at startup keeps its kind ($(hq worker-a '.workers.list'))"
         # (10b) ROLE.md tells the coordinator what follows a spawn: a started worker has no assignment until coord:handoff +
         #       herdr:message, and a refused or failed spawn is recorded, not retried
         item=$(sed -n '/^13\. Workers and tiers/,/^## /p' agents/coordinator/ROLE.md | tr '\n' ' ')
