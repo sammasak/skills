@@ -77,10 +77,10 @@ in
         if [ -s "$audit" ]; then
           handoffs=$(jq -sc --argjson items "$(jq -c '.items // []' <<<"$ws")" '
             map(select(type == "object")) as $all
-            | ($all | map(select(.phase == "outcome"))) as $outs
+            | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $byid
             | [$all[] | select(.phase == "attempt" and (.handoff_id|type) == "string")]
             | group_by(.handoff_id) | map(last)
-            | map(. as $a | ($outs | map(select(.audit_id == $a.audit_id)) | last) as $o
+            | map(. as $a | ($byid[$a.audit_id | tostring] // null) as $o
                 | ($items | map(select(.host == $a.host and .agent_id == $a.agent_id)) | first) as $it
                 | {handoff_id:$a.handoff_id, audit_id:$a.audit_id, host:$a.host, machine:$a.machine, agent_id:$a.agent_id, sent_at:$a.at,
                    outcome:($o.outcome // "interrupted"), delivered:(($o.outcome // "") == "delivered"),
