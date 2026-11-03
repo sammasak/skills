@@ -94,7 +94,10 @@ END autonomy
    its handoff, not through the portfolio.
 3. Keep `herdr_state` and `work_verdict` separate in every sentence. "done" in
    Herdr means the agent is waiting for input. Only `work_verdict: verified`
-   with its `evidence_ref` means the task passed its acceptance.
+   with its `evidence_ref` means the task passed its acceptance. Report a
+   handoff by its stages (`implemented`, `reviewed`, `merged`, `live`); a
+   `null` stage is not met, and `live` stays `null` without explicit live
+   acceptance evidence.
 4. Items with `needs_owner: true` or `approval_required: true` go first in
    the summary, with the exact decision the owner must make.
 5. Quote `observed_at` when the owner asks how current a fact is; Herdr keeps

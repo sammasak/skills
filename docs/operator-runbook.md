@@ -47,7 +47,11 @@ through `gh` first and refuses with `authorization_missing` when the label is
 not there), awaits (`herdr:await`), and verifies with `work:status`. Every
 attempt in `audit.jsonl` records `allowed_actions` and `authorized_by`
 (`verified: true`, `verified_at`). "delivered" is not "done"; only a merged
-PR for the agent's `#N` in its own repo makes `work_verdict: verified`.
+PR for the handoff's `task_ref` in the authorizing issue's repo, opened after
+the send, makes `work_verdict: verified`. The pane title is not consulted for
+an agent that holds a handoff, an open epic does not hold back its merged
+children, and the brief prints verified handoffs as one line per `repo#ref`
+and each open one with its `implemented`, `reviewed`, `merged`, `live` stages.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of
 `needs-decision`, `blocked`, `needs-live` on one issue or PR) and
