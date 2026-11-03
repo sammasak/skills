@@ -63,6 +63,17 @@ label events.
 Keep the checkout current (`git -C ~/claude-code-skills pull`): the tasks and
 contracts the subagent uses are the ones in that working tree.
 
+## Working the queue
+
+"ask the coordinator to work the queue" runs one tick of `docs/process.md`:
+discover (`coord:brief`, whose `handoffs` section is rebuilt from
+`audit.jsonl`, and `gh:work` per repository; `truncated: true` means gh cut
+the list at `coordinator.ghLimit`), prioritize, delegate one authorized item
+through the unchanged send gate, follow up one delivered handoff, report.
+A new session continues from `brief/latest.json` and `audit.jsonl`; nothing
+is kept in memory. Codex runs the same contract through
+`agents/coordinator/AGENTS.md` (`codex exec --cd ~/claude-code-skills …`).
+
 ## Running the quality role
 
 "ask the quality agent whether devenv-platform's gates pass"; it runs
