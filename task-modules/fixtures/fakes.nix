@@ -92,9 +92,10 @@
           exit 0
         fi
         case "$1 $2" in "issue list") kind="issues" ;; "pr list") kind="prs" ;; *) echo "fake gh: unsupported $*" >&2; exit 2 ;; esac
-        state=""; prev=""; for a in "$@"; do case "$prev" in --state) state="$a" ;; esac; prev="$a"; done
+        # like gh: --limit N cuts the list silently at N
+        state=""; limit=30; prev=""; for a in "$@"; do case "$prev" in --state) state="$a" ;; --limit|-L) limit="$a" ;; esac; prev="$a"; done
         f="''${FAKE_GH_DIR:?}/''${repo//\//__}.$kind.json"
-        if [ -r "$f" ]; then case "$kind:$state" in prs:open) jq 'map(select(.state == "OPEN"))' "$f" ;; prs:merged) jq 'map(select(.state == "MERGED"))' "$f" ;; *) cat "$f" ;; esac; else echo "[]"; fi
+        if [ -r "$f" ]; then case "$kind:$state" in prs:open) jq --argjson n "$limit" 'map(select(.state == "OPEN")) | .[:$n]' "$f" ;; prs:merged) jq --argjson n "$limit" 'map(select(.state == "MERGED")) | .[:$n]' "$f" ;; *) jq --argjson n "$limit" '.[:$n]' "$f" ;; esac; else echo "[]"; fi
       '')
       (pkgs.writeShellScriptBin "devenv" ''
         # Fake devenv for quality tests: answers the three calls quality:report/quality:gate make inside a checkout.

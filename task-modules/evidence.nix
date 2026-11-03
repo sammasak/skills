@@ -11,7 +11,7 @@ in
 
   tasks = {
     "gh:work" = {
-      description = "Open issues and recent open/merged PRs of one GitHub repo (bounded, raw).";
+      description = "Open issues and recent open/merged PRs of one GitHub repo (bounded by coordinator.ghLimit; truncated:true names the lists that hit it).";
       input = { repo = null; };
     exec = ''
       ${cfg.prelude}
@@ -26,8 +26,11 @@ in
       merged_prs=$(timeout -k 1 ${ts} ${cfg.ghCommand} pr list -R "$gh" --state merged --limit ${toString cfg.ghLimit} --json "$fields" 2>/dev/null) || rc=$?
       [ "$rc" -eq 0 ] || { observe_error gh_error "gh pr list (merged) exited $rc" "$ctx"; exit 0; }
       prs=$(jq -cn --argjson o "$open_prs" --argjson m "$merged_prs" '$o + $m') || { observe_error malformed "gh returned unexpected JSON" "$ctx"; exit 0; }
-      out=$(jq -cn --arg at "$at" --argjson c "$ctx" --argjson i "$issues" --argjson p "$prs" --argjson no "$(jq 'length' <<<"$open_prs")" '
-        $c + {schema_version:1, observed_at:$at, error:null, open_pr_count:$no,
+      # gh stops at --limit without saying so; a list that is exactly the limit long may be cut, and the reader must know
+      trunc=$(jq -cn --argjson i "$issues" --argjson o "$open_prs" --argjson m "$merged_prs" --argjson l ${toString cfg.ghLimit} \
+        '[("issues" | select(($i|length) >= $l)), ("open_prs" | select(($o|length) >= $l)), ("merged_prs" | select(($m|length) >= $l))]' 2>/dev/null) || trunc='[]'
+      out=$(jq -cn --arg at "$at" --argjson c "$ctx" --argjson i "$issues" --argjson p "$prs" --argjson no "$(jq 'length' <<<"$open_prs")" --argjson l ${toString cfg.ghLimit} --argjson tl "$trunc" '
+        $c + {schema_version:1, observed_at:$at, error:null, open_pr_count:$no, limit:$l, truncated:(($tl|length) > 0), truncated_lists:$tl,
          issues: ($i | map({number, title, state, updated_at:.updatedAt, labels:((.labels // []) | map(.name)), url})),
          prs: ($p | map({number, title, state, draft:.isDraft, review_decision:(.reviewDecision // ""), merged_at:.mergedAt, updated_at:.updatedAt,
                         branch:.headRefName, url, checks:((.statusCheckRollup // []) | map((.conclusion | select(. != null and . != "")) // .state // "PENDING")),

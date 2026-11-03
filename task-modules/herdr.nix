@@ -165,8 +165,8 @@ in
           done < <(tac <<<"$attempts")
         fi
         aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
-        jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" \
-          '{audit_id:$a, handoff_id:$i, phase:"attempt", host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q}' >> "$audit" \
+        jq -cn --arg a "$aid" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" \
+          '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"attempt", host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q}' >> "$audit" \
           || fail 2 audit_failed "could not write the attempt record; not sending" "$ctx"
         outcome=interrupted
         trap 'jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" "{audit_id:\$a, handoff_id:\$i, phase:\"outcome\", at:\$at, outcome:\$o}" >> "$audit"' EXIT

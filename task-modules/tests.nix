@@ -341,6 +341,11 @@
         run gh:work --input-json '{"repo":"sammasak/skills"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr '.issues|length')" = 2 ] && [ "$(jqr '.prs|length')" -ge 4 ] && [ "$(jqr .open_pr_count)" = 1 ] && ok || bad "gh:work: $CODE $OUT"
         [ "$(jqr '.prs[] | select(.number==15) | .closes[0]')" = 42 ] && ok || bad "gh:work: closes mapped"
+        [ "$(jqr .truncated)" = false ] && [ "$(jqr .limit)" = 20 ] && [ "$(jqr '.truncated_lists|length')" = 0 ] && ok || bad "gh:work: below the limit nothing is truncated ($OUT)"
+        # at the limit gh may have cut the list: say so, name the lists, keep the records (fixture: 2 issues, 1 open PR, 4 merged PRs)
+        run gh:work --option coordinator.ghLimit:int 2 --input-json '{"repo":"sammasak/skills"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr .truncated)" = true ] && [ "$(jqr .limit)" = 2 ] && [ "$(jqr '.truncated_lists|join(",")')" = "issues,merged_prs" ] && [ "$(jqr '.issues|length')" = 2 ] && [ "$(jqr '.prs|length')" = 3 ] && ok || bad "gh:work: truncation flagged per list at the limit ($OUT)"
+        grep -q -- '--limit 2' "$FAKE_LOG" && ok || bad "gh:work: the limit reaches gh"
         run gh:work --input-json '{"repo":"sammasak/skills; id"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "gh:work: unsafe repo rejected"
         FAKE_GH_EXIT=1 run gh:work --input-json '{"repo":"sammasak/skills"}'
