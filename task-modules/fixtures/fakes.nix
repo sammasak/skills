@@ -116,6 +116,11 @@
           esac
           exit 0
         fi
+        # `gh search issues --owner O --label L --state open --json repository,number,title,url`: FAKE_GH_SEARCH is the hit list
+        # (objects with repository.nameWithOwner, number, title, url); FAKE_GH_SEARCH_EXIT fails the search alone
+        if [ "$1 $2" = "search issues" ]; then
+          [ -n "''${FAKE_GH_SEARCH_EXIT:-}" ] && { echo "gh: HTTP 403 API rate limit exceeded for search" >&2; exit "$FAKE_GH_SEARCH_EXIT"; }
+          printf '%s\n' "''${FAKE_GH_SEARCH:-[]}"; exit 0; fi
         case "$1 $2" in "issue list") kind="issues" ;; "pr list") kind="prs" ;; *) echo "fake gh: unsupported $*" >&2; exit 2 ;; esac
         # FAKE_GH_LIST_EXIT fails the list calls alone (the GraphQL repo query above keeps answering)
         [ -n "''${FAKE_GH_LIST_EXIT:-}" ] && { echo "gh: HTTP 502 Bad Gateway" >&2; exit "$FAKE_GH_LIST_EXIT"; }
