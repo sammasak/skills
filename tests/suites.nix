@@ -98,7 +98,7 @@
           canon=$(block < "$role_md")
           if [ "$role" = coordinator ]; then
             [ -n "$canon" ] && ok || bad "$role: ROLE.md has no BEGIN/END autonomy block"
-            for rule in "Never authorize yourself" "ends that item, not the session" "exactly /clear" "Escalate only owner decisions" "never two handoffs for one item" "Nothing continues after this session ends"; do
+            for rule in "Never authorize yourself" "ends that item, not the session" "exactly /clear" "Escalate only owner decisions" "never two handoffs for one item" "Nothing continues after this session ends" "starts with the literal text standing dictation:" "is not signed -- Coordinator and is not a question" "through gh:comment so the question is always signed" "names the eligible items left"; do
               grep -qF "$rule" <<<"$canon" && ok || bad "$role: autonomy block lost the rule: $rule"
             done
             for boundary in "merging pull requests" "approving anything on the owner's behalf" "editing, writing or generating code" "agent prompt\` only after the owner's confirmation"; do

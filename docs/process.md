@@ -70,7 +70,8 @@ A blocked agent or an item that needs the owner ends that item only: record
 it (`gh:label` `blocked` or `needs-decision`, one `gh:comment` with the exact
 question) and continue with the rest. Stop the session and report when no
 eligible P1 item is left or no worker is free, and every delivered handoff has
-been followed up once (never poll while waiting), or when a task refuses with `gh_error`, `audit_corrupt` or
+been followed up once (never poll while waiting; when no worker is free, the
+report names the eligible items left), or when a task refuses with `gh_error`, `audit_corrupt` or
 `busy` (fix the environment before the next tick).
 
 ## Definition of done for an item
