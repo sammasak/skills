@@ -37,9 +37,10 @@
         [ "$(jqr '.portfolio.active[] | select(.repo=="sammasak/skills") | .approved | map(.number) | join(",")')" = 43 ] && [ "$(jqr '.portfolio.active[] | select(.repo=="sammasak/skills") | .open_pr_list | length')" = 1 ] && ok || bad "portfolio: approved issues and open PRs listed per active repo"
         grep -q 'issue list -R sammasak/skills' "$FAKE_LOG" && grep -q 'issue list -R sammasak/nixos-config' "$FAKE_LOG" && ! grep -q 'sammasak/quiet' "$FAKE_LOG" && ok || bad "portfolio: gh:work only for active repos ($(grep -c 'sammasak/quiet' "$FAKE_LOG"))"
         grep -q '## Portfolio (sammasak: 3 of 3 repos' "$TMP/run.log" && grep -q 'sammasak/skills: 1 open PR(s), 1 approved issue(s) → #43' "$TMP/run.log" && ok || bad "portfolio: Markdown section"
-        # gh:repos failing: the brief still succeeds, names the failed source, and the rest is intact
+        [ "$(jqr '.portfolio.authorizing_labels | join(",")')" = approved ] && [ "$(jqr '.portfolio.active[] | select(.repo=="sammasak/skills") | .approved[0].labels | index("approved")')" != null ] && ok || bad "portfolio: the authorizing labels are the configured list and each listed issue carries one"
+        # gh:repos failing: the brief still succeeds and stays whole for the agents; the portfolio carries its own error
         FAKE_GH_API_EXIT=1 runb
-        [ "$CODE" -eq 0 ] && [ "$(jqr '.portfolio.error.kind')" = gh_error ] && [ "$(jqr .partial)" = true ] && [ "$(jqr '[.failed_sources[] | select(.source=="gh:repos")] | length')" = 1 ] && grep -q 'unavailable: gh_error' "$TMP/run.log" && ok || bad "portfolio: gh failure is a failed source, not a missing section ($(jqr '{partial,failed_sources}'))"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.portfolio.error.kind')" = gh_error ] && [ "$(jqr .partial)" = false ] && [ "$(jqr '[.failed_sources[] | select(.source=="gh:repos")] | length')" = 0 ] && [ "$(jqr '.items|length')" = 3 ] && grep -q 'unavailable (agents above are unaffected): gh_error' "$TMP/run.log" && ok || bad "portfolio: gh failure is the portfolio's own error, the fleet brief is not partial ($(jqr '{partial,failed_sources,pe:.portfolio.error}'))"
         : > "$FAKE_LOG"; runb
         [ "$CODE" -eq 0 ] && ok || bad "brief: exit $CODE ($(grep -E 'FAIL|✖|error|jq:' "$TMP/run.log" | head -3))"
         [ "$(jqr '.items|length')" = 3 ] && [ "$(jqr .answered_hosts)" = 2 ] && [ "$(jqr .machines_configured)" = 1 ] && ok || bad "brief: 3 agents over 2 hosts ($OUT)"

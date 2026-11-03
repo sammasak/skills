@@ -82,6 +82,7 @@
           if [ "$2" = graphql ]; then
             [ -n "''${FAKE_GH_GRAPHQL_RAW:-}" ] && { printf '%s\n' "$FAKE_GH_GRAPHQL_RAW"; exit 0; }
             n=100; prev=""; for a in "$@"; do case "$prev" in -F|--field) case "$a" in n=*) n="''${a#n=}" ;; esac ;; esac; prev="$a"; done
+            [ -n "''${FAKE_GH_IGNORE_N:-}" ] && n=1000   # a server that ignores first:n, to prove the client-side cap
             jq -c --argjson n "$n" '{data:{repositoryOwner:{repositories:{totalCount:length, nodes:.[:$n]}}}}' <<<"''${FAKE_GH_REPOS:-[]}"
             exit 0
           fi

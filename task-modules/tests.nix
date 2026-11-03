@@ -349,7 +349,7 @@
         run gh:work --input-json '{"repo":"sammasak/skills; id"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "gh:work: unsafe repo rejected"
         FAKE_GH_EXIT=1 run gh:work --input-json '{"repo":"sammasak/skills"}'
-        [ "$CODE" -eq 0 ] && [ "$(jqr .error.kind)" = gh_error ] && ok || bad "gh:work: gh failure is data ($CODE $OUT)"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .error.kind)" = gh_error ] && jqr .error.message | grep -q 'Bad credentials' && ok || bad "gh:work: gh failure is data and keeps gh's own message ($CODE $OUT)"
         git init -q "$TMP/repo" && (cd "$TMP/repo" && git config user.email t@t && git config user.name t && echo a > a && git add a && git commit -qm init && echo b > b)
         run git:recent --input-json "{\"checkout\":\"$TMP/repo\"}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .dirty_files)" = 1 ] && [ "$(jqr '.commits|length')" = 1 ] && [ "$(jqr .repo)" = repo ] && ok || bad "git:recent: $CODE $OUT"
@@ -367,6 +367,12 @@
         [ "$(jqr '.repos[] | select(.name=="skills") | "\(.repo) \(.open_prs) \(.open_issues) \(.approved_issues) \(.active) \(.private)"')" = "sammasak/skills 1 4 2 true false" ] && [ "$(jqr '.repos[] | select(.name=="quiet") | .active')" = false ] && ok || bad "gh:repos: counts and active flag ($OUT)"
         [ "$(jqr .truncated)" = false ] && [ "$(jqr .total)" = 4 ] && [ "$(jqr .listed)" = 3 ] && [ "$(jqr .limit)" = 20 ] && ok || bad "gh:repos: below the cap nothing is truncated ($OUT)"
         grep -q -- '-F owner=sammasak' "$FAKE_LOG" && grep -q -- '-F n=20' "$FAKE_LOG" && [ "$(grep -c '^gh ' "$FAKE_LOG")" = 1 ] && ok || bad "gh:repos: exactly one gh call, owner and cap reach it ($(cat "$FAKE_LOG"))"
+        grep -q -- '-f labels=\["approved"\]' "$FAKE_LOG" && grep -q 'labels:$labels' "$FAKE_LOG" && [ "$(jqr '.authorizing_labels|join(",")')" = approved ] && ok || bad "gh:repos: the configured authorizing labels reach the query as a typed variable and are echoed ($(grep -o 'labels[^ ]*' "$FAKE_LOG" | head -2 | paste -sd' '))"
+        # the cap holds even when the server ignores first:n and returns the whole list (client-side .[:limit])
+        FAKE_GH_IGNORE_N=1 run gh:repos --option coordinator.ghLimit:int 2
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.repos|length')" = 2 ] && [ "$(jqr '.listed')" = 2 ] && [ "$(jqr .truncated)" = true ] && ok || bad "gh:repos: client-side cap holds against a server that ignores n ($OUT)"
+        run gh:repos --input-json '{"limit":101}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q '100' && ok || bad "gh:repos: limit above GitHub's page cap rejected before any call"
         run gh:repos --option coordinator.ghLimit:int 2
         [ "$CODE" -eq 0 ] && [ "$(jqr '[.repos[].name] | join(",")')" = "nixos-config,skills" ] && [ "$(jqr .truncated)" = true ] && [ "$(jqr .limit)" = 2 ] && [ "$(jqr .total)" = 4 ] && ok || bad "gh:repos: capped at the limit and flagged truncated ($OUT)"
         run gh:repos --input-json '{"owner":"sammasak; id"}'
