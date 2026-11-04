@@ -8,6 +8,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -66,6 +67,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -114,6 +116,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -170,6 +173,22 @@
         grep -q '^herdr(machine=acer-swift) agent get wA:p2' "$FAKE_LOG" && grep -q '^herdr(machine=acer-swift) agent prompt wA:p2' "$FAKE_LOG" && ok || bad "send went through --machine"
         grep -q 'fix the docs typo' "$FAKE_PROMPT_OUT" && grep -q '^Allowed actions: comment, deploy:none\. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed\.$' "$FAKE_PROMPT_OUT" && ok || bad "prompt text and allowed-actions line delivered"
         [ "$(grep -c '"phase":"attempt"' "$TMP/state/audit.jsonl")" = 1 ] && [ "$(grep -c '"outcome":"delivered"' "$TMP/state/audit.jsonl")" = 1 ] && ok || bad "audit attempt+outcome"
+        H=$(hostname -s 2>/dev/null || hostname)
+        [ "$(jq -r 'select(.phase == "attempt") | .from' "$TMP/state/audit.jsonl")" = "$H/coord:p0" ] && ok || bad "the attempt line names the sending pane (from) ($(jq -c 'select(.phase == "attempt") | .from' "$TMP/state/audit.jsonl"))"
+        # a Coordinator pane is never a handoff target: the configured list, the pane running the task, and any past sender
+        D='"task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]'
+        : > "$FAKE_LOG"
+        run coord:handoff --option coordinator.panes:string "acer-swift/wC:p1,$H/wC:p2" --input-json "{\"machine\":\"acer-swift\",\"agent_id\":\"wC:p1\",$D}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'Coordinator pane' && [ ! -s "$FAKE_LOG" ] && ok || bad "handoff: a configured Coordinator pane (remote) is refused ($CODE $OUT)"
+        run coord:handoff --option coordinator.panes:string "acer-swift/wC:p1,$H/wC:p2" --input-json "{\"agent_id\":\"wC:p2\",$D}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'Coordinator pane' && ok || bad "handoff: a configured Coordinator pane (local) is refused ($CODE $OUT)"
+        HERDR_PANE_ID=wS:p1 run coord:handoff --input-json "{\"agent_id\":\"wS:p1\",$D}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'Coordinator pane' && ok || bad "handoff: the pane running the task (HERDR_PANE_ID) is refused as a target ($CODE $OUT)"
+        run coord:handoff --input-json "{\"agent_id\":\"coord:p0\",$D}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'Coordinator pane' && ok || bad "handoff: a pane that sent a handoff before (audit from) is refused as a target ($CODE $OUT)"
+        RID=$ID; draft "{\"agent_id\":\"wS:p1\",$D}"; SID=$ID; ID=$RID
+        : > "$FAKE_LOG"; run herdr:message --option coordinator.panes:string "$H/wS:p1" --input-json "{\"handoff_id\":\"$SID\",\"confirm\":\"$H/wS:p1\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'Coordinator pane' && [ ! -s "$FAKE_LOG" ] && ok || bad "send: a draft to a pane now listed as a Coordinator pane is refused before gh or herdr ($CODE $OUT)"
         ATT=$(jq -c 'select(.phase == "attempt")' "$TMP/state/audit.jsonl")
         [ "$(jq -r '.allowed_actions | join(",")' <<<"$ATT")" = "comment,deploy:none" ] && [ "$(jq -r '.authorized_by.issue_url + " " + .authorized_by.label + " " + (.authorized_by.verified|tostring)' <<<"$ATT")" = "https://github.com/sammasak/skills/issues/7 assign:implementer true" ] && ok || bad "audit attempt records allowed_actions and verified authorized_by ($ATT)"
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
@@ -223,6 +242,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh" FAKE_GH_COMMENT_OUT="$TMP/comment.txt"
@@ -393,6 +413,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -474,6 +495,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"

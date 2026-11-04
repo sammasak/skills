@@ -165,7 +165,7 @@ printed; `systemctl --user disable --now coordinator-wakeup.timer` stops that
 until the next switch.
 
 The task spaces its own wake-ups so a burst of changes cannot buy a session
-per tick: a printing run within `coordinator.wakeMinGapSeconds` (300) of the
+per tick (the brief shows both numbers as `Wake budget:`): a printing run within `coordinator.wakeMinGapSeconds` (300) of the
 last one, or beyond `coordinator.wakeMaxPerHour` (6) in a sliding hour, is
 deferred: it prints nothing, records `wake.deferred`, `wake.reason`
 (`min_gap` or `per_hour_cap`) and `wake.next_allowed_at` in `latest.json`,
@@ -177,15 +177,27 @@ history. Only the timer's form, `--input-json '{"consume":true}'`, moves
 the snapshot and spends the budget; the plain `coord:changed` (an owner
 session's read) neither consumes nor spends, so it never takes a change away
 from the timer.
+A deferred run says why on stderr (`coord:changed: wake deferred (<reason>)
+until <time>; N change(s) pending`); stdout stays empty by contract, and an
+idle-fleet wake held back this way waits under `wake.pending` like any other
+line. `latest.json` is always the timer's
+consuming record (`consume: true`); a plain read prints its own record and
+writes nothing.
+
 
 The `idle` line is the one change that needs no transition: when every
 worker on every answering host is idle or done (none working, blocked or
 unknown; an unreachable host or a fleet without a known worker is not idle)
 and work is left, the Coordinator is woken with no human. The workers are
 the panes a handoff was sent to (`audit.jsonl` attempt lines, as
-`host/agent_id`) plus `coordinator.workers`; the Coordinator's own panes and
-the wake session never receive a handoff, so they never keep the fleet busy
-(`idle_wake.non_workers` counts them in `latest.json`). Work is any of: an open PR in an
+`host/agent_id`) plus `coordinator.workers`, minus the Coordinator's own panes:
+`coordinator.panes` (comma-separated `host/agent_id`), the pane a task runs in
+(`HERDR_PANE_ID`), and every pane an attempt line names as its sender (`from`).
+Those are never workers and never handoff targets (`coord:handoff` and
+`herdr:message` refuse them), and a handoff that reached one earlier is ignored,
+so an interactive Coordinator that is always working cannot keep the fleet busy
+(the record's `coordinator_panes` lists them; `idle_wake.non_workers` counts
+every listed pane that is not a worker). Work is any of: an open PR in an
 active repo (`gh:repos`, newest push first, at most `portfolioActive` repos)
 or in an open-handoff repo without a signed 9/10 or more on its current head
 by someone other than the agent whose handoff it answers; an issue carrying

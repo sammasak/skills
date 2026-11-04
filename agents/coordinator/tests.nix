@@ -7,6 +7,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -55,6 +56,7 @@
         [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = verified ] && [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .evidence_ref')" != null ] && ok || bad "done + merged PR closing #42 in the named repo => verified"
         [ "$(jqr '.items[] | select(.agent_id=="wF:p1") | .work_verdict')" = unknown ] && jqr '.items[] | select(.agent_id=="wF:p1") | .reasons[0]' | grep -q 'no OWNER/REPO' && ok || bad "#16 without a repo in the title => unknown with the reason"
         [ "$(jqr '.items[] | select(.agent_id=="wA:p2") | .work_verdict')" = blocked ] && [ "$(jqr '.items[] | select(.agent_id=="wA:p2") | .needs_owner')" = true ] && [ "$(jqr '.items[] | select(.agent_id=="wA:p2") | .machine')" = acer-swift ] && ok || bad "blocked remote agent needs the owner"
+        [ "$(jqr '.wake_budget | "\(.min_gap_seconds) \(.max_per_hour)"')" = "300 6" ] && grep -q 'Wake budget: at most 6 session(s) an hour, 300 s apart (coordinator.wakeMaxPerHour, coordinator.wakeMinGapSeconds)' "$TMP/run.log" && ok || bad "brief: the wake budget is visible ($(jqr .wake_budget) $(grep 'Wake budget' "$TMP/run.log"))"
         grep -q '## Needs you' "$TMP/run.log" && grep -q 'acer-swift/wA:p2' "$TMP/run.log" && grep -q 'Hosts: this one + 1 saved herdr machine' "$TMP/run.log" && ok || bad "Markdown brief names the blocked agent and the machines"
         # herdr_state and work_verdict are distinct keys; the done agent's herdr_state stays done
         [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .herdr_state')" = done ] && ok || bad "herdr_state kept apart from work_verdict"
@@ -75,6 +77,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -217,6 +220,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh-correlation" FAKE_HERDR_MACHINES='[]'
@@ -324,6 +328,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -343,7 +348,8 @@
           # the idle-fleet line (F1) is the coord-idle suite's business; these cases look at the other kinds only
           LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot) ' "$TMP/run.log" | sed -E 's/^\s+//')
           # everything the task wrote to stdout, as devenv shows it between its own two marker lines
-          STDOUT=$(sed -n '/Running coord:changed$/,/Running coord:changed in /p' "$TMP/run.log" | grep -vE 'Running coord:changed' | sed -E 's/^\s+//' | grep . || true)
+          # (a deferred run's stderr notice is not stdout; devenv shows both streams here)
+          STDOUT=$(sed -n '/Running coord:changed$/,/Running coord:changed in /p' "$TMP/run.log" | grep -vE 'Running coord:changed|^\s*coord:changed: wake deferred' | sed -E 's/^\s+//' | grep . || true)
           OUT=$(cat "''${STATE:-$TMP/state}/changed/latest.json" 2>/dev/null); [ -n "$OUT" ] || OUT='{}'
         }
         nlines() { if [ -z "$LINES" ]; then echo 0; else grep -c . <<<"$LINES"; fi; }
@@ -473,6 +479,10 @@
         set_agent wF:p1 '.state_change_seq = 139 | .agent_status = "blocked"'
         snap_before=$(sha256sum "$TMP/state/changed/snapshot.json" | cut -c1-16); latest_before=$(sha256sum "$TMP/state/changed/latest.json" | cut -c1-16)
         run --plain; [ "$CODE" -eq 0 ] && [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && [ "$(sha256sum "$TMP/state/changed/snapshot.json" | cut -c1-16)" = "$snap_before" ] && [ "$(sha256sum "$TMP/state/changed/latest.json" | cut -c1-16)" = "$latest_before" ] && ok || bad "the plain form prints the change and leaves snapshot.json and latest.json untouched ($LINES)"
+        # the plain read's own record (its stdout) says consume:false; latest.json stays the timer's record, consume:true, which is
+        # what an owner reading latest.json after a plain read sees (skills#28, 12:47Z)
+        PLAIN=$(grep -E '^\s*\{' "$TMP/run.log" | sed -E 's/^\s+//' | jq -c 'select(type == "object") | (.["coord:changed"] // select(.task == "coord:changed")) // empty' 2>/dev/null | tail -1)
+        [ "$(jq -r .consume <<<"$PLAIN")" = false ] && [ "$(sha256sum "$TMP/state/changed/latest.json" | cut -c1-16)" = "$latest_before" ] && [ "$(jqr .consume)" = true ] && ok || bad "a plain read's record says consume:false and leaves latest.json (the timer's, consume:true) untouched ($(jq -c .consume <<<"$PLAIN") $(jqr .consume))"
         run --plain; [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && ok || bad "a second plain read still sees the change: interactive reads do not advance the timer's snapshot ($LINES)"
         run --input-json '{"peek":true,"consume":false}'; [ "$CODE" -eq 0 ] && [ "$LINES" = "blocked $H/wF:p1 #16 claude seq 139 needs the owner" ] && [ "$(sha256sum "$TMP/state/changed/snapshot.json" | cut -c1-16)" = "$snap_before" ] && ok || bad "peek:true still means the non-consuming read ($LINES)"
         run --input-json '{"peek":true}'; [ "$CODE" -ne 0 ] && grep -q invalid_input "$TMP/run.log" && ok || bad "peek:true with consume:true is refused as a contradiction ($CODE)"
@@ -559,6 +569,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         GH="$TMP/gh"; mkdir -p "$GH"
@@ -720,6 +731,35 @@
         jq -c 'map(. - 3601)' "$STATE/changed/wakes.json" > "$STATE/changed/wakes.tmp" && mv "$STATE/changed/wakes.tmp" "$STATE/changed/wakes.json"
         run; [ "$(nlines)" = 1 ] && grep -q '^idle .* 5 open PR(s) without a 9/10 review (sammasak/skills#70, sammasak/skills#71, sammasak/skills#72, +2 more)' <<<"$LINES" && [ "$(fp)" != "$FPB" ] && ok || bad "burst: one catch-up wake with the newest state ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "burst: silent after the catch-up ($LINES)"
+        # (15) the Coordinator's own pane as a past handoff target (lenovo wM:p1, 2026-11-04: timer sessions addressed handoffs to
+        #      the interactive Coordinator's pane, so it became a "worker" that is always working and the fleet never idle).
+        #      wZ:p1 plays it: working, named as a target in the audit; wF:p1 idle and wT:p1 done, work left
+        coord_state() { export STATE="$TMP/$1"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$TMP/local-full.json" "$LOCAL"
+          printf '%s\n' "{\"audit_id\":\"xh5\",\"handoff_id\":\"h00000000005\",\"task_ref\":\"#28\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"wZ:p1\",\"at\":\"$T3\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"approved\"}}" \
+            "{\"audit_id\":\"xh5\",\"handoff_id\":\"h00000000005\",\"phase\":\"outcome\",\"at\":\"$T3\",\"outcome\":\"delivered\"}" >> "$STATE/audit.jsonl"; }
+        BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000'
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; } | write sammasak__skills.issues.json
+        coord_state state-coord-bug; run
+        [ "$CODE" -eq 0 ] && [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers)"')" = "false 3 0" ] && ok || bad "(the bug, no config) a Coordinator pane that was a handoff target counts as a busy worker: no wake ($LINES $(iw .))"
+        coord_state state-coord-cfg; run --option coordinator.panes:string "$H/wZ:p1"
+        [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: ' <<<"$LINES" && grep -q 'approved issue(s) without a handoff (sammasak/skills#28' <<<"$LINES" && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers) \(.fired)"')" = "true 2 1 true" ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "coordinator.panes: the Coordinator pane is not a worker, its handoff is not a handoff, three idle workers with work left wake ($LINES $(iw .))"
+        coord_state state-coord-from
+        printf '%s\n' "{\"audit_id\":\"xh6\",\"handoff_id\":\"h00000000006\",\"task_ref\":\"#30\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"wT:p1\",\"from\":\"$H/wZ:p1\",\"at\":\"$T3\"}" "{\"audit_id\":\"xh6\",\"handoff_id\":\"h00000000006\",\"phase\":\"outcome\",\"at\":\"$T3\",\"outcome\":\"delivered\"}" >> "$STATE/audit.jsonl"
+        run; [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done' <<<"$LINES" && [ "$(iw .non_workers)" = 1 ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "a pane that sent a handoff (audit from) is a Coordinator pane without config ($LINES $(iw .))"
+        coord_state state-coord-self; HERDR_PANE_ID=wZ:p1 run
+        [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done' <<<"$LINES" && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "the pane running coord:changed is a Coordinator pane (HERDR_PANE_ID) ($LINES $(iw .))"
+        # (16) the cap: a deferred run says so on stderr (reason, next_allowed_at), and an idle-fired wake with work left is
+        #      not held back by the hourly cap (the fingerprint rule bounds it); the min gap still holds it
+        export STATE="$TMP/state-cap"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$TMP/local-full.json" "$LOCAL"
+        BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1'
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle ' <<<"$LINES" && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 1 ] && ok || bad "cap: baseline idle wake ($LINES)"
+        jq '.result.agents += [(.result.agents[0] | .pane_id = "wQ:p1" | .agent_session.value = "qqqq" | .agent_status = "idle" | .state_change_seq = 1 | .terminal_title_stripped = "q")]' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
+        run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true per_hour_cap" ] && grep -q "coord:changed: wake deferred (per_hour_cap) until $(jqr .wake.next_allowed_at); 1 change(s) pending" "$TMP/run.log" && ok || bad "cap: a deferred new-agent line says so on stderr with the reason and next_allowed_at ($LINES $(jqr .wake) $(grep deferred "$TMP/run.log"))"
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 35 '["approved"]'; } | write sammasak__skills.issues.json
+        run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true per_hour_cap" ] && [ "$(jqr '[.wake.pending[].kind] | join(",")')" = "new,idle" ] && grep -q 'coord:changed: wake deferred (per_hour_cap) until' "$TMP/run.log" && ok || bad "cap: an idle-with-work wake held by the hourly cap is not silent: the notice names the reason, the idle line waits under wake.pending ($LINES $(jqr .wake))"
+        BUDGET='--option coordinator.wakeMinGapSeconds:int 300 --option coordinator.wakeMaxPerHour:int 1'
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 35 '["approved"]'; issue sammasak/skills 36 '["approved"]'; } | write sammasak__skills.issues.json
+        run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true min_gap" ] && grep -q 'coord:changed: wake deferred (min_gap) until' "$TMP/run.log" && ok || bad "cap: the min gap still holds an idle-fired wake, and says so ($LINES $(jqr .wake))"
         unset STATE
         # (14) read-only and model-free: list calls only, no prompt, no gh write
         ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|search issues --owner [^ ]+ --label [^ ]+ --state open |pr list -R [^ ]+ --state (open|merged)|issue list -R [^ ]+ --state open)')" = 0 ] && ok || bad "only reads ($(grep '^gh ' "$FAKE_LOG" | grep -vE '^gh (api graphql|pr list|issue list)' | sort -u | head -3))"
@@ -731,6 +771,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -817,6 +858,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
@@ -877,6 +919,7 @@
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh"
