@@ -25,7 +25,15 @@ coordinator cannot write. The send gate (`herdr:message`, see ROLE.md steps
 `needs-decision`, `blocked` and `needs-live`, refuses any label its own audit
 log shows it added, and records who applied the label and when. Nothing in
 this procedure weakens that gate. A quoted or remembered approval is not
-authorization.
+authorization. The owner may delegate approval in config
+(`coordinator.mayApprove`, with `coordinator.approvalDecision` naming the
+owner's quoted decision): then `gh:label approved` may add the label to an
+issue of the owner's repos (never a PR, never over `needs-live`, `blocked`
+or `needs-decision`, only the owner's own open issues), both audit lines cite
+the decision, and the send gate accepts that label only because of those
+lines (`applied_by: coordinator-delegated`, with the `gh:label` `audit_id`),
+only while the delegation is still in force, and only with no hold on the
+issue.
 
 ## One tick
 
@@ -51,6 +59,12 @@ authorization.
    - P3: everything else is reported, not assigned. Items labelled
      `needs-decision`, `blocked` or `needs-live` are never assigned; `blocked`
      items get their blocker re-checked, nothing more.
+   When the owner has delegated approval (`coordinator.mayApprove`), turn P3
+   issues into P1 yourself: pick the ones a worker can finish (no live
+   hardware, no owner hold, not `needs-triage`), approve them in priority
+   order with `gh:label approved`, one issue per call, and in the report
+   list what you approved and what still needs the owner (`needs-live`,
+   `blocked`, `needs-triage`).
 3. **Delegate** P1 items, one handoff per item, while a free worker remains: pick an agent that is `idle` or `done` (never
    `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) on a host with capacity (lenovo: one heavy job,
    control plane only; acer-swift: two, one while a full gate runs). Draft

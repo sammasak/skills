@@ -1,7 +1,9 @@
 # gh:* act tasks: the coordinator's only writes to GitHub. Each one is bounded to a single issue or PR, carries the
 # handoff it serves (or a reason), and appends two lines (attempt, then outcome) to the same audit.jsonl herdr:message
 # writes. The label vocabulary deliberately excludes the labels that authorize a send (see herdr:message): the
-# coordinator must not be able to label an issue into authorizing its own handoff.
+# coordinator must not be able to label an issue into authorizing its own handoff. The one exception is the owner's
+# delegation (coordinator.mayApprove, skills#28): an authorizing label on an issue of the owner's repos, never a PR,
+# never over an owner hold, each act citing the owner's decision so the send gate can tell it from self-authorization.
 { lib, config, ... }:
 let
   cfg = config.coordinator;
@@ -47,16 +49,37 @@ in
 
   tasks = {
     "gh:label" = {
-      description = "ACT: add or remove one owner-protocol label (needs-decision, blocked, needs-live) on OWNER/REPO#N; audited with the handoff or reason. Never a label that authorizes a send.";
+      description = "ACT: add or remove one owner-protocol label (needs-decision, blocked, needs-live) on OWNER/REPO#N; audited with the handoff or reason. An authorizing label (approved) only under the owner's delegation (coordinator.mayApprove): added to an issue of the owner's repos that carries no owner hold, never a PR, citing coordinator.approvalDecision in the audit lines.";
       input = { repo = null; number = null; label = null; action = null; handoff_id = null; reason = null; };
       exec = ''
         ctx='{"task":"gh:label"}'
         ${ghPrelude}
         label=$(input .label); action=$(input .action)
-        case "$label" in needs-decision|blocked|needs-live) ;; *) fail 3 invalid_input "label must be one of needs-decision, blocked, needs-live (the coordinator never writes a label that authorizes a send)" "$ctx" ;; esac
         case "$action" in add|remove) ;; *) fail 3 invalid_input "action must be add or remove" "$ctx" ;; esac
         ctx=$(jq -c --arg l "$label" --arg a "$action" '. + {label:$l, action:$a}' <<<"$ctx")
-        attempt '{}'
+        delegation='{}'
+        if jq -en --arg l "$label" --argjson a ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} '$a | index($l)' >/dev/null; then
+          # an authorizing label: only as the owner's delegate, on an issue the owner has not put on hold
+          ${if cfg.mayApprove then "true" else "false"} || fail 3 not_delegated "label '$label' authorizes a send; the owner has not delegated approval (coordinator.mayApprove is off)" "$ctx"
+          decision=${lib.escapeShellArg (if cfg.approvalDecision == null then "" else cfg.approvalDecision)}
+          valid_decision "$decision" || fail 3 not_delegated "coordinator.mayApprove is on but coordinator.approvalDecision is not the URL of the owner's decision comment (https://github.com/OWNER/REPO/issues/N#issuecomment-ID)" "$ctx"
+          [ "''${repo%%/*}" = ${lib.escapeShellArg cfg.ghOwner} ] || fail 3 not_delegated "delegated approval covers ${cfg.ghOwner}'s repositories only, not $repo" "$ctx"
+          [ "$action" = add ] || fail 3 invalid_input "label '$label' can only be added under delegation; withdrawing an approval is the owner's" "$ctx"
+          errf=$(mktemp); rc=0; issue=$(timeout -k 1 ${t} ${cfg.ghCommand} api "repos/$repo/issues/$num" 2>"$errf" 9>&-) || rc=$?
+          msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+          [ "$rc" -eq 0 ] || fail 2 "$(rc_kind $rc)" "could not read $repo#$num before approving: gh api exited $rc''${msg:+: $msg}" "$ctx"
+          jq -e 'type == "object" and (has("pull_request") | not)' <<<"$issue" >/dev/null 2>&1 || fail 3 invalid_input "$repo#$num is a pull request (or unreadable); delegated approval covers issues only" "$ctx"
+          hold=$(jq -r '[.labels[]? | .name // empty | select(. == "needs-live" or . == "blocked" or . == "needs-decision")] | first // empty' <<<"$issue")
+          [ -z "$hold" ] || fail 3 owner_hold "$repo#$num carries $hold, an owner hold; not approving" "$ctx"
+          [ "$(jq -r '.state // ""' <<<"$issue")" = open ] || fail 3 invalid_input "$repo#$num is not open; not approving" "$ctx"
+          # public repositories accept issues from anyone: only the owner's own issues (every agent posts as the owner) may be approved
+          author=$(jq -r '.user.login // ""' <<<"$issue")
+          [ "$author" = ${lib.escapeShellArg cfg.ghOwner} ] || fail 3 not_delegated "$repo#$num is not the owner's issue (written by ''${author:-?}); delegated approval covers the owner's own issues only" "$ctx"
+          delegation=$(jq -cn --arg d "$decision" --arg a "$author" '{owner_delegation:{may_approve:true, decision:$d, author:$a}}')
+        else
+          case "$label" in needs-decision|blocked|needs-live) ;; *) fail 3 invalid_input "label must be one of needs-decision, blocked, needs-live (an authorizing label only under the owner's delegation, coordinator.mayApprove)" "$ctx" ;; esac
+        fi
+        attempt "$delegation"
         errf=$(mktemp); rc=0
         # the issues API serves PRs too, so one path covers both
         if [ "$action" = add ]; then
@@ -65,7 +88,7 @@ in
           timeout -k 1 ${t} ${cfg.ghCommand} api -X DELETE "repos/$repo/issues/$num/labels/$label" >/dev/null 2>"$errf" 9>&- || rc=$?
         fi
         msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
-        [ "$rc" -eq 0 ] && record done '{}' || record "$(rc_kind $rc)" "$(jq -cn --arg m "gh api exited $rc''${msg:+: $msg}" '{message:$m}')"
+        [ "$rc" -eq 0 ] && record done "$delegation" || record "$(rc_kind $rc)" "$(jq -cn --arg m "gh api exited $rc''${msg:+: $msg}" --argjson d "$delegation" '{message:$m} + $d')"
       '';
     };
 

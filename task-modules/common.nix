@@ -13,6 +13,10 @@ in
     ghCommand = lib.mkOption { type = t.str; default = "gh"; description = "Overridable for tests (fake gh)."; };
     ghLimit = lib.mkOption { type = t.ints.between 1 100; default = 20; description = "Page size for gh list calls and the gh:repos GraphQL query (GitHub caps first at 100)."; };
     ghOwner = lib.mkOption { type = t.str; default = "sammasak"; description = "GitHub login whose repositories gh:repos lists."; };
+    # the owner's delegation of approval (skills#28, 2026-11-04): set in the owner's config, never by the role. With it,
+    # gh:label may add an authorizing label to an issue of the owner's repos, citing the decision in the audit log
+    mayApprove = lib.mkOption { type = t.bool; default = false; description = "Owner delegation: gh:label may add an authorizing label (approved) to the owner's issues; each act cites approvalDecision in audit.jsonl."; };
+    approvalDecision = lib.mkOption { type = t.nullOr t.str; default = null; description = "URL of the owner's quoted decision (an issue comment) that mayApprove rests on; required when mayApprove is true."; };
     # the Coordinator's own panes (host/agent_id, comma-separated): never handoff targets and never workers for the idle
     # wake, together with the pane running the task (HERDR_PANE_ID) and every pane that ever sent a handoff (audit from)
     panes = lib.mkOption { type = t.str; default = ""; description = "Coordinator panes as host/agent_id, comma-separated; the running pane and past senders are added at run time."; };
@@ -65,6 +69,9 @@ in
         if [ "$rc" -ne 0 ]; then jq -cn --arg m "herdr machine list: $(rc_kind $rc) (exit $rc)" '{machines:[], error:{kind:"herdr_error", message:$m}}'; return 0; fi
         jq -c 'if type == "array" then {machines: map(select(type == "object" and .enabled == true and (.label|type) == "string")), error:null} else {machines:[], error:{kind:"malformed", message:"herdr machine list returned no JSON array"}} end' <<<"$raw" 2>/dev/null \
           || jq -cn '{machines:[], error:{kind:"malformed", message:"herdr machine list returned no JSON"}}'; }
+      # valid_decision <url>: the owner's quoted decision is one issue comment (coordinator.approvalDecision, and what a
+      # delegated gh:label act cites in audit.jsonl)
+      valid_decision() { [[ "$1" =~ ^https://github\.com/${cfg.ghOwner}/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*#issuecomment-[1-9][0-9]*$ ]]; }
       # auth_shape <json>: the normalised {issue_url, label, verified:false} of an authorized_by input, or nothing.
       # \z, not $ (jq's $ also matches before a trailing newline).
       auth_shape() { jq -c 'if type == "object" and (.issue_url | type) == "string" and (.issue_url | test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[1-9][0-9]*\\z"))
@@ -72,9 +79,11 @@ in
       # gh_authorize <noun> <verb-ing> <item>: the GitHub gate shared by every act that starts work (herdr:message,
       # coord:spawn). The label in $auth must be on the issue now (the issues API serves PR labels too), must be one the
       # coordinator cannot write (gh:label's vocabulary is refused) and must not have been added by a gh:label act in
-      # $audit; a gh failure is reported, never treated as present. On success $auth gains verified, verified_at and
-      # who labelled it when; otherwise AUTH_EXIT/AUTH_KIND/AUTH_MSG say why and it returns 1.
-      gh_authorize() { local what="$1" doing="$2" item="$3" want_label want_url gh_path gh_repo gh_num errf rc=0 labels gherr events ev
+      # $audit, unless every such act was a delegated approval (an authorizing label added under the owner's delegation,
+      # its outcome line citing the decision: owner_delegation); a gh failure is reported, never treated as present. On
+      # success $auth gains verified, verified_at, who labelled it when, and applied_by (owner, or coordinator-delegated
+      # with the gh:label audit_id); otherwise AUTH_EXIT/AUTH_KIND/AUTH_MSG say why and it returns 1.
+      gh_authorize() { local what="$1" doing="$2" item="$3" want_label want_url gh_path gh_repo gh_num errf rc=0 labels gherr events ev added line delegated=true applied_by=owner deleg='null' deleg_aid=null hold issue
         AUTH_EXIT=2; AUTH_KIND=""; AUTH_MSG=""
         want_label=$(jq -r .label <<<"$auth"); want_url=$(jq -r .issue_url <<<"$auth")
         case "$want_label" in needs-decision|blocked|needs-live) AUTH_KIND=authorization_missing; AUTH_MSG="label '$want_label' is one the coordinator writes itself (gh:label); it cannot authorize a $what. The owner applies the authorizing label"; return 1 ;; esac
@@ -82,18 +91,38 @@ in
         if ! [[ "$gh_path" =~ ^repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$ ]] || [[ "$gh_path" == */./* ]] || [[ "$gh_path" == */../* ]]; then
           AUTH_EXIT=3; AUTH_KIND=invalid_input; AUTH_MSG="authorized_by.issue_url does not name OWNER/REPO and an issue or PR number"; return 1; fi
         gh_repo=$(sed -E 's#^repos/([^/]+/[^/]+)/issues/.*#\1#' <<<"$gh_path"); gh_num=$(sed -E 's#.*/issues/([0-9]+)$#\1#' <<<"$gh_path")
-        if [ -s "$audit" ] && jq -e --arg r "$gh_repo" --argjson n "$gh_num" --arg l "$want_label" \
-            'select(.phase == "gh" and .task == "gh:label" and .action == "add" and .repo == $r and .number == $n and .label == $l and (.stage // "outcome") != "attempt" and (.outcome // "done") != "command_failed" and (.outcome // "done") != "timeout")' "$audit" 2>/dev/null | grep -q .; then
-          AUTH_KIND=authorization_missing; AUTH_MSG="label '$want_label' on $want_url was added by the coordinator (gh:label, see $audit); it cannot authorize a $what"; return 1; fi
+        added=""; [ ! -s "$audit" ] || added=$(jq -c --arg r "$gh_repo" --argjson n "$gh_num" --arg l "$want_label" \
+            'select(.phase == "gh" and .task == "gh:label" and .action == "add" and .repo == $r and .number == $n and .label == $l and (.stage // "outcome") != "attempt" and (.outcome // "done") != "command_failed" and (.outcome // "done") != "timeout")' "$audit" 2>/dev/null) || added=""
+        if [ -n "$added" ]; then
+          while IFS= read -r line; do [ -n "$line" ] || continue
+            [ "$(jq -r '.owner_delegation.may_approve // false' <<<"$line")" = true ] && valid_decision "$(jq -r '.owner_delegation.decision // ""' <<<"$line")" || delegated=false
+          done <<<"$added"
+          if [ "$delegated" = true ] && jq -en --arg l "$want_label" --argjson a ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} '$a | index($l)' >/dev/null; then
+            line=$(tail -1 <<<"$added"); applied_by=coordinator-delegated; deleg_aid=$(jq -c .audit_id <<<"$line"); deleg=$(jq -c .owner_delegation <<<"$line")
+            # the owner's brakes: a delegated approval authorizes only while the delegation is in force (the flag on, the same
+            # decision), on the owner's own issue, and with no hold on it (checked below, after the labels are read)
+            if ! ${if cfg.mayApprove then "true" else "false"} || [ "$(jq -r .decision <<<"$deleg")" != ${lib.escapeShellArg (if cfg.approvalDecision == null then "" else cfg.approvalDecision)} ]; then
+              AUTH_KIND=not_delegated; AUTH_MSG="label '$want_label' on $want_url was added under a delegation that is withdrawn (coordinator.mayApprove off, or coordinator.approvalDecision changed); it cannot authorize a $what"; return 1; fi
+          else AUTH_KIND=authorization_missing; AUTH_MSG="label '$want_label' on $want_url was added by the coordinator (gh:label, see $audit) without the owner's delegation; it cannot authorize a $what"; return 1; fi
+        fi
         errf=$(mktemp); labels=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} api "$gh_path/labels?per_page=100" 2>"$errf" 9>&-) || rc=$?
         gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
         if [ "$rc" -ne 0 ]; then AUTH_KIND=gh_error; AUTH_MSG="could not read the labels of $want_url: gh api exited $rc''${gherr:+: $gherr}; not $doing"; return 1; fi
         if ! jq -e --arg l "$want_label" 'type == "array" and any(.[]; (.name // "") == $l)' <<<"$labels" >/dev/null 2>&1; then
           AUTH_KIND=authorization_missing; AUTH_MSG="label '$want_label' is not on $want_url (present: $(jq -r 'if type == "array" then map(.name // empty) | join(", ") else "unreadable" end' <<<"$labels" 2>/dev/null)); the owner has not authorized this $item, not $doing"; return 1; fi
+        if [ "$applied_by" = coordinator-delegated ]; then
+          hold=$(jq -r '[.[] | .name // empty | select(. == "needs-live" or . == "blocked" or . == "needs-decision")] | first // empty' <<<"$labels")
+          if [ -n "$hold" ]; then AUTH_KIND=owner_hold; AUTH_MSG="$want_url carries $hold, an owner hold, over a coordinator-delegated '$want_label'; not $doing"; return 1; fi
+          errf=$(mktemp); rc=0; issue=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} api "$gh_path" 2>"$errf" 9>&-) || rc=$?
+          gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+          if [ "$rc" -ne 0 ]; then AUTH_KIND=gh_error; AUTH_MSG="could not read $want_url to check its author: gh api exited $rc''${gherr:+: $gherr}; not $doing"; return 1; fi
+          if [ "$(jq -r '.user.login // ""' <<<"$issue" 2>/dev/null)" != ${lib.escapeShellArg cfg.ghOwner} ]; then
+            AUTH_KIND=not_delegated; AUTH_MSG="$want_url is not the owner's issue (written by $(jq -r '.user.login // "?"' <<<"$issue" 2>/dev/null)); a delegated '$want_label' never authorizes it, not $doing"; return 1; fi
+        fi
         # who applied it and when, from the issue's label events (best effort: a missing or paginated-away event is null, not a refusal)
         events=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} api "$gh_path/events?per_page=100" 2>/dev/null 9>&-) || events="[]"
         ev=$(jq -c --arg l "$want_label" 'if type == "array" then ([.[] | select(.event == "labeled" and (.label.name // "") == $l)] | last // null) else null end | if . == null then {labeled_at:null, labeled_by:null} else {labeled_at:(.created_at // null), labeled_by:(.actor.login // null)} end' <<<"$events" 2>/dev/null) || ev='{"labeled_at":null,"labeled_by":null}'
-        auth=$(jq -c --arg at "$(now_iso)" --argjson ev "$ev" '. + {verified:true, verified_at:$at} + $ev' <<<"$auth"); }
+        auth=$(jq -c --arg at "$(now_iso)" --argjson ev "$ev" --arg ab "$applied_by" --argjson da "$deleg_aid" --argjson d "$deleg" '. + {verified:true, verified_at:$at} + $ev + {applied_by:$ab, delegation_audit_id:$da, owner_delegation:$d}' <<<"$auth"); }
       # gh_work_json <OWNER/REPO>: the gh:work record (open issues, open+merged PRs, truncation) or an error record;
       # never exits, so coord:brief can call it per active repo and gh:work can emit it
       gh_work_json() { local gh="$1" ctx at rc=0 issues open_prs merged_prs prs trunc fields out errf msg

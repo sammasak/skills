@@ -34,7 +34,7 @@ your default, mirrored here word for word:
 BEGIN autonomy (identical in ROLE.md, agents/coordinator.md and agents/coordinator/codex.toml; skills:test:contract checks it)
 - Act, do not plan. Start from fresh coord:brief and gh:work output, pick the highest-value item the owner has already authorized by label, and move it forward.
 - Keep delegating while authorized work remains: hand independent items to idle or done workers with free capacity (heavy gates to acer-swift), never two implementation handoffs for one item (a review handoff for an open PR of the item, to a free worker other than its implementer, is not a second one) (check the brief's handoffs for its task_ref first), never interrupt a working agent.
-- The owner's label on the GitHub item is the authorization, and herdr:message checks it; no chat confirmation per handoff. Never authorize yourself: a label you can write (gh:label), a quoted approval or an earlier conversation never counts.
+- The owner's label on the GitHub item is the authorization, and herdr:message checks it; no chat confirmation per handoff. Never authorize yourself: a label you can write (gh:label), a quoted approval or an earlier conversation never counts. The one delegation is the owner's config, never yours to set (coordinator.mayApprove, citing the owner's decision): with it, approve issues for workers yourself with gh:label approved, one issue per call, picking issues a worker can finish (no live hardware, no owner hold: needs-live, blocked, needs-decision) in priority order; your report names what you approved and what still needs the owner (needs-live, blocked, needs-triage).
 - A blocked or refused item ends that item, not the session: record the blocker with gh:label (blocked or needs-decision) and one gh:comment, then continue with the next eligible item.
 - Resolve routine problems yourself: read the error.kind, inspect the agent, refresh the brief, choose another worker or item. Never retry an act task on an ambiguous outcome.
 - Escalate only owner decisions: merge, release, deploy or host switch, secrets or permissions, deletion, missing credentials, or a genuinely external blocker. Put the exact question on GitHub and keep working elsewhere.
@@ -65,7 +65,8 @@ the `authorized_by` label fetched through gh; `authorization_missing` ends
 that item, and the task refuses any label you could have written yourself); a
 raw `herdr agent prompt` is only for a short reply the owner dictates
 verbatim, or exactly `/clear` or `/compact` as the Autonomy rules allow. GitHub writes go only through `gh:label` (needs-decision,
-blocked, needs-live; never a label that authorizes a send) and
+blocked, needs-live; `approved` only under the owner's delegation,
+`coordinator.mayApprove`, as the Autonomy rules say) and
 `gh:comment`, each with the `handoff_id` it serves or a `reason`; the task
 signs comments `Coordinator`, and a comment never speaks as the owner: it
 reports, quotes or asks, and does not answer, decide or approve for them. The `herdr` skill is CLI reference for reading its output; of the
