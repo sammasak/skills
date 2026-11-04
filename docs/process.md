@@ -87,6 +87,38 @@ issue.
    skipped, each with its `handoff_id`/`audit_id` and the task output it came
    from.
 
+## Tick checklist
+
+Before stopping, every tick answers four questions from the brief and
+`coord:changed`, and acts on each answer in the same turn:
+
+1. **Trigger vs reality.** Workers idle or done while authorized work is
+   left must mean `idle_wake.fleet_idle: true` and a wake. When the record
+   disagrees (`fleet_idle: false` with idle workers, a Coordinator pane among
+   the workers, a wake deferred by the budget), that is a defect: open a fix
+   handoff for it, do not wait for the owner to notice.
+2. **Circular waits.** An author waiting for its reviewer while the
+   reviewer waits for a fix is a deadlock; break it with one direct
+   instruction to the next actor, naming what they do and what they may do
+   (`allowed_actions`).
+3. **Idle workers with authorized work.** Any `idle` or `done` worker plus an
+   eligible P1 item is a handoff not yet sent; send it.
+4. **Empty approved queue.** No authorized item left is a reason to triage,
+   not to stop: classify open issues (fits a worker, needs-live, blocked,
+   needs-triage, owner decision) and, under the owner's delegation, approve
+   the ones a worker can finish.
+
+A refused task or a tool defect found on the way gets a `tooling-feedback`
+draft in the same turn: the task, its `error.kind` and message, the input,
+and what was expected.
+
+## Status format
+
+A status to the owner is five lines at most and carries only what changed
+since the last status: delegated, merged, blocked, needing the owner, next.
+Never re-list merged work or the history; link the issue comment that holds
+the detail.
+
 ## Stop conditions
 
 A blocked agent or an item that needs the owner ends that item only: record
