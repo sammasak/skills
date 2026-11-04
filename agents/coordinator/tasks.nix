@@ -96,14 +96,16 @@ in
             [ -n "$repo" ] || continue
             if [ "$(jq -r length <<<"$active")" -ge ${toString cfg.portfolioActive} ]; then skipped=$(jq -c --arg r "$repo" '. + [$r]' <<<"$skipped"); continue; fi
             w=$(gh_work_json "$repo")
-            active=$(jq -c --argjson w "$w" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson may ${lib.boolToString cfg.mayApprove} --argjson r "$(jq -c --arg r "$repo" '[.repos[] | select(.repo == $r)] | first' <<<"$repos")" \
+            active=$(jq -c --argjson w "$w" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson may ${lib.boolToString cfg.mayApprove} --arg o ${lib.escapeShellArg cfg.ghOwner} --argjson r "$(jq -c --arg r "$repo" '[.repos[] | select(.repo == $r)] | first' <<<"$repos")" \
               '. + [$r + {error:$w.error, truncated:($w.truncated // false),
                           approved:([$w.issues[]? | select(any((.labels // [])[]; . as $l | ($labels | index($l)) != null)) | {number, title, url, labels}]),
-                          # under the delegation (coordinator.mayApprove): what gh:label may approve (open, no authorizing label, no hold; the task
-                          # itself still checks the author and the state at approval time)
-                          approvable:(if $may then [$w.issues[]? | select((.state // "OPEN") == "OPEN") | select(any((.labels // [])[]; . as $l | ($labels | index($l)) != null or (. == "needs-live" or . == "blocked" or . == "needs-decision" or . == "needs-triage")) | not) | {number, title, url, labels}] else [] end),
+                          # under the delegation (coordinator.mayApprove): what gh:label may approve (open, the owner wrote it, no authorizing
+                          # label, no hold; the task checks author and state again at approval time)
+                          approvable:(if $may then [$w.issues[]? | select((.state // "OPEN") == "OPEN") | select((.author // "") == $o) | select(any((.labels // [])[]; . as $l | ($labels | index($l)) != null or (. == "needs-live" or . == "blocked" or . == "needs-decision" or . == "needs-triage")) | not) | {number, title, url, labels}] else [] end),
                           open_pr_list:([$w.prs[]? | select(.state == "OPEN") | {number, title, url, review_decision, draft, checks}])}]' <<<"$active")
-          done < <(jq -r '.repos[] | select(.active) | .repo' <<<"$repos")
+          # repos holding authorized work (an open PR or an authorizing label) are expanded first, delegation-only ones after,
+          # newest push first within each group, so the cap never drops authorized work for unlabelled issues
+          done < <(jq -r '[.repos[] | select(.active)] | sort_by(if .open_prs > 0 or .approved_issues > 0 then 0 else 1 end) | .[] | .repo' <<<"$repos")
         fi
         portfolio=$(jq -cn --arg o "${cfg.ghOwner}" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson may ${lib.boolToString cfg.mayApprove} --argjson t "$ptotal" --argjson l "$plisted" --argjson tr "$ptrunc" --argjson a "$active" --argjson s "$skipped" --argjson e "$portfolio_err" --argjson se "$search_err" \
           '{owner:$o, authorizing_labels:$labels, may_approve:$may, repos_total:$t, repos_listed:$l, truncated:$tr, active:$a, skipped_active:$s, error:$e, search_error:$se}')
