@@ -161,9 +161,13 @@ session's read) neither consumes nor spends, so it never takes a change away
 from the timer.
 
 The `idle` line is the one change that needs no transition: when every
-agent on every answering host is idle or done (none working, blocked or
-unknown; an unreachable host or an empty fleet is not idle) and work is left,
-the Coordinator is woken with no human. Work is any of: an open PR in an
+worker on every answering host is idle or done (none working, blocked or
+unknown; an unreachable host or a fleet without a known worker is not idle)
+and work is left, the Coordinator is woken with no human. The workers are
+the panes a handoff was sent to (`audit.jsonl` attempt lines, as
+`host/agent_id`) plus `coordinator.workers`; the Coordinator's own panes and
+the wake session never receive a handoff, so they never keep the fleet busy
+(`idle_wake.non_workers` counts them in `latest.json`). Work is any of: an open PR in an
 active repo (`gh:repos`, newest push first, at most `portfolioActive` repos)
 or in an open-handoff repo without a signed 9/10 or more on its current head
 by someone other than the agent whose handoff it answers; an issue carrying
@@ -172,7 +176,7 @@ handoff of the last `openHandoffDays` with no merged PR for its issue opened
 after the send. The fleet test is free; GitHub lists (open PRs with comments,
 open issues, and merged PRs for handoff repos) are fetched only once the
 fleet is idle. The line prints once per distinct fleet+work fingerprint
-(the agents by pane plus the work items; a new session in the same pane is the same agent) and not again until that
+(the workers by pane plus the work items; a new session in the same pane is the same worker) and not again until that
 fingerprint differs from the last one printed: a worker flapping between
 working and idle, or the same work seen again, never repeats it, while new
 work, a review landing, or the fleet changing does. It counts against the

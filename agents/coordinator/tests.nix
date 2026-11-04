@@ -536,7 +536,7 @@
       '';
     };
     "skills:test:tasks:coord-idle" = {
-      description = "coord:changed F1: an idle fleet (every agent idle/done, every host answering) with work left (open PR without an independent 9/10 on its head, approved issue without a handoff, unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
+      description = "coord:changed F1: an idle fleet (every worker idle/done, every host answering; the Coordinator's own panes are not workers) with work left (open PR without an independent 9/10 on its head, approved issue without a handoff, unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -563,7 +563,8 @@
         snapq() { jq -r "$1" "''${STATE:-$TMP/state}/changed/snapshot.json"; }
         fp() { snapq '.idle_wake.fingerprint | tojson'; }
         idle_line() { grep -E '^idle ' <<<"$LINES" || true; }
-        # the fleet: wF:p1 idle (holds handoff h2), wT:p1 done (holds h1), wZ:p1 working and without a handoff
+        # the fleet: wF:p1 idle (holds handoff h2), wT:p1 done (holds h1); wZ:p1 is the Coordinator's own pane: working the
+        # whole suite long and never a handoff target, so it is not a worker and never keeps the fleet busy
         LOCAL="$TMP/local.json"
         jq '.result.agents[0].agent_status = "idle" | .result.agents += [(.result.agents[0] | .pane_id = "wZ:p1" | .agent_session.value = "zzzz" | .agent_status = "working" | .state_change_seq = 3 | .terminal_title_stripped = "scratch")]' "$FX/herdr/local-two-agents.json" > "$LOCAL"
         export FAKE_HERDR_LIST="$LOCAL"
@@ -592,22 +593,28 @@
         pr sammasak/nixos-config 119 OPEN "$H119" "$T2" null "coordinator-read" '[]' '["9/10 at `0ddba11` (an older head) -- acer-swift wR:p1"]' | write sammasak__nixos-config.prs.json
         : | write sammasak__nixos-config.issues.json
         mkdir -p "$TMP/state"; AUDIT="$TMP/state/audit.jsonl"
-        handoff() { # <id> <agent> <ref> <at> <issue-number>: one delivered handoff to a pane on this host, authorized by a skills issue
-          printf '%s\n' "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"task_ref\":\"$3\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"$2\",\"at\":\"$4\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/$5\",\"label\":\"approved\"}}" \
+        handoff() { # <id> <agent> <ref> <at> <issue-number> [host]: one delivered handoff to a pane (this host unless named), authorized by a skills issue
+          printf '%s\n' "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"task_ref\":\"$3\",\"phase\":\"attempt\",\"host\":\"''${6:-$H}\",\"machine\":null,\"agent_id\":\"$2\",\"at\":\"$4\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/$5\",\"label\":\"approved\"}}" \
             "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$4\",\"outcome\":\"delivered\"}" >> "$AUDIT"; }
         handoff h00000000001 wT:p1 "#30" "$T0" 30   # verified by the merged #62 (closes #30, opened after the send)
         handoff h00000000002 wF:p1 "#31" "$T0" 31   # #64 names it but is open: unverified
         WORK1='3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64), 2 approved issue(s) without a handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
 
-        # (1) a busy fleet: no idle line, and GitHub lists are not even fetched (gh:repos runs upstream regardless)
+        # (0) no worker known (an empty audit log, nothing configured): idle agents are not an idle fleet, no GitHub list is fetched
+        STATE="$TMP/state0" run
+        [ "$CODE" -eq 0 ] && [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers) \(.evaluated)"')" = "false 0 3 false" ] && ! grep -qE '^gh (pr|issue) list' "$FAKE_LOG" && ok || bad "no workers known: not idle ($LINES $(iw .))"
+        # (1) a busy fleet (a worker working; the Coordinator's pane works throughout): no idle line, and GitHub lists are not
+        #     even fetched (gh:repos runs upstream regardless)
+        set_agent wF:p1 '.agent_status = "working" | .state_change_seq = 3'
         run
-        [ "$CODE" -eq 0 ] && [ "$(jqr .baseline)" = true ] && [ -z "$(idle_line)" ] && [ "$(iw '.fleet_idle')" = false ] && [ "$(iw '.evaluated')" = false ] && ok || bad "busy fleet at baseline: no idle line ($LINES) $(iw .)"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .baseline)" = true ] && [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers)"')" = "false 2 1" ] && [ "$(iw '.evaluated')" = false ] && ok || bad "busy fleet at baseline: no idle line ($LINES) $(iw .)"
         ! grep -qE '^gh (pr|issue) list' "$FAKE_LOG" && ok || bad "a busy fleet fetches no GitHub lists ($(grep -E '^gh (pr|issue) list' "$FAKE_LOG" | head -3))"
-        # (2) the last worker goes idle: exactly one line, every work kind named and sorted, the fingerprint stored
-        set_agent wZ:p1 '.agent_status = "idle" | .state_change_seq = 4'
+        # (2) the last worker goes idle while the Coordinator's own pane keeps working: its settled line (it holds h2) and
+        #     one idle line with every work kind named and sorted, the fingerprint stored
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq = 4'
         run
-        [ "$CODE" -eq 0 ] && [ "$(nlines)" = 1 ] && [ "$LINES" = "idle 3 agents idle/done on 1 host(s); work left: $WORK1" ] && ok || bad "idle fleet with work: one idle line ($LINES)"
-        [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired) \(.skipped)"')" = "true true true null" ] && [ "$(jqr '.changes[0].kind')" = idle ] && [ "$(fp)" != null ] && ok || bad "idle_wake record and fingerprint ($(iw .) fp=$(fp))"
+        [ "$CODE" -eq 0 ] && [ "$(nlines)" = 2 ] && [ "$(tail -n 1 <<<"$LINES")" = "idle 2 worker(s) idle/done on 1 host(s); work left: $WORK1" ] && grep -q "^settled $H/wF:p1 #31 handoff h00000000002 idle" <<<"$LINES" && ok || bad "idle workers with work, Coordinator working: settled + one idle line ($LINES)"
+        [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired) \(.skipped) \(.non_workers)"')" = "true true true null 1" ] && [ "$(jqr '[.changes[].kind] | join(" ")')" = "settled idle" ] && [ "$(fp)" != null ] && ok || bad "idle_wake record and fingerprint ($(iw .) fp=$(fp))"
         [ "$(iw '[.work.open_prs, .work.approved_issues, .work.unverified_handoffs | length] | join(" ")')" = "3 2 1" ] && [ "$(iw '.work.open_prs | join(" ")')" = "sammasak/nixos-config#119 sammasak/skills#60 sammasak/skills#64" ] && ok || bad "work lists in latest.json ($(iw .work))"
         grep -q '^gh pr list -R sammasak/skills --state open' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/skills --state merged' "$FAKE_LOG" && grep -q '^gh issue list -R sammasak/skills' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/nixos-config --state open' "$FAKE_LOG" \
           && ! grep -q 'sammasak/nixos-config --state merged' "$FAKE_LOG" && ! grep -q 'sammasak/quiet' "$FAKE_LOG" && ok || bad "lists per active repo, merged only for a handoff repo, nothing for an inactive one ($(grep -E '^gh (pr|issue) list' "$FAKE_LOG" | sort -u))"
@@ -615,18 +622,22 @@
         # (3) nothing moved: the same fingerprint never fires again
         run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.fired)"')" = "true false" ] && [ "$(fp)" = "$FP1" ] && ok || bad "same fingerprint: silent ($LINES)"
         # (4) a flapping worker (working, idle, working, idle) with the same work left never fires again
-        for s in working idle working idle; do set_agent wZ:p1 ".agent_status = \"$s\" | .state_change_seq += 1"; run; [ -z "$LINES" ] || bad "flapping worker ($s): $LINES"; done
+        for s in working idle working idle; do set_agent wF:p1 ".agent_status = \"$s\" | .state_change_seq += 1"; run; [ -z "$LINES" ] || bad "flapping worker ($s): $LINES"; done
         [ "$(fp)" = "$FP1" ] && [ "$(jq 'length' "$TMP/state/changed/wakes.json")" = 1 ] && ok || bad "flapping spends no wake (wakes $(jq -c . "$TMP/state/changed/wakes.json"))"
-        # (4b) a worker's session changing (/clear, a harness restart) in the same pane is the same fleet: silent; a new pane is not
-        set_agent wZ:p1 '.agent_session.value = "zzzz-after-clear" | .state_change_seq += 1'
+        # (4b) a worker's session changing (/clear, a harness restart) in the same pane is the same fleet: silent; a new pane
+        #      is not a worker until a handoff reaches it (its new line prints, the fleet is unchanged); once it is, the
+        #      fleet grew and fires; gone again, the earlier fleet fingerprint is back
+        set_agent wF:p1 '.agent_session.value = "ffff-after-clear" | .state_change_seq += 1'
         run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(fp)" = "$FP1" ] && ok || bad "a new session in the same pane keeps the fingerprint ($LINES)"
         jq '.result.agents += [(.result.agents[0] | .pane_id = "wY:p1" | .agent_session.value = "yyyy" | .agent_status = "idle" | .state_change_seq = 1 | .terminal_title_stripped = "fresh")]' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
-        run; grep -q '^idle 4 agents idle/done on 1 host(s); work left: ' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "a new pane is a new fleet: fires ($LINES)"
+        run; [ "$LINES" = "new $H/wY:p1 - claude idle seq 1" ] && [ "$(fp)" = "$FP1" ] && [ "$(iw .non_workers)" = 2 ] && ok || bad "a new pane without a handoff is not a worker: the fleet is unchanged ($LINES)"
+        handoff h00000000003 wY:p1 "#30" "$T0" 30   # verified like h1, so only the fleet changes
+        run; grep -q '^idle 3 worker(s) idle/done on 1 host(s); work left: ' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && [ "$(iw .non_workers)" = 1 ] && ok || bad "a handoff makes the pane a worker: a new fleet fires ($LINES)"
         jq 'del(.result.agents[] | select(.pane_id == "wY:p1"))' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
         run; [ "$(fp)" = "$FP1" ] && ok || bad "the pane gone again: the earlier fleet fingerprint ($LINES)"
         # (5) new work (another ungraded PR) is a new fingerprint: one line, listing capped at three refs; then silence
         pr sammasak/skills 65 OPEN 6565656565656565656565656565656565656565 "$T3" null "more" '[]' '[]' | skills_prs
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle 3 agents idle/done on 1 host(s); work left: 4 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64, +1 more), 2 approved' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "new work fires once, refs capped ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 4 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64, +1 more), 2 approved' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "new work fires once, refs capped ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "new work: silent after ($LINES)"
         # (6) a grade arrives on #60's head from another agent: the work set shrinks, which is a new fingerprint
         { pr sammasak/skills 65 OPEN 6565656565656565656565656565656565656565 "$T3" null "more" '[]' '[]'; } | skills_prs
@@ -647,22 +658,23 @@
         FPX=$(fp)
         FAKE_GH_LIST_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'gh pr list' && [ "$(fp)" = "$FPX" ] && ok || bad "gh list failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.evaluated) \(.fired)"')" = "false false" ] && iw .skipped | grep -q 'gh:repos' && ok || bad "gh:repos failure: skipped, logged, no wake ($LINES $(iw .))"
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle 3 agents idle/done on 1 host(s); work left: 1 approved issue(s) without a handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 1 approved issue(s) without a handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
         FP8=$(fp)
-        # (9) a blocked agent is not idle: its own line, no idle line; back to idle with the same work: silent
-        set_agent wZ:p1 '.agent_status = "blocked" | .state_change_seq += 1'
+        # (9) a blocked worker is not idle: its own line, no idle line; back to idle with the same work: silent
+        set_agent wF:p1 '.agent_status = "blocked" | .state_change_seq += 1'
         run; [ "$(nlines)" = 1 ] && grep -q '^blocked ' <<<"$LINES" && [ "$(iw .fleet_idle)" = false ] && ok || bad "blocked is not idle ($LINES)"
-        set_agent wZ:p1 '.agent_status = "idle" | .state_change_seq += 1'
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq += 1'
         run; [ -z "$LINES" ] && [ "$(fp)" = "$FP8" ] && ok || bad "unblocked, same work: silent ($LINES)"
-        # (10) a saved machine that does not answer keeps the fleet from being idle; its agents count once it answers
+        # (10) a saved machine that does not answer keeps the fleet from being idle; its workers count once it answers
+        handoff h00000000004 wA:p2 "#30" "$T0" 30 acer-swift   # the remote pane is a worker (verified handoff: only the fleet changes)
         export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]'
         FAKE_HERDR_EXIT_acer_swift=1 run; [ "$CODE" -eq 0 ] && [ -z "$(idle_line)" ] && [ "$(iw .fleet_idle)" = false ] && ok || bad "unreachable host: not idle ($LINES $(iw .))"
         REMOTE="$TMP/remote.json"; jq '(.result.agents[] | select(.pane_id == "wA:p2")) |= (.agent_status = "idle" | .state_change_seq = 41)' "$FX/herdr/remote-ok.json" > "$REMOTE"
         FAKE_HERDR_LIST_acer_swift="$FX/herdr/remote-ok.json" run; [ -z "$(idle_line)" ] && [ "$(iw .fleet_idle)" = false ] && ok || bad "a blocked remote agent: not idle ($LINES)"
-        FAKE_HERDR_LIST_acer_swift="$REMOTE" run; [ "$(nlines)" = 1 ] && grep -q '^idle 4 agents idle/done on 2 host(s); work left: 1 approved issue(s)' <<<"$LINES" && ok || bad "the fleet grew and is idle: a new fingerprint fires ($LINES)"
+        FAKE_HERDR_LIST_acer_swift="$REMOTE" run; [ "$(nlines)" = 2 ] && grep -q '^settled acer-swift/wA:p2 #30 handoff h00000000004 idle' <<<"$LINES" && grep -q '^idle 3 worker(s) idle/done on 2 host(s); work left: 1 approved issue(s)' <<<"$LINES" && ok || bad "the fleet grew and is idle: a new fingerprint fires ($LINES)"
         export FAKE_HERDR_MACHINES='[]'
-        run; [ "$(nlines)" = 2 ] && grep -q '^host acer-swift no longer listed' <<<"$LINES" && grep -q '^idle 3 agents' <<<"$LINES" && [ "$(fp)" = "$FP8" ] && ok || bad "the fleet shrank with the same work: a different fingerprint than the last fired one, so one idle line ($LINES $(iw .) fp=$(fp) FP8=$FP8)"
-        # (11) no agents at all is not an idle fleet
+        run; [ "$(nlines)" = 2 ] && grep -q '^host acer-swift no longer listed' <<<"$LINES" && grep -q '^idle 2 worker(s)' <<<"$LINES" && [ "$(fp)" = "$FP8" ] && ok || bad "the fleet shrank with the same work: a different fingerprint than the last fired one, so one idle line ($LINES $(iw .) fp=$(fp) FP8=$FP8)"
+        # (11) no agents at all is not an idle fleet (nor a listing with only non-workers, as (0) showed)
         cp "$LOCAL" "$TMP/local-full.json"; jq '.result.agents = []' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
         run; [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents)"')" = "false 0" ] && ok || bad "no agents: not idle ($LINES $(iw .))"
         cp "$TMP/local-full.json" "$LOCAL"; run

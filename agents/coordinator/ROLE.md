@@ -154,7 +154,8 @@ END autonomy
    handoffs against its last snapshot, prints nothing when nothing is
    actionable and one line per change otherwise (`blocked`, `settled`,
    `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`, and
-   `idle`: every agent idle or done while an open PR without an independent
+   `idle`: every worker idle or done (the panes handoffs went to, never
+   your own) while an open PR without an independent
    9/10 on its head, an authorized issue without a handoff or an unverified
    handoff is left, printed once per fleet+work fingerprint). Only
    the timer's form, `--input-json '{"consume":true}'`, moves the snapshot
