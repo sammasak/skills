@@ -52,7 +52,7 @@ authorization.
      `needs-decision`, `blocked` or `needs-live` are never assigned; `blocked`
      items get their blocker re-checked, nothing more.
 3. **Delegate** P1 items, one handoff per item, while a free worker remains: pick an agent that is `idle` or `done` (never
-   `blocked`, never `working`) on a host with capacity (lenovo: one heavy job,
+   `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) on a host with capacity (lenovo: one heavy job,
    control plane only; acer-swift: two, one while a full gate runs). Draft
    with `coord:handoff`, `allowed_actions` limited to what the label grants
    (reading, committing, opening a PR and `comment` for ordinary work; `merge`,

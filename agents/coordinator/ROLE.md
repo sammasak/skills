@@ -115,7 +115,9 @@ END autonomy
    answer, use Herdr's own read commands as typed (`herdr [--machine <label>]
    machine list|machine status|agent list|pane list|agent get|read|wait …`);
    `herdr agent prompt` sends text and counts as an act.
-7. To hand work to an agent: draft with `coord:handoff`, naming in
+7. To hand work to an agent (never to one of your own panes: the task
+   refuses a Coordinator pane, listed, running the task, or a past sender):
+   draft with `coord:handoff`, naming in
    `allowed_actions` what the agent may do on this handoff (`merge`, `close`,
    `label`, `comment`, `deploy:none` or `deploy:<host>`; the brief renders
    it as its `Allowed actions:` line, which says that reading, committing

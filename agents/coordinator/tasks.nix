@@ -104,7 +104,7 @@ in
         fi
         portfolio=$(jq -cn --arg o "${cfg.ghOwner}" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson t "$ptotal" --argjson l "$plisted" --argjson tr "$ptrunc" --argjson a "$active" --argjson s "$skipped" --argjson e "$portfolio_err" --argjson se "$search_err" \
           '{owner:$o, authorizing_labels:$labels, repos_total:$t, repos_listed:$l, truncated:$tr, active:$a, skipped_active:$s, error:$e, search_error:$se}')
-        brief=$(jq -c --argjson p "$portfolio" '. + {task:"coord:brief", portfolio:$p}' <<<"$ws")
+        brief=$(jq -c --argjson p "$portfolio" --argjson g ${toString cfg.wakeMinGapSeconds} --argjson c ${toString cfg.wakeMaxPerHour} '. + {task:"coord:brief", portfolio:$p, wake_budget:{min_gap_seconds:$g, max_per_hour:$c}}' <<<"$ws")
         printf '%s\n' "$brief" > "$dir/latest.json.tmp" && mv "$dir/latest.json.tmp" "$dir/latest.json"
         printf '%s\n' "$brief" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
         # the Markdown is the default read (latest.md): devenv's stdout carries every task's JSON, which the runbook's
@@ -112,6 +112,7 @@ in
         jq -r --arg f "$dir/latest.json" '
           "# Fleet brief (\(.observed_at))",
           "", "Hosts: this one" + (if .machines_configured > 0 then " + \(.machines_configured) saved herdr machine(s)" else " only (`herdr machine add` adds workers)" end) + "; \(.answered_hosts)/\(.hosts_total) answered",
+          "Wake budget: at most \(.wake_budget.max_per_hour) session(s) an hour, \(.wake_budget.min_gap_seconds) s apart (coordinator.wakeMaxPerHour, coordinator.wakeMinGapSeconds)",
           (if .partial then "", "**Partial:** " + ([.failed_sources[] | "\(.source): \(.error.kind) — \(.error.message)"] | join("; ")) else empty end),
           "", "## Needs you",
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else (.[0:10] | map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))")) + (if length > 10 then ["… \(length - 10) more needing you in the JSON"] else [] end) end)[]),
@@ -156,6 +157,9 @@ in
           || fail 3 invalid_input "agent_id, task_ref, scope, expected_evidence, acceptance and allowed_actions are required (machine for a remote agent)" "$ctx"
         [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "machine label has unsafe characters" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "agent_id has unsafe characters" "$ctx"
+        # never to the Coordinator itself: a handoff to its own pane made that pane a "worker" that is always working (skills#28)
+        jq -e --arg t "$host/$agent" 'index($t) | not' <<<"$(coordinator_panes "${cfg.stateDir}/audit.jsonl")" >/dev/null \
+          || fail 3 invalid_input "$host/$agent is a Coordinator pane (coordinator.panes, the pane running this task, or a past sender in the audit log); handoffs go to workers only" "$ctx"
         [[ "$ref" =~ ^#[0-9]+$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
         for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 4000 ] || fail 3 invalid_input "a field exceeds 4000 characters" "$ctx"; done
         # allowed_actions: a non-empty list (at most 8) of distinct actions the agent may take beyond reading, committing and

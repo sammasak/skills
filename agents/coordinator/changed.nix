@@ -86,13 +86,18 @@ in
             | from_entries' "$audit" > "$tmpd/open.json" 2>/dev/null; then audit_state=ok; else printf '{}\n' > "$tmpd/open.json"; audit_state=unreadable; fi
       fi
 
-      # workers: every pane a handoff was attempted to (any age, any outcome) plus coordinator.workers; the inventory
-      # decides which of them exist right now
+      # the Coordinator's own panes (config, the running pane, past senders) are never workers, and a handoff that reached one
+      # (a mistake this check now refuses) is not an open handoff: it must not keep the fleet busy or count as work (skills#28)
+      coordinator_panes "$audit" > "$tmpd/panes.json"
+      jq -c --slurpfile P "$tmpd/panes.json" 'with_entries(select((.value.host + "/" + .value.agent_id) as $p | ($P[0] | index($p)) == null))' "$tmpd/open.json" > "$tmpd/open.tmp" && mv "$tmpd/open.tmp" "$tmpd/open.json"
+      # workers: every pane a handoff was attempted to (any age, any outcome) plus coordinator.workers, minus the Coordinator's
+      # panes; the inventory decides which of them exist right now
       printf '%s\n' ${lib.escapeShellArg (builtins.toJSON cfg.workers)} > "$tmpd/workers.json"
       if [ -s "$audit" ]; then
         jq -sc --slurpfile W "$tmpd/workers.json" '[.[] | select(type == "object" and .phase == "attempt" and (.host | type) == "string" and (.agent_id | type) == "string") | .host + "/" + .agent_id] + $W[0] | unique' "$audit" > "$tmpd/workers.tmp" 2>/dev/null \
           && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
       fi
+      jq -c --slurpfile P "$tmpd/panes.json" '. - $P[0]' "$tmpd/workers.json" > "$tmpd/workers.tmp" && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
 
       # the previous snapshot: absent means baseline; unreadable means the baseline is rebuilt and the owner is told
       baseline=false; reset=false; printf '{}\n' > "$tmpd/prev.json"
@@ -207,8 +212,8 @@ in
         .closed_handoffs += ([$C[0][] | select(.kind == "settled" or .kind == "gone" or .kind == "replaced") | {key:.handoff_id, value:{kind, at:$at}}] | from_entries)
         | if $W[0].fired then .idle_wake = {fingerprint:$W[0].fingerprint, at:$at} else . end' "$tmpd/cur.json" > "$tmpd/next.json" || fail 2 malformed "snapshot update failed" "$ctx"
       jq -cn --arg at "$at" --argjson b "$baseline" --argjson r "$reset" --argjson ck "$consume" --arg rs "$repos_src" --arg as "$audit_state" --arg s "$snap" \
-         --slurpfile C "$tmpd/changes.json" --slurpfile I "$tmpd/inv.json" --slurpfile N "$tmpd/next.json" --slurpfile W "$tmpd/idle.json" '
-        {schema_version:1, task:"coord:changed", observed_at:$at, baseline:$b, snapshot_reset:$r, consume:$ck, snapshot:$s,
+         --slurpfile C "$tmpd/changes.json" --slurpfile I "$tmpd/inv.json" --slurpfile N "$tmpd/next.json" --slurpfile W "$tmpd/idle.json" --slurpfile P "$tmpd/panes.json" '
+        {schema_version:1, task:"coord:changed", observed_at:$at, baseline:$b, snapshot_reset:$r, consume:$ck, snapshot:$s, coordinator_panes:$P[0],
          sources:{herdr:{answered_hosts:($I[0].answered_hosts // 0), hosts_total:($I[0].hosts_total // 0)}, repos:$rs, audit:$as},
          open_handoffs:(($N[0].open_handoffs | length) - ($N[0].closed_handoffs | length)), idle_wake:$W[0], changes:$C[0]}' > "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
       # the wake budget (wakes.json: epoch seconds of past printing runs, pruned to the window): a printing run within the
@@ -225,6 +230,8 @@ in
       fi
       wake=$(jq -cn --argjson d "$deferred" --argjson r "$reason" --argjson n "$next_at" --argjson h "$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")" --argjson g "$gap" --argjson c "$cap" \
         '{deferred:$d, reason:$r, next_allowed_at:(if $n == null then null else ($n | todate) end), wakes_last_hour:$h, min_gap_seconds:$g, max_per_hour:$c}')
+      # a deferred run is silent on stdout by contract (a line there starts a session), so it says why on stderr
+      [ "$deferred" != true ] || echo "coord:changed: wake deferred ($(jq -r . <<<"$reason")) until $(jq -r .next_allowed_at <<<"$wake"); $nchanges change(s) pending" >&2
       # .changes is what was printed, nothing else: a deferred run keeps its lines under wake.pending, so a timer that
       # reads .changes instead of stdout starts no session either
       jq -c --argjson w "$wake" 'if $w.deferred then . + {wake:($w + {pending:.changes}), changes:[]} else . + {wake:$w} end' "$tmpd/rec.json" > "$tmpd/rec2.json" && mv "$tmpd/rec2.json" "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"

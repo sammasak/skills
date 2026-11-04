@@ -8,6 +8,7 @@
         # quality:report and quality:gate against a fixture checkout with a fake devenv.
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
         FX="$ROOT/task-modules/fixtures"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_SDLC_DIR="$FX/sdlc"
