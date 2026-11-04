@@ -108,6 +108,10 @@ in
         # sent otherwise, and a gh failure is reported, never treated as present. The label must be one the coordinator
         # cannot write (gh:label's vocabulary is refused) and must not have been added by a gh:label act in the audit log.
         audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
+        # never to the Coordinator itself (a draft may predate the pane being listed); the sender is recorded on the attempt line
+        jq -e --arg t "$host/$agent" 'index($t) | not' <<<"$(coordinator_panes "$audit")" >/dev/null \
+          || fail 3 invalid_input "$host/$agent is a Coordinator pane (coordinator.panes, the pane running this task, or a past sender in the audit log); not sending" "$ctx"
+        sender=""; [ -z "''${HERDR_PANE_ID:-}" ] || sender="$(local_host)/$HERDR_PANE_ID"
         gh_authorize send sending handoff || fail "$AUTH_EXIT" "$AUTH_KIND" "$AUTH_MSG" "$ctx"
         exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another herdr:message holds the audit lock" "$ctx"
         [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 \
@@ -147,8 +151,8 @@ in
           done < <(tac <<<"$attempts")
         fi
         aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
-        jq -cn --arg a "$aid" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" \
-          '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"attempt", host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q}' >> "$audit" \
+        jq -cn --arg a "$aid" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" --arg from "$sender" \
+          '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"attempt", from:(if $from == "" then null else $from end), host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q}' >> "$audit" \
           || fail 2 audit_failed "could not write the attempt record; not sending" "$ctx"
         outcome=interrupted
         trap 'jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" "{audit_id:\$a, handoff_id:\$i, phase:\"outcome\", at:\$at, outcome:\$o}" >> "$audit"' EXIT

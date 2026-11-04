@@ -13,6 +13,9 @@ in
     ghCommand = lib.mkOption { type = t.str; default = "gh"; description = "Overridable for tests (fake gh)."; };
     ghLimit = lib.mkOption { type = t.ints.between 1 100; default = 20; description = "Page size for gh list calls and the gh:repos GraphQL query (GitHub caps first at 100)."; };
     ghOwner = lib.mkOption { type = t.str; default = "sammasak"; description = "GitHub login whose repositories gh:repos lists."; };
+    # the Coordinator's own panes (host/agent_id, comma-separated): never handoff targets and never workers for the idle
+    # wake, together with the pane running the task (HERDR_PANE_ID) and every pane that ever sent a handoff (audit from)
+    panes = lib.mkOption { type = t.str; default = ""; description = "Coordinator panes as host/agent_id, comma-separated; the running pane and past senders are added at run time."; };
     portfolioActive = lib.mkOption { type = t.ints.positive; default = 5; description = "How many active repos coord:brief expands with gh:work."; };
     # One list for discovery. The send gate (herdr:message) is wider on purpose: it accepts any owner-applied label the
     # coordinator cannot write, so an item authorized by another label is still sendable; gh:repos and the brief only
@@ -49,6 +52,11 @@ in
       rc_kind() { case "$1" in 124) echo timeout ;; *) echo command_failed ;; esac; }
       upstream() { jq -c --arg t "$1" '.[$t] // null' <<<"''${DEVENV_TASKS_OUTPUTS:-{\}}"; }
       local_host() { hostname -s 2>/dev/null || hostname; }
+      # coordinator_panes <audit-file>: JSON array of host/agent_id that are the Coordinator's own panes: coordinator.panes,
+      # the pane this task runs in, and every pane an attempt line names as its sender (from); never targets, never workers
+      coordinator_panes() { local self=""; [ -z "''${HERDR_PANE_ID:-}" ] || self="$(local_host)/$HERDR_PANE_ID"
+        { printf '%s\n' ${lib.escapeShellArg cfg.panes} | jq -R 'split(",") | map(select(. != ""))'; printf '%s\n' "$self" | jq -R 'select(. != "")'
+          [ ! -s "''${1:-/dev/null}" ] || jq -c 'select(type == "object" and .phase == "attempt" and (.from | type) == "string") | .from' "$1" 2>/dev/null || true; } | jq -sc 'flatten | unique'; }
       # herdr_at <timeout_s> <machine-label-or-empty> <herdr args...>: the local server, or herdr's own forwarding to a saved machine
       herdr_at() { local tmo="$1" m="$2"; shift 2
         if [ -z "$m" ]; then timeout -k 1 "$tmo" ${cfg.herdrCommand} "$@"; else timeout -k 1 "$tmo" ${cfg.herdrCommand} --machine "$m" "$@"; fi; }
