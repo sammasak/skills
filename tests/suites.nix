@@ -122,7 +122,7 @@
         # skills#36: the wake path is documented against each acceptance criterion, and process.md no longer says no re-arm
         doc=docs/coordinator-continuity.md
         [ -f "$doc" ] && ok || bad "$doc is missing"
-        for rule in "events.subscribe" "herdr agent wait" "no daemon" "no Claude Code or Codex process is started" "Wake budget:" "Spend cap:" "Failure back-off:" "No endless retry of a refused act:" "One campaign at a time:" "Outages:" "Rollback is one option"; do
+        for rule in "events.subscribe" "herdr agent wait" "no daemon" "no Claude Code or Codex process is started" "Wake budget:" "Spend cap:" "Failure back-off:" "No endless retry of a refused act:" "One campaign at a time:" "Outages:" "Rollback is one option" "has **not** been observed"; do
           grep -qF "$rule" "$doc" 2>/dev/null && ok || bad "$doc lost: $rule"
         done
         [ "$(grep -c '^| [A-Z]' "$doc" 2>/dev/null)" -ge 10 ] && ok || bad "$doc: the capability and criteria tables lost rows"

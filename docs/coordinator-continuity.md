@@ -73,6 +73,13 @@ deterministic check and exits.
 
 ## Pilot and rollback
 
+**Status, 2026-11-04:** the mechanism is proven by the suites cited above. An
+unattended wake on lenovo followed by a recovery (a restart, or a missed
+tick caught by the next one) has **not** been observed and recorded here
+yet, so this page claims no 24/7 operation. That observation is the pilot's
+exit evidence: a journal excerpt of a timer-started session and of the run
+after a restart.
+
 Pilot on lenovo: enable `sam.herdr.coordinatorWakeup.enable`, switch, and
 watch `journalctl --user -u coordinator-wakeup` for a day. Quiet ticks log
 their reason once; a session line appears only with an actionable change.
