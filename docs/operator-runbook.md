@@ -46,9 +46,10 @@ invents one, and does not ask you to confirm each draft; ROLE.md, Autonomy), (`h
 through `gh` first and refuses with `authorization_missing` when the label is
 not there), awaits (`herdr:await`), and verifies with `work:status`. Every
 attempt in `audit.jsonl` records `allowed_actions` and `authorized_by`
-(`verified: true`, `verified_at`). "delivered" is not "done"; only a merged
-PR for the handoff's `task_ref` in the authorizing issue's repo, opened after
-the send, makes `work_verdict: verified`. Only the newest 50 handoffs are
+(`verified: true`, `verified_at`). "delivered" is not "done"; only merged
+PRs for the handoff's `task_ref` in the authorizing issue's repo, opened or
+committed to after the send, each with an independent signed 9/10 on its
+head, make `work_verdict: verified`. Only the newest 50 handoffs are
 evaluated (`handoffs_omitted` counts the rest); an agent whose handoff is
 older reports `correlation.by: omitted`, not a verdict from its title. The
 brief's Markdown is `brief/latest.md` beside `latest.json`; devenv's own
@@ -81,9 +82,14 @@ died before writing one. A request refused earlier (`invalid_input`, a
 missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
 has no assignment until the coordinator hands it one (`coord:handoff`,
 `herdr:message`). `--dangerously-skip-permissions` starts unattended only where
-Home Manager pre-accepted the bypass and `$HOME` trust dialogs (nixos-config
-`mcp.nix`, `acceptClaudeStartupDialogs`); elsewhere `agent start` returns
-`agent_not_ready` and the workspace stays for you to inspect. The task never
+user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code
+2.1.300 no longer reads `~/.claude.json`'s `bypassPermissionsModeAccepted`)
+and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` only
+(nixos-config `mcp.nix`, `acceptClaudeStartupDialogs`), so spawn in `$HOME`
+and name the checkout in the handoff. Elsewhere `agent start` returns
+`agent_not_ready` and the workspace stays for you to inspect. A host
+configured with spawning off is refused as `capacity` whether or not it is
+in the inventory. The task never
 closes a pane or workspace.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of
@@ -160,9 +166,13 @@ session's read) neither consumes nor spends, so it never takes a change away
 from the timer.
 
 The `idle` line is the one change that needs no transition: when every
-agent on every answering host is idle or done (none working, blocked or
-unknown; an unreachable host or an empty fleet is not idle) and work is left,
-the Coordinator is woken with no human. Work is any of: an open PR in an
+worker on every answering host is idle or done (none working, blocked or
+unknown; an unreachable host or a fleet without a known worker is not idle)
+and work is left, the Coordinator is woken with no human. The workers are
+the panes a handoff was sent to (`audit.jsonl` attempt lines, as
+`host/agent_id`) plus `coordinator.workers`; the Coordinator's own panes and
+the wake session never receive a handoff, so they never keep the fleet busy
+(`idle_wake.non_workers` counts them in `latest.json`). Work is any of: an open PR in an
 active repo (`gh:repos`, newest push first, at most `portfolioActive` repos)
 or in an open-handoff repo without a signed 9/10 or more on its current head
 by someone other than the agent whose handoff it answers; an issue carrying
@@ -171,7 +181,7 @@ handoff of the last `openHandoffDays` with no merged PR for its issue opened
 after the send. The fleet test is free; GitHub lists (open PRs with comments,
 open issues, and merged PRs for handoff repos) are fetched only once the
 fleet is idle. The line prints once per distinct fleet+work fingerprint
-(the agents by session plus the work items) and not again until that
+(the workers by pane plus the work items; a new session in the same pane is the same worker) and not again until that
 fingerprint differs from the last one printed: a worker flapping between
 working and idle, or the same work seen again, never repeats it, while new
 work, a review landing, or the fleet changing does. It counts against the

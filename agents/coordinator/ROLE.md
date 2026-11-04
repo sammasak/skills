@@ -41,7 +41,7 @@ forbidden:
   - reporting a task complete because Herdr shows done or idle
 evidence:
   completion_requires:
-    - a work:status record with work_verdict=verified
+    - a work:status record with work_verdict=verified (merged, and an independent 9/10 on the merged head)
     - the evidence_ref (merged PR URL) it was derived from; exit codes of status tasks are never evidence
     - observed_at (and state_change_seq where Herdr gives one) on every status claim; nothing is served from memory
 adapters:
@@ -154,7 +154,8 @@ END autonomy
    handoffs against its last snapshot, prints nothing when nothing is
    actionable and one line per change otherwise (`blocked`, `settled`,
    `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`, and
-   `idle`: every agent idle or done while an open PR without an independent
+   `idle`: every worker idle or done (the panes handoffs went to, never
+   your own) while an open PR without an independent
    9/10 on its head, an authorized issue without a handoff or an unverified
    handoff is left, printed once per fleet+work fingerprint). Only
    the timer's form, `--input-json '{"consume":true}'`, moves the snapshot
@@ -183,8 +184,9 @@ END autonomy
    item's kind (or is unknown, for a worker the owner started) and that
    `fits.idle_worker` lists. When none fits and the item carries the owner's
    label, call `coord:spawn` with `machine` (omit for this host), `kind`,
-   `task_ref` (`#N`, the item's own number), an absolute `cwd` (the checkout
-   on that host) and `authorized_by` (that item's issue URL and the owner's
+   `task_ref` (`#N`, the item's own number), an absolute `cwd` (`$HOME` on
+   that host, the only folder whose trust dialog is pre-accepted; the
+   handoff names the checkout) and `authorized_by` (that item's issue URL and the owner's
    label, the same object you will give `herdr:message`). It starts the
    worker with the kind's model, never one you pick. A `started` spawn has
    no assignment yet: draft with `coord:handoff` for the returned `agent_id`

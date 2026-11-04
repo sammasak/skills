@@ -84,8 +84,8 @@
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
         H=$(hostname -s 2>/dev/null || hostname)
         # this host is the control plane (one heavy job, three workers, no spawning); worker-a takes two heavy jobs and three
-        # workers; down-b does not answer; anything else has no capacity
-        CAP=$(jq -cn --arg h "$H" '{($h): {heavy_jobs:1, max_workers:3, spawn:false}, "worker-a": {heavy_jobs:2, max_workers:3, spawn:true}, "down-b": {heavy_jobs:2, max_workers:3, spawn:true}}')
+        # workers; down-b does not answer; off-c (no saved machine) never spawns; anything else has no capacity
+        CAP=$(jq -cn --arg h "$H" '{($h): {heavy_jobs:1, max_workers:3, spawn:false}, "worker-a": {heavy_jobs:2, max_workers:3, spawn:true}, "down-b": {heavy_jobs:2, max_workers:3, spawn:true}, "off-c": {heavy_jobs:1, max_workers:2, spawn:false}}')
         jq '(.result.agents[] | select(.pane_id == "wF:p1")) |= (.agent_status = "idle") | (.result.agents[] | select(.pane_id == "wT:p1")) |= (.agent_status = "working")' "$FX/herdr/local-two-agents.json" > "$TMP/local.json"
         cp "$FX/herdr/remote-ok.json" "$TMP/worker-a.json"
         export FAKE_HERDR_LIST="$TMP/local.json" FAKE_HERDR_LIST_worker_a="$TMP/worker-a.json" \
@@ -166,6 +166,7 @@
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = capacity ] && jqr .error.message | grep -q 'spawning is off' && ! grep -q 'workspace create' "$FAKE_LOG" && [ "$(lines)" = $((n + 2)) ] && ok || bad "no spawn on the control plane ($CODE $OUT)"
         spawn down-b mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = host_unreachable ] && ok || bad "unreachable host refused ($OUT)"
         spawn nowhere mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = host_unknown ] && ok || bad "unknown host refused as host_unknown ($OUT)"
+        spawn off-c mechanical; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = capacity ] && jqr .error.message | grep -q 'spawning is off' && ok || bad "a spawn-off host outside the inventory refused on its configuration, not as host_unknown ($OUT)"
         # (7) authorization: the label must be on the issue, not one the coordinator writes, applied by the owner, and on the
         #     item itself; refused and audited, no herdr call
         jq '.result.agents = [.result.agents[0]]' "$FX/herdr/remote-ok.json" > "$TMP/worker-a.json"; : > "$FAKE_HERDR_STARTED"
@@ -197,8 +198,11 @@
         [ "$(jq -sr '[.[] | select(.phase == "outcome" and (.audit_id | test("^[a-f0-9]{12}$"))) | .outcome] | unique - ["started","refused","agent_not_ready","failed","interrupted"] | length' "$A")" = 0 ] && ok || bad "spawn outcomes stay in the closed set ($(jq -sr '[.[] | select(.phase == "outcome") | .outcome] | unique' "$A"))"
         # (10) the spawned worker's assignment is its history: next=#29 makes the idle new worker a /clear candidate
         printf '%s\n' '{"pane_id":"wN:p1","agent":"claude","agent_status":"idle","agent_session":{"agent":"claude","kind":"id","value":"sess-new"},"cwd":"/home/lukas"}' > "$FAKE_HERDR_STARTED"
+        # wR:p1, the agent_not_ready spawn of (9), still sits blocked at startup: it keeps its kind, so it holds no heavy slot
+        printf '%s\n' '{"pane_id":"wR:p1","agent":"claude","agent_status":"blocked","cwd":"/home/lukas"}' >> "$FAKE_HERDR_STARTED"
         run coord:capacity --input-json '{"next":{"repo":"sammasak/skills","task_ref":"#29"}}'
         [ "$(hq worker-a '.workers.list[] | select(.agent_id == "wN:p1") | "\(.last_task_ref) \(.last_repo) \(.hygiene.advice)"')" = "#28 sammasak/skills /clear" ] && ok || bad "spawned worker carries its task_ref ($(hq worker-a '.workers.list'))"
+        [ "$(hq worker-a '.workers.list[] | select(.agent_id == "wR:p1") | "\(.kind) \(.herdr_state)"')" = "mechanical blocked" ] && ok || bad "a spawn left blocked at startup keeps its kind ($(hq worker-a '.workers.list'))"
         # (10b) ROLE.md tells the coordinator what follows a spawn: a started worker has no assignment until coord:handoff +
         #       herdr:message, and a refused or failed spawn is recorded, not retried
         item=$(sed -n '/^13\. Workers and tiers/,/^## /p' agents/coordinator/ROLE.md | tr '\n' ' ')
@@ -222,12 +226,14 @@
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
         H=$(hostname -s 2>/dev/null || hostname)
         # panes now: wA:p1 carries a title naming the wrong issue; wB:p1 has no ref at all; wG:p1 was restarted (new
-        # session) since its handoff; wT:p2 is title-only on the open epic
+        # session) since its handoff; wT:p2 is title-only on the open epic; wC:p1 and wR:p1 have handoffs only
         jq '.result.agents[0] as $t | .result.agents = [
               ($t | .pane_id = "wA:p1" | .agent_status = "done" | .agent_session.value = "sA" | .terminal_title_stripped = "sammasak/skills #99 unrelated wrong title"),
               ($t | .pane_id = "wB:p1" | .agent_status = "idle" | .agent_session.value = "sB" | .terminal_title_stripped = "working on it"),
               ($t | .pane_id = "wG:p1" | .agent_status = "idle" | .agent_session.value = "new" | .terminal_title_stripped = "sammasak/skills #30 thing"),
-              ($t | .pane_id = "wT:p2" | .agent_status = "done" | .agent_session.value = "sT" | .terminal_title_stripped = "sammasak/skills #28 epic")]' \
+              ($t | .pane_id = "wT:p2" | .agent_status = "done" | .agent_session.value = "sT" | .terminal_title_stripped = "sammasak/skills #28 epic"),
+              ($t | .pane_id = "wC:p1" | .agent_status = "idle" | .agent_session.value = "sC" | .terminal_title_stripped = "fix-up"),
+              ($t | .pane_id = "wR:p1" | .agent_status = "idle" | .agent_session.value = "sR" | .terminal_title_stripped = "review")]' \
           "$FX/herdr/local-two-agents.json" > "$TMP/list.json"
         export FAKE_HERDR_LIST="$TMP/list.json"
         mkdir -p "$TMP/state"; A="$TMP/state/audit.jsonl"
@@ -241,13 +247,16 @@
         handoff h00000000004 wG:p1 old "#30" 2026-11-03T09:30:00Z    # pane restarted since: stale
         handoff h00000000005 wZ:p9 sZ "#31" 2026-11-03T09:40:00Z     # pane gone: stale
         handoff h00000000006 wB:p1 sB "#29" 2026-11-03T08:00:00Z none # attempt without an outcome: interrupted, superseded by 003
+        handoff h00000000007 wB:p1 sB "#29" 2026-11-03T15:00:00Z     # a fix-up round: PR 53 (opened under 003) gets a commit at 15:30
+        handoff h00000000008 wC:p1 sC "#32" 2026-11-03T12:00:00Z     # fix-up on PR 55 (commit 12:30), merged with no grade at all
+        handoff h00000000009 wR:p1 sR "#33" 2026-11-03T12:00:00Z     # review of PR 56: wR:p1 graded it 7/10, the author pushed at 12:30
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         B="$TMP/state/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
         q() { jq -r "$1" "$B"; }
         h() { jq -r --arg i "$1" ".handoffs[] | select(.handoff_id == \$i) | $2" "$B"; }
         it() { jq -r --arg a "$1" ".items[] | select(.agent_id == \$a) | $2" "$B"; }
-        [ "$CODE" -eq 0 ] && [ "$(q '.handoffs | length')" = 6 ] && ok || bad "brief over six handoffs: $CODE $(grep -E 'error|jq:' "$TMP/run.log" | head -3)"
+        [ "$CODE" -eq 0 ] && [ "$(q '.handoffs | length')" = 9 ] && ok || bad "brief over nine handoffs: $CODE $(grep -E 'error|jq:' "$TMP/run.log" | head -3)"
         # (1) the wrong title loses to the handoff on the pane's session
         [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.title_ref) \(.work_verdict) \(.evidence_ref)"')" = "handoff h00000000002 #28 #99 verified https://github.com/sammasak/skills/pull/52" ] && ok || bad "wrong title: correlated by handoff ($(it wA:p1 '{correlation,task_ref,title_ref,work_verdict,evidence_ref}'))"
         it wA:p1 '.reasons | join(";")' | grep -q 'title names #99; correlated by handoff h00000000002 to #28' && ok || bad "wrong title is named in the reasons"
@@ -260,6 +269,12 @@
         [ "$(h h00000000002 '.stages | "\(.reviewed[0].url) \(.live[0])"')" = "https://github.com/sammasak/skills/pull/52#issuecomment-522 https://github.com/sammasak/skills/pull/52#issuecomment-523" ] && ok || bad "PR 52: the re-review naming the head counts, the author's 8/10 response does not; live from its note ($(h h00000000002 .stages))"
         [ "$(h h00000000003 '"\(.work_verdict) \(.evidence_ref) \(.stages.implemented[0]) \(.stages.reviewed) \(.stages.merged)"')" = "unverified null https://github.com/sammasak/skills/pull/53 null null" ] && ok || bad "PR 53: open; a 9/10 on another head, or unsigned, is not reviewed ($(h h00000000003 '{work_verdict,stages}'))"
         [ "$(h h00000000003 '[.prs[].number] | join(",")')" = 53 ] && ok || bad "PR 54, which wB:p1 itself graded 9/10, is a review it did, not its own work ($(h h00000000003 '[.prs[].number]'))"
+        # a fix-up handoff owns the existing PR it pushed commits to inside its window, and is not stale
+        [ "$(h h00000000007 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stale) \(.stages.implemented[0])"')" = "53 unverified false https://github.com/sammasak/skills/pull/53" ] && ok || bad "fix-up handoff owns the PR it committed to ($(h h00000000007 '{prs:[.prs[].number], work_verdict, stale, reasons}'))"
+        # merged is not verified: verified needs an independent 9/10 on the head too (51 and 52 have one)
+        [ "$(h h00000000008 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stages.merged[0]) \(.stages.reviewed) \(.evidence_ref) \(.reasons[0])"')" = "55 unverified https://github.com/sammasak/skills/pull/55 null null PR #55 merged without an independent 9/10 on its head" ] && ok || bad "merged without a review is unverified ($(h h00000000008 '{prs:[.prs[].number], work_verdict, stages, reasons}'))"
+        # a handoff never owns a PR its own agent graded, at any grade: the reviewer's window holds the author's commit
+        [ "$(h h00000000009 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stale) \(.session_state)"')" = " unknown false same" ] && ok || bad "a PR the handoff's agent graded 7/10 is a review it did ($(h h00000000009 '{prs:[.prs[].number], work_verdict, stale, reasons}'))"
         [ "$(it wB:p1 '"\(.correlation.by) \(.task_ref) \(.work_verdict)"')" = "handoff #29 unverified" ] && ok || bad "a pane with no ref in its title is correlated by its handoff"
         # (4) stale handoffs: the pane restarted, or is gone; neither is verified and the restarted pane falls back to its title
         [ "$(h h00000000004 '"\(.stale) \(.session_state) \(.work_verdict)"')" = "true session_changed unknown" ] && [ "$(it wG:p1 '.correlation.by')" = title ] && ok || bad "restarted pane: stale handoff, item by title ($(h h00000000004 '{stale,session_state}') $(it wG:p1 .correlation))"
@@ -298,7 +313,7 @@
         for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
-        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 6 q000000000010" ] && grep -q '56 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
+        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 9 q000000000010" ] && grep -q '59 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
         # an agent whose handoff fell out of the evaluated window says so, rather than being judged by its (wrong) title
         [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.work_verdict) \(.evidence_ref)"')" = "omitted h00000000002 #28 unknown null" ] && it wA:p1 '.reasons[0]' | grep -q 'older than the 50 newest evaluated' && ok || bad "omitted handoff reported as omitted ($(it wA:p1 '{correlation,task_ref,work_verdict,reasons}'))"
         summary
@@ -540,7 +555,7 @@
       '';
     };
     "skills:test:tasks:coord-idle" = {
-      description = "coord:changed F1: an idle fleet (every agent idle/done, every host answering) with work left (open PR without an independent 9/10 on its head, approved issue without a handoff, unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
+      description = "coord:changed F1: an idle fleet (every worker idle/done, every host answering; the Coordinator's own panes are not workers) with work left (open PR without an independent 9/10 on its head, approved issue without a handoff, unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -567,7 +582,8 @@
         snapq() { jq -r "$1" "''${STATE:-$TMP/state}/changed/snapshot.json"; }
         fp() { snapq '.idle_wake.fingerprint | tojson'; }
         idle_line() { grep -E '^idle ' <<<"$LINES" || true; }
-        # the fleet: wF:p1 idle (holds handoff h2), wT:p1 done (holds h1), wZ:p1 working and without a handoff
+        # the fleet: wF:p1 idle (holds handoff h2), wT:p1 done (holds h1); wZ:p1 is the Coordinator's own pane: working the
+        # whole suite long and never a handoff target, so it is not a worker and never keeps the fleet busy
         LOCAL="$TMP/local.json"
         jq '.result.agents[0].agent_status = "idle" | .result.agents += [(.result.agents[0] | .pane_id = "wZ:p1" | .agent_session.value = "zzzz" | .agent_status = "working" | .state_change_seq = 3 | .terminal_title_stripped = "scratch")]' "$FX/herdr/local-two-agents.json" > "$LOCAL"
         export FAKE_HERDR_LIST="$LOCAL"
@@ -596,22 +612,28 @@
         pr sammasak/nixos-config 119 OPEN "$H119" "$T2" null "coordinator-read" '[]' '["9/10 at `0ddba11` (an older head) -- acer-swift wR:p1"]' | write sammasak__nixos-config.prs.json
         : | write sammasak__nixos-config.issues.json
         mkdir -p "$TMP/state"; AUDIT="$TMP/state/audit.jsonl"
-        handoff() { # <id> <agent> <ref> <at> <issue-number>: one delivered handoff to a pane on this host, authorized by a skills issue
-          printf '%s\n' "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"task_ref\":\"$3\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"$2\",\"at\":\"$4\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/$5\",\"label\":\"approved\"}}" \
+        handoff() { # <id> <agent> <ref> <at> <issue-number> [host]: one delivered handoff to a pane (this host unless named), authorized by a skills issue
+          printf '%s\n' "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"task_ref\":\"$3\",\"phase\":\"attempt\",\"host\":\"''${6:-$H}\",\"machine\":null,\"agent_id\":\"$2\",\"at\":\"$4\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/$5\",\"label\":\"approved\"}}" \
             "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$4\",\"outcome\":\"delivered\"}" >> "$AUDIT"; }
         handoff h00000000001 wT:p1 "#30" "$T0" 30   # verified by the merged #62 (closes #30, opened after the send)
         handoff h00000000002 wF:p1 "#31" "$T0" 31   # #64 names it but is open: unverified
         WORK1='3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64), 2 approved issue(s) without a handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
 
-        # (1) a busy fleet: no idle line, and GitHub lists are not even fetched (gh:repos runs upstream regardless)
+        # (0) no worker known (an empty audit log, nothing configured): idle agents are not an idle fleet, no GitHub list is fetched
+        STATE="$TMP/state0" run
+        [ "$CODE" -eq 0 ] && [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers) \(.evaluated)"')" = "false 0 3 false" ] && ! grep -qE '^gh (pr|issue) list' "$FAKE_LOG" && ok || bad "no workers known: not idle ($LINES $(iw .))"
+        # (1) a busy fleet (a worker working; the Coordinator's pane works throughout): no idle line, and GitHub lists are not
+        #     even fetched (gh:repos runs upstream regardless)
+        set_agent wF:p1 '.agent_status = "working" | .state_change_seq = 3'
         run
-        [ "$CODE" -eq 0 ] && [ "$(jqr .baseline)" = true ] && [ -z "$(idle_line)" ] && [ "$(iw '.fleet_idle')" = false ] && [ "$(iw '.evaluated')" = false ] && ok || bad "busy fleet at baseline: no idle line ($LINES) $(iw .)"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .baseline)" = true ] && [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers)"')" = "false 2 1" ] && [ "$(iw '.evaluated')" = false ] && ok || bad "busy fleet at baseline: no idle line ($LINES) $(iw .)"
         ! grep -qE '^gh (pr|issue) list' "$FAKE_LOG" && ok || bad "a busy fleet fetches no GitHub lists ($(grep -E '^gh (pr|issue) list' "$FAKE_LOG" | head -3))"
-        # (2) the last worker goes idle: exactly one line, every work kind named and sorted, the fingerprint stored
-        set_agent wZ:p1 '.agent_status = "idle" | .state_change_seq = 4'
+        # (2) the last worker goes idle while the Coordinator's own pane keeps working: its settled line (it holds h2) and
+        #     one idle line with every work kind named and sorted, the fingerprint stored
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq = 4'
         run
-        [ "$CODE" -eq 0 ] && [ "$(nlines)" = 1 ] && [ "$LINES" = "idle 3 agents idle/done on 1 host(s); work left: $WORK1" ] && ok || bad "idle fleet with work: one idle line ($LINES)"
-        [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired) \(.skipped)"')" = "true true true null" ] && [ "$(jqr '.changes[0].kind')" = idle ] && [ "$(fp)" != null ] && ok || bad "idle_wake record and fingerprint ($(iw .) fp=$(fp))"
+        [ "$CODE" -eq 0 ] && [ "$(nlines)" = 2 ] && [ "$(tail -n 1 <<<"$LINES")" = "idle 2 worker(s) idle/done on 1 host(s); work left: $WORK1" ] && grep -q "^settled $H/wF:p1 #31 handoff h00000000002 idle" <<<"$LINES" && ok || bad "idle workers with work, Coordinator working: settled + one idle line ($LINES)"
+        [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired) \(.skipped) \(.non_workers)"')" = "true true true null 1" ] && [ "$(jqr '[.changes[].kind] | join(" ")')" = "settled idle" ] && [ "$(fp)" != null ] && ok || bad "idle_wake record and fingerprint ($(iw .) fp=$(fp))"
         [ "$(iw '[.work.open_prs, .work.approved_issues, .work.unverified_handoffs | length] | join(" ")')" = "3 2 1" ] && [ "$(iw '.work.open_prs | join(" ")')" = "sammasak/nixos-config#119 sammasak/skills#60 sammasak/skills#64" ] && ok || bad "work lists in latest.json ($(iw .work))"
         grep -q '^gh pr list -R sammasak/skills --state open' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/skills --state merged' "$FAKE_LOG" && grep -q '^gh issue list -R sammasak/skills' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/nixos-config --state open' "$FAKE_LOG" \
           && ! grep -q 'sammasak/nixos-config --state merged' "$FAKE_LOG" && ! grep -q 'sammasak/quiet' "$FAKE_LOG" && ok || bad "lists per active repo, merged only for a handoff repo, nothing for an inactive one ($(grep -E '^gh (pr|issue) list' "$FAKE_LOG" | sort -u))"
@@ -619,18 +641,22 @@
         # (3) nothing moved: the same fingerprint never fires again
         run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.fired)"')" = "true false" ] && [ "$(fp)" = "$FP1" ] && ok || bad "same fingerprint: silent ($LINES)"
         # (4) a flapping worker (working, idle, working, idle) with the same work left never fires again
-        for s in working idle working idle; do set_agent wZ:p1 ".agent_status = \"$s\" | .state_change_seq += 1"; run; [ -z "$LINES" ] || bad "flapping worker ($s): $LINES"; done
+        for s in working idle working idle; do set_agent wF:p1 ".agent_status = \"$s\" | .state_change_seq += 1"; run; [ -z "$LINES" ] || bad "flapping worker ($s): $LINES"; done
         [ "$(fp)" = "$FP1" ] && [ "$(jq 'length' "$TMP/state/changed/wakes.json")" = 1 ] && ok || bad "flapping spends no wake (wakes $(jq -c . "$TMP/state/changed/wakes.json"))"
-        # (4b) a worker's session changing (/clear, a harness restart) in the same pane is the same fleet: silent; a new pane is not
-        set_agent wZ:p1 '.agent_session.value = "zzzz-after-clear" | .state_change_seq += 1'
+        # (4b) a worker's session changing (/clear, a harness restart) in the same pane is the same fleet: silent; a new pane
+        #      is not a worker until a handoff reaches it (its new line prints, the fleet is unchanged); once it is, the
+        #      fleet grew and fires; gone again, the earlier fleet fingerprint is back
+        set_agent wF:p1 '.agent_session.value = "ffff-after-clear" | .state_change_seq += 1'
         run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(fp)" = "$FP1" ] && ok || bad "a new session in the same pane keeps the fingerprint ($LINES)"
         jq '.result.agents += [(.result.agents[0] | .pane_id = "wY:p1" | .agent_session.value = "yyyy" | .agent_status = "idle" | .state_change_seq = 1 | .terminal_title_stripped = "fresh")]' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
-        run; grep -q '^idle 4 agents idle/done on 1 host(s); work left: ' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "a new pane is a new fleet: fires ($LINES)"
+        run; [ "$LINES" = "new $H/wY:p1 - claude idle seq 1" ] && [ "$(fp)" = "$FP1" ] && [ "$(iw .non_workers)" = 2 ] && ok || bad "a new pane without a handoff is not a worker: the fleet is unchanged ($LINES)"
+        handoff h00000000003 wY:p1 "#30" "$T0" 30   # verified like h1, so only the fleet changes
+        run; grep -q '^idle 3 worker(s) idle/done on 1 host(s); work left: ' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && [ "$(iw .non_workers)" = 1 ] && ok || bad "a handoff makes the pane a worker: a new fleet fires ($LINES)"
         jq 'del(.result.agents[] | select(.pane_id == "wY:p1"))' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
         run; [ "$(fp)" = "$FP1" ] && ok || bad "the pane gone again: the earlier fleet fingerprint ($LINES)"
         # (5) new work (another ungraded PR) is a new fingerprint: one line, listing capped at three refs; then silence
         pr sammasak/skills 65 OPEN 6565656565656565656565656565656565656565 "$T3" null "more" '[]' '[]' | skills_prs
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle 3 agents idle/done on 1 host(s); work left: 4 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64, +1 more), 2 approved' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "new work fires once, refs capped ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 4 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64, +1 more), 2 approved' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "new work fires once, refs capped ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "new work: silent after ($LINES)"
         # (6) a grade arrives on #60's head from another agent: the work set shrinks, which is a new fingerprint
         { pr sammasak/skills 65 OPEN 6565656565656565656565656565656565656565 "$T3" null "more" '[]' '[]'; } | skills_prs
@@ -652,22 +678,23 @@
         FAKE_GH_LIST_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'gh pr list' && [ "$(fp)" = "$FPX" ] && ok || bad "gh list failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.evaluated) \(.fired)"')" = "false false" ] && iw .skipped | grep -q 'gh:repos' && ok || bad "gh:repos failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_SEARCH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'issue search failed (gh_error' && [ "$(fp)" = "$FPX" ] && ok || bad "issue search failure: the page alone cannot say no work is left; skipped, logged, no wake ($LINES $(iw .))"
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle 3 agents idle/done on 1 host(s); work left: 1 approved issue(s) without a handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 1 approved issue(s) without a handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
         FP8=$(fp)
-        # (9) a blocked agent is not idle: its own line, no idle line; back to idle with the same work: silent
-        set_agent wZ:p1 '.agent_status = "blocked" | .state_change_seq += 1'
+        # (9) a blocked worker is not idle: its own line, no idle line; back to idle with the same work: silent
+        set_agent wF:p1 '.agent_status = "blocked" | .state_change_seq += 1'
         run; [ "$(nlines)" = 1 ] && grep -q '^blocked ' <<<"$LINES" && [ "$(iw .fleet_idle)" = false ] && ok || bad "blocked is not idle ($LINES)"
-        set_agent wZ:p1 '.agent_status = "idle" | .state_change_seq += 1'
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq += 1'
         run; [ -z "$LINES" ] && [ "$(fp)" = "$FP8" ] && ok || bad "unblocked, same work: silent ($LINES)"
-        # (10) a saved machine that does not answer keeps the fleet from being idle; its agents count once it answers
+        # (10) a saved machine that does not answer keeps the fleet from being idle; its workers count once it answers
+        handoff h00000000004 wA:p2 "#30" "$T0" 30 acer-swift   # the remote pane is a worker (verified handoff: only the fleet changes)
         export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]'
         FAKE_HERDR_EXIT_acer_swift=1 run; [ "$CODE" -eq 0 ] && [ -z "$(idle_line)" ] && [ "$(iw .fleet_idle)" = false ] && ok || bad "unreachable host: not idle ($LINES $(iw .))"
         REMOTE="$TMP/remote.json"; jq '(.result.agents[] | select(.pane_id == "wA:p2")) |= (.agent_status = "idle" | .state_change_seq = 41)' "$FX/herdr/remote-ok.json" > "$REMOTE"
         FAKE_HERDR_LIST_acer_swift="$FX/herdr/remote-ok.json" run; [ -z "$(idle_line)" ] && [ "$(iw .fleet_idle)" = false ] && ok || bad "a blocked remote agent: not idle ($LINES)"
-        FAKE_HERDR_LIST_acer_swift="$REMOTE" run; [ "$(nlines)" = 1 ] && grep -q '^idle 4 agents idle/done on 2 host(s); work left: 1 approved issue(s)' <<<"$LINES" && ok || bad "the fleet grew and is idle: a new fingerprint fires ($LINES)"
+        FAKE_HERDR_LIST_acer_swift="$REMOTE" run; [ "$(nlines)" = 2 ] && grep -q '^settled acer-swift/wA:p2 #30 handoff h00000000004 idle' <<<"$LINES" && grep -q '^idle 3 worker(s) idle/done on 2 host(s); work left: 1 approved issue(s)' <<<"$LINES" && ok || bad "the fleet grew and is idle: a new fingerprint fires ($LINES)"
         export FAKE_HERDR_MACHINES='[]'
-        run; [ "$(nlines)" = 2 ] && grep -q '^host acer-swift no longer listed' <<<"$LINES" && grep -q '^idle 3 agents' <<<"$LINES" && [ "$(fp)" = "$FP8" ] && ok || bad "the fleet shrank with the same work: a different fingerprint than the last fired one, so one idle line ($LINES $(iw .) fp=$(fp) FP8=$FP8)"
-        # (11) no agents at all is not an idle fleet
+        run; [ "$(nlines)" = 2 ] && grep -q '^host acer-swift no longer listed' <<<"$LINES" && grep -q '^idle 2 worker(s)' <<<"$LINES" && [ "$(fp)" = "$FP8" ] && ok || bad "the fleet shrank with the same work: a different fingerprint than the last fired one, so one idle line ($LINES $(iw .) fp=$(fp) FP8=$FP8)"
+        # (11) no agents at all is not an idle fleet (nor a listing with only non-workers, as (0) showed)
         cp "$LOCAL" "$TMP/local-full.json"; jq '.result.agents = []' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
         run; [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents)"')" = "false 0" ] && ok || bad "no agents: not idle ($LINES $(iw .))"
         cp "$TMP/local-full.json" "$LOCAL"; run

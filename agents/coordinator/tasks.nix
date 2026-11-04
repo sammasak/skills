@@ -51,7 +51,7 @@ in
           [ -n "$repo" ] || continue
           rc=0
           timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$repo" --state all --limit ${toString cfg.ghLimit} \
-            --json number,title,body,state,mergedAt,createdAt,url,headRefName,headRefOid,closingIssuesReferences,statusCheckRollup,comments,reviews > "$tmpd/p.json" 2>/dev/null || rc=$?
+            --json number,title,body,state,mergedAt,createdAt,url,headRefName,headRefOid,closingIssuesReferences,statusCheckRollup,comments,reviews,commits > "$tmpd/p.json" 2>/dev/null || rc=$?
           [ "$rc" -ne 0 ] || timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} issue list -R "$repo" --state open --limit ${toString cfg.ghLimit} --json number,url > "$tmpd/i.json" 2>/dev/null || rc=$?
           if [ "$rc" -ne 0 ]; then jq -cn --arg r "$repo" --arg e "gh exited $rc" '{repo:$r, error:$e}'
           else jq -cn --arg r "$repo" --slurpfile p "$tmpd/p.json" --slurpfile i "$tmpd/i.json" --argjson l ${toString cfg.ghLimit} \
