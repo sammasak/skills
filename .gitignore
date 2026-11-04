@@ -10,3 +10,5 @@ evals/results/*.json
 .devenv/
 .devenv.flake.nix
 .pre-commit-config.yaml
+# the coordinator host renders the owner's delegation and panes here (nixos-config); never commit it
+devenv.local.nix
