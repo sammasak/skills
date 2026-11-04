@@ -110,8 +110,10 @@ discover (`coord:brief`, whose `handoffs` section is rebuilt from
 repositories by recent push with open PR/issue and authorizing-label issue
 counts, plus one `gh search issues` per authorizing label so a repo pushed
 earlier than that page still shows up when it holds an authorized issue
-(`found_by: search`), plus `gh:work` for the active ones only; `truncated: true`
-means a list reached `coordinator.ghLimit` and may have been cut), prioritize, delegate every
+(`found_by: search`; when that search fails the brief says `issue search
+unavailable`, since repos outside the page are then unchecked), plus `gh:work` for
+the active ones only; `truncated: true` means a list reached `coordinator.ghLimit`
+and may have been cut), prioritize, delegate every
 eligible authorized item through the unchanged send gate, follow up delivered
 handoffs, report; a blocked item is recorded and skipped, not a stop. A new session continues from `brief/latest.json` and
 `audit.jsonl`; nothing is kept in memory. Codex runs the same contract through

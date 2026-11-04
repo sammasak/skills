@@ -101,12 +101,14 @@ in
       # F1 (sammasak/skills#28): an idle fleet with work left wakes the Coordinator once per distinct fleet+work fingerprint.
       # The fleet test costs nothing (the inventory); GitHub is asked only when every agent is idle/done: the open PRs (with
       # comments and reviews, for grades) and open issues of each active repo (newest push first, at most portfolioActive)
-      # and of each open-handoff repo, plus the merged PRs of the handoff repos (verification). A gh failure skips the
-      # condition for this run and is recorded under idle_wake.skipped, never guessed around
+      # and of each open-handoff repo, plus the merged PRs of the handoff repos (verification). A gh failure, the issue
+      # search's included (repos outside the page would go unchecked), skips the condition for this run and is recorded
+      # under idle_wake.skipped, never guessed around
       fleet=$(jq -c '[.hosts[]? | select(.reachable == true) | .agents[]?] as $a | all(.hosts[]?; .reachable == true) and ($a | length) > 0 and all($a[]; .observed_state == "idle" or .observed_state == "done")' "$tmpd/inv.json")
       skipped=null; : > "$tmpd/work.jsonl"
       if [ "$fleet" = true ]; then
         if [ "$repos_src" != upstream ]; then skipped=$(jq -cn --arg s "$repos_src" '"gh:repos unavailable (\($s)); the active repos are unknown"')
+        elif [ "$(jq -r '.search.error != null' <<<"$repos")" = true ]; then skipped=$(jq -c '"gh:repos issue search failed (\(.search.error.kind): \(.search.error.message)); repos outside the page are unknown"' <<<"$repos")
         else
           gh_list() { timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} "$@" 2>/dev/null; }
           while IFS= read -r repo; do

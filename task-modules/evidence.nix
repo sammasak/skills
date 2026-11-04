@@ -51,13 +51,13 @@ in
                   truncated:((($rs.nodes|length) >= $l) and (($rs.totalCount // 0) > $l)), repos:$repos}' 2>/dev/null) || out=""
         [ -n "$out" ] || { observe_error malformed "gh api graphql returned no repository list (GraphQL error or unexpected JSON)" "$ctx"; exit 0; }
         # the page above is the newest $limit pushes, so an authorized issue in a repo pushed earlier is invisible to it; one
-        # gh search over the owner's open issues per authorizing label (no paging: 100 is far above the open items) finds
-        # it, and its repo joins the list as active with counts from the search alone. A failing search is data under
-        # .search and the page stands
+        # gh search over the owner's open issues per authorizing label (no paging: 100 is far above the open items; archived
+        # excluded, as the page does) finds it, and its repo joins the list as active with counts from the search alone. A
+        # failing search is data under .search and the page stands; coord:brief and coord:changed read it
         search_err=null; found='[]'
         for l in ${lib.concatMapStringsSep " " lib.escapeShellArg cfg.authorizingLabels}; do
           rc=0; errf=$(mktemp)
-          hits=$(timeout -k 1 ${ts} ${cfg.ghCommand} search issues --owner "$owner" --label "$l" --state open --limit 100 --json repository,number,title,url 2>"$errf") || rc=$?
+          hits=$(timeout -k 1 ${ts} ${cfg.ghCommand} search issues --owner "$owner" --label "$l" --state open --archived=false --limit 100 --json repository,number,title,url 2>"$errf") || rc=$?
           msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
           [ "$rc" -eq 0 ] || { search_err=$(jq -cn --arg m "gh search issues (label $l) exited $rc''${msg:+: $msg}" '{kind:"gh_error", message:$m}'); break; }
           found=$(jq -c --argjson f "$found" --arg l "$l" 'if type == "array" then $f + map(select(type == "object") | {repo:(.repository.nameWithOwner // ""), number, title:(.title // ""), url:(.url // ""), label:$l}) else error end' <<<"$hits" 2>/dev/null) \
