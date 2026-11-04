@@ -98,7 +98,7 @@
           canon=$(block < "$role_md")
           if [ "$role" = coordinator ]; then
             [ -n "$canon" ] && ok || bad "$role: ROLE.md has no BEGIN/END autonomy block"
-            for rule in "Never authorize yourself" "approve issues for workers yourself with gh:label approved, one issue per call" "ends that item, not the session" "exactly /clear" "Escalate only owner decisions" "never two implementation handoffs for one item" "Nothing continues after this session ends" "starts with the literal text standing dictation:" "is not signed -- Coordinator and is not a question" "through gh:comment so the question is always signed" "names the eligible items left"; do
+            for rule in "Never authorize yourself" "approve issues for workers yourself with gh:label approved, one issue per call" "ends that item, not the session" "exactly /clear" "Escalate only owner decisions" "never two implementation handoffs for one item" "Nothing continues after this session ends" "starts with the literal text standing dictation:" "is not signed -- Coordinator and is not a question" "through gh:comment so the question is always signed" "names the eligible items left" "Decide, then report." "Never ask for a go-ahead on a draft" "Owner-only: sudo, a host switch or deploy, secrets, credentials or permissions, a release tag, any destructive operation" "Not owner-only: merge and close" "merge only at an independent 9/10 or more on green gates" "check reality against the trigger" "break a circular wait" "when the approved queue is empty, triage the backlog" "gets a tooling-feedback draft in the same turn" "five lines at most, changes since the last status only"; do
               grep -qF "$rule" <<<"$canon" && ok || bad "$role: autonomy block lost the rule: $rule"
             done
             for boundary in "merging pull requests" "approving anything on the owner's behalf" "editing, writing or generating code" "agent prompt\` only after the owner's confirmation"; do
@@ -119,6 +119,12 @@
           fi
         done
 
+        # skills#57: the tick checklist and the status format live in docs/process.md
+        for rule in "## Tick checklist" "**Trigger vs reality.**" "**Circular waits.**" "**Idle workers with authorized work.**" "**Empty approved queue.**" "gets a \`tooling-feedback\`" "## Status format" "five lines at most"; do
+          grep -qF "$rule" docs/process.md && ok || bad "docs/process.md lost: $rule"
+        done
+        ! grep -qF "Act, do not plan." agents/coordinator/ROLE.md && ok || bad "ROLE.md still says act, do not plan (decide, then report replaced it)"
+        ! grep -qE "Escalate only owner decisions: merge" agents/coordinator/ROLE.md && ok || bad "ROLE.md still escalates merge as an owner decision"
         # skills#36: the wake path is documented against each acceptance criterion, and process.md no longer says no re-arm
         doc=docs/coordinator-continuity.md
         [ -f "$doc" ] && ok || bad "$doc is missing"
