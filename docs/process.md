@@ -29,9 +29,11 @@ authorization. The owner may delegate approval in config
 (`coordinator.mayApprove`, with `coordinator.approvalDecision` naming the
 owner's quoted decision): then `gh:label approved` may add the label to an
 issue of the owner's repos (never a PR, never over `needs-live`, `blocked`
-or `needs-decision`), both audit lines cite the decision, and the send gate
-accepts that label only because of those lines (`applied_by:
-coordinator-delegated`, with the `gh:label` `audit_id`).
+or `needs-decision`, only the owner's own open issues), both audit lines cite
+the decision, and the send gate accepts that label only because of those
+lines (`applied_by: coordinator-delegated`, with the `gh:label` `audit_id`),
+only while the delegation is still in force, and only with no hold on the
+issue.
 
 ## One tick
 

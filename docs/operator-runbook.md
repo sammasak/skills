@@ -103,7 +103,14 @@ be one the coordinator cannot write, unless you delegate it:
 of your decision comment) lets `gh:label approved` label an issue of your
 repos (never a PR, never over `needs-live`, `blocked` or `needs-decision`),
 cited in its audit lines as `owner_delegation`; the send gate accepts such a
-label and records `applied_by: coordinator-delegated` with that `audit_id`.
+label only while the delegation is in force (same flag, same decision URL),
+on an issue you wrote that carries no hold, and records `applied_by:
+coordinator-delegated` with that `audit_id`. Switching the flag off or
+changing the decision withdraws every earlier delegated approval; adding
+`blocked`, `needs-live` or `needs-decision` stops it; an issue someone else
+opened in a public repo is never approved. Both options are yours because
+the headless wrapper refuses `--option` and the role's task list has no
+other door; a shell with `devenv` can set them, as the test suite does.
 Otherwise `herdr:message` refuses the three
 labels above as authorization, and any label its own audit log says it
 added. The record keeps who applied the label and when, from the issue's

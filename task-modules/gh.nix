@@ -71,7 +71,11 @@ in
           jq -e 'type == "object" and (has("pull_request") | not)' <<<"$issue" >/dev/null 2>&1 || fail 3 invalid_input "$repo#$num is a pull request (or unreadable); delegated approval covers issues only" "$ctx"
           hold=$(jq -r '[.labels[]? | .name // empty | select(. == "needs-live" or . == "blocked" or . == "needs-decision")] | first // empty' <<<"$issue")
           [ -z "$hold" ] || fail 3 owner_hold "$repo#$num carries $hold, an owner hold; not approving" "$ctx"
-          delegation=$(jq -cn --arg d "$decision" '{owner_delegation:{may_approve:true, decision:$d}}')
+          [ "$(jq -r '.state // ""' <<<"$issue")" = open ] || fail 3 invalid_input "$repo#$num is not open; not approving" "$ctx"
+          # public repositories accept issues from anyone: only the owner's own issues (every agent posts as the owner) may be approved
+          author=$(jq -r '.user.login // ""' <<<"$issue")
+          [ "$author" = ${lib.escapeShellArg cfg.ghOwner} ] || fail 3 not_delegated "$repo#$num is not the owner's issue (written by ''${author:-?}); delegated approval covers the owner's own issues only" "$ctx"
+          delegation=$(jq -cn --arg d "$decision" --arg a "$author" '{owner_delegation:{may_approve:true, decision:$d, author:$a}}')
         else
           case "$label" in needs-decision|blocked|needs-live) ;; *) fail 3 invalid_input "label must be one of needs-decision, blocked, needs-live (an authorizing label only under the owner's delegation, coordinator.mayApprove)" "$ctx" ;; esac
         fi

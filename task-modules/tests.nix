@@ -335,16 +335,33 @@
           : > "$FAKE_LOG"; FAKE_GH_LABELS="[\"enhancement\",\"$hold\"]" run gh:label "''${DELEG[@]}" --input-json "$APPROVE"
           [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q "$hold" && ! grep -q POST "$FAKE_LOG" && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused on an issue carrying $hold ($CODE $OUT)"
         done
+        : > "$FAKE_LOG"; run gh:label --option coordinator.mayApprove:bool true --option coordinator.approvalDecision:string 'https://github.com/someone-else/x/issues/1#issuecomment-5' --input-json "$APPROVE"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused when the decision reference is outside the owner's repositories ($CODE $OUT)"
+        : > "$FAKE_LOG"; FAKE_GH_ISSUE_USER=someone-else run gh:label "''${DELEG[@]}" --input-json "$APPROVE"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && jqr .error.message | grep -q "not the owner's" && ! grep -q POST "$FAKE_LOG" && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused on an issue someone else wrote (public repos accept issues from anyone) ($CODE $OUT)"
+        : > "$FAKE_LOG"; FAKE_GH_ISSUE_STATE=closed run gh:label "''${DELEG[@]}" --input-json "$APPROVE"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'not open' && ! grep -q POST "$FAKE_LOG" && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused on a closed issue ($CODE $OUT)"
         : > "$FAKE_LOG"; run gh:label "''${DELEG[@]}" --input-json "$APPROVE"
-        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr '.owner_delegation | "\(.may_approve) \(.decision)"')" = "true $DEC" ] && ok || bad "approve: allowed when delegated, the record cites the decision ($CODE $OUT)"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr '.owner_delegation | "\(.may_approve) \(.decision) \(.author)"')" = "true $DEC sammasak" ] && ok || bad "approve: allowed when delegated, the record cites the decision and the issue's author ($CODE $OUT)"
         grep -q '^gh api repos/sammasak/skills/issues/44$' "$FAKE_LOG" && grep -q '^gh api -X POST repos/sammasak/skills/issues/44/labels --input -' "$FAKE_LOG" && [ "$(grep -c '^gh' "$FAKE_LOG")" = 2 ] && ok || bad "approve: one issue read, then one POST ($(cat "$FAKE_LOG"))"
-        APP_AID=$(jqr .audit_id); [ "$(audit_lines)" = $((before + 2)) ] && [ "$(jq -r --arg a "$APP_AID" 'select(.audit_id == $a) | "\(.stage) \(.label) \(.action) \(.owner_delegation.may_approve) \(.owner_delegation.decision)"' "$AUDIT" | paste -sd'|')" = "attempt approved add true $DEC|outcome approved add true $DEC" ] && ok || bad "approve: attempt and outcome audit lines both carry owner_delegation ($(tail -2 "$AUDIT"))"
+        APP_AID=$(jqr .audit_id); [ "$(audit_lines)" = $((before + 2)) ] && [ "$(jq -r --arg a "$APP_AID" 'select(.audit_id == $a) | "\(.stage) \(.label) \(.action) \(.owner_delegation.may_approve) \(.owner_delegation.decision) \(.owner_delegation.author)"' "$AUDIT" | paste -sd'|')" = "attempt approved add true $DEC sammasak|outcome approved add true $DEC sammasak" ] && ok || bad "approve: attempt and outcome audit lines both carry owner_delegation ($(tail -2 "$AUDIT"))"
         # the send gate: the delegated approved authorizes, and the record says so (applied_by, the gh:label audit_id)
         run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#44","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
         H44=$(jqr .handoff_id)
         export FAKE_GH_LABELS='["enhancement","approved"]'; : > "$FAKE_LOG"
-        run herdr:message --input-json "{\"handoff_id\":\"$H44\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/44\",\"label\":\"approved\"}}"
-        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr '.authorized_by | "\(.verified) \(.applied_by) \(.delegation_audit_id) \(.owner_delegation.decision)"')" = "true coordinator-delegated $APP_AID $DEC" ] && ok || bad "send: a delegated approved authorizes, applied_by coordinator-delegated with the gh:label audit_id ($CODE $OUT)"
+        A44="{\"handoff_id\":\"$H44\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/44\",\"label\":\"approved\"}}"
+        # the owner's brakes reach the send gate: a hold added after the approval, the delegation withdrawn (flag off, or the
+        # decision changed) and an issue that is not the owner's all refuse a coordinator-delegated label, nothing sent
+        FAKE_GH_LABELS='["enhancement","approved","blocked"]' run herdr:message "''${DELEG[@]}" --input-json "$A44"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q blocked && ! grep -q '^herdr' "$FAKE_LOG" && ok || bad "send: a hold added after a delegated approval stops the send ($CODE $OUT)"
+        run herdr:message --input-json "$A44"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && jqr .error.message | grep -q withdrawn && ! grep -q '^herdr' "$FAKE_LOG" && ok || bad "send: delegation switched off withdraws earlier delegated approvals ($CODE $OUT)"
+        run herdr:message --option coordinator.mayApprove:bool true --option coordinator.approvalDecision:string 'https://github.com/sammasak/skills/issues/28#issuecomment-1' --input-json "$A44"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && jqr .error.message | grep -q withdrawn && ! grep -q '^herdr' "$FAKE_LOG" && ok || bad "send: a changed decision reference withdraws earlier delegated approvals ($CODE $OUT)"
+        FAKE_GH_ISSUE_USER=someone-else run herdr:message "''${DELEG[@]}" --input-json "$A44"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && jqr .error.message | grep -q "not the owner's" && ! grep -q '^herdr' "$FAKE_LOG" && ok || bad "send: a delegated label on an issue that is not the owner's never authorizes ($CODE $OUT)"
+        : > "$FAKE_LOG"; run herdr:message "''${DELEG[@]}" --input-json "$A44"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr '.authorized_by | "\(.verified) \(.applied_by) \(.delegation_audit_id) \(.owner_delegation.decision)"')" = "true coordinator-delegated $APP_AID $DEC" ] && grep -q '^gh api repos/sammasak/skills/issues/44$' "$FAKE_LOG" && ok || bad "send: a delegated approved authorizes while the delegation is in force, the issue is the owner's and carries no hold; applied_by coordinator-delegated with the gh:label audit_id ($CODE $OUT $(grep '^gh' "$FAKE_LOG" | tr '\n' ' '))"
         [ "$(jq -r --arg h "$H44" 'select(.handoff_id == $h and .phase == "attempt") | .authorized_by.applied_by + " " + .authorized_by.delegation_audit_id' "$AUDIT")" = "coordinator-delegated $APP_AID" ] && ok || bad "send: the attempt audit line records the delegation chain ($(grep "$H44" "$AUDIT" | head -1))"
         # an owner-applied label still reads applied_by owner; a delegated needs-decision and a malformed delegation never authorize
         run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#45","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
