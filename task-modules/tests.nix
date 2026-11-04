@@ -371,7 +371,8 @@
         [ "$(jqr '[.repos[].name] | index("old-thing")')" = null ] && ok || bad "gh:repos: archived repo excluded even when the server returns it"
         [ "$(jqr '.repos[] | select(.name=="skills") | "\(.repo) \(.open_prs) \(.open_issues) \(.approved_issues) \(.active) \(.private)"')" = "sammasak/skills 1 4 2 true false" ] && [ "$(jqr '.repos[] | select(.name=="quiet") | .active')" = false ] && ok || bad "gh:repos: counts and active flag ($OUT)"
         [ "$(jqr .truncated)" = false ] && [ "$(jqr .total)" = 5 ] && [ "$(jqr .listed)" = 4 ] && [ "$(jqr .limit)" = 20 ] && ok || bad "gh:repos: below the cap nothing is truncated ($OUT)"
-        grep -q -- '-F owner=sammasak' "$FAKE_LOG" && grep -q -- '-F n=20' "$FAKE_LOG" && [ "$(grep -c '^gh ' "$FAKE_LOG")" = 1 ] && ok || bad "gh:repos: exactly one gh call, owner and cap reach it ($(cat "$FAKE_LOG"))"
+        grep -q -- '-F owner=sammasak' "$FAKE_LOG" && grep -q -- '-F n=20' "$FAKE_LOG" && [ "$(grep -c '^gh ' "$FAKE_LOG")" = 2 ] && grep -q '^gh search issues --owner sammasak --label approved --state open --archived=false --limit 100 --json repository,number,title,url$' "$FAKE_LOG" && ok || bad "gh:repos: exactly two gh calls, the GraphQL page (owner and cap reach it) and one issue search per authorizing label, archived repos excluded ($(cat "$FAKE_LOG"))"
+        [ "$(jqr '.search | "\(.error) \(.found) \(.repos_added | length)"')" = "null 0 0" ] && ok || bad "gh:repos: an empty search adds nothing and is not an error ($(jqr .search))"
         grep -q 'labels:$labels' "$FAKE_LOG" && [ "$(jqr '.authorizing_labels|join(",")')" = approved ] && ok || bad "gh:repos: the query uses the $labels variable and the record echoes the configured list ($(grep -o 'labels[^ ]*' "$FAKE_LOG" | head -2 | paste -sd' '))"
         # the cap holds even when the server ignores first:n and returns the whole list (client-side .[:limit])
         FAKE_GH_IGNORE_N=1 run gh:repos --option coordinator.ghLimit:int 2
@@ -386,7 +387,15 @@
         [ "$CODE" -eq 0 ] && [ "$(jqr .error.kind)" = gh_error ] && jqr .error.message | grep -q 'HTTP 404' && ok || bad "gh:repos: gh failure is data with gh's own message ($CODE $OUT)"
         FAKE_GH_GRAPHQL_RAW='{"data":null,"errors":[{"message":"rate limited"}]}' run gh:repos
         [ "$CODE" -eq 0 ] && [ "$(jqr .error.kind)" = malformed ] && ok || bad "gh:repos: a GraphQL error body is data, not a list ($OUT)"
-        unset FAKE_GH_REPOS
+        # the blind spot: an approved issue in a repo pushed earlier than the newest `limit` (dormant, outside the page) is
+        # found by the search; a hit in a listed repo adds nothing, a hit under another owner is ignored
+        export FAKE_GH_SEARCH='[{"repository":{"name":"dormant","nameWithOwner":"sammasak/dormant"},"number":7,"title":"approved but dormant","url":"https://github.com/sammasak/dormant/issues/7"},{"repository":{"name":"dormant","nameWithOwner":"sammasak/dormant"},"number":9,"title":"second one","url":"https://github.com/sammasak/dormant/issues/9"},{"repository":{"name":"skills","nameWithOwner":"sammasak/skills"},"number":28,"title":"listed already","url":"https://github.com/sammasak/skills/issues/28"},{"repository":{"name":"x","nameWithOwner":"someone-else/x"},"number":1,"title":"not ours","url":"https://github.com/someone-else/x/issues/1"}]'
+        run gh:repos --option coordinator.ghLimit:int 2
+        [ "$CODE" -eq 0 ] && [ "$(jqr '[.repos[].repo] | join(",")')" = "sammasak/nixos-config,sammasak/skills,sammasak/dormant" ] && [ "$(jqr '.repos[] | select(.repo=="sammasak/dormant") | "\(.active) \(.approved_issues) \(.open_prs) \(.found_by)"')" = "true 2 0 search" ] && ok || bad "gh:repos: an approved issue in a dormant repo outside the page is discovered ($(jqr '.repos'))"
+        [ "$(jqr '.search | "\(.error) \(.found) \(.repos_added | join(","))"')" = "null 3 sammasak/dormant" ] && [ "$(jqr '.repos[] | select(.repo=="sammasak/skills") | .approved_issues')" = 2 ] && [ "$(jqr '.repos | map(.repo) | unique | length')" = 3 ] && ok || bad "gh:repos: listed repos keep their GraphQL counts, another owner's hit is ignored, nothing is duplicated ($(jqr .search))"
+        FAKE_GH_SEARCH_EXIT=1 run gh:repos --option coordinator.ghLimit:int 2
+        [ "$CODE" -eq 0 ] && [ "$(jqr .error)" = null ] && [ "$(jqr '.repos | length')" = 2 ] && [ "$(jqr '.search.error.kind')" = gh_error ] && jqr '.search.error.message' | grep -q 'rate limit' && ok || bad "gh:repos: a failing search is data under .search and the page stands ($(jqr '{search, n:(.repos|length)}'))"
+        unset FAKE_GH_SEARCH FAKE_GH_REPOS
         summary
       '';
     };

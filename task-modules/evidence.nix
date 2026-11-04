@@ -22,7 +22,7 @@ in
     };
 
     "gh:repos" = {
-      description = "The owner's repositories by recent push, one GraphQL call: open PR/issue counts and issues carrying an authorizing label (coordinator.authorizingLabels) per repo; archived excluded; capped by limit, at most 100 (truncated says so).";
+      description = "The owner's repositories by recent push, one GraphQL call: open PR/issue counts and issues carrying an authorizing label (coordinator.authorizingLabels) per repo; archived excluded; capped by limit, at most 100 (truncated says so); plus one gh search per authorizing label, so a repo pushed earlier than the page that still holds an authorized issue is listed as active (found_by: search).";
       input = { owner = cfg.ghOwner; limit = cfg.ghLimit; };
       exec = ''
         ${cfg.prelude}
@@ -50,6 +50,25 @@ in
           | $c + {schema_version:1, observed_at:$at, error:null, limit:$l, authorizing_labels:$labels, total:($rs.totalCount // ($repos|length)), listed:($repos|length),
                   truncated:((($rs.nodes|length) >= $l) and (($rs.totalCount // 0) > $l)), repos:$repos}' 2>/dev/null) || out=""
         [ -n "$out" ] || { observe_error malformed "gh api graphql returned no repository list (GraphQL error or unexpected JSON)" "$ctx"; exit 0; }
+        # the page above is the newest $limit pushes, so an authorized issue in a repo pushed earlier is invisible to it; one
+        # gh search over the owner's open issues per authorizing label (no paging: 100 is far above the open items; archived
+        # excluded, as the page does) finds it, and its repo joins the list as active with counts from the search alone. A
+        # failing search is data under .search and the page stands; coord:brief and coord:changed read it
+        search_err=null; found='[]'
+        for l in ${lib.concatMapStringsSep " " lib.escapeShellArg cfg.authorizingLabels}; do
+          rc=0; errf=$(mktemp)
+          hits=$(timeout -k 1 ${ts} ${cfg.ghCommand} search issues --owner "$owner" --label "$l" --state open --archived=false --limit 100 --json repository,number,title,url 2>"$errf") || rc=$?
+          msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+          [ "$rc" -eq 0 ] || { search_err=$(jq -cn --arg m "gh search issues (label $l) exited $rc''${msg:+: $msg}" '{kind:"gh_error", message:$m}'); break; }
+          found=$(jq -c --argjson f "$found" --arg l "$l" 'if type == "array" then $f + map(select(type == "object") | {repo:(.repository.nameWithOwner // ""), number, title:(.title // ""), url:(.url // ""), label:$l}) else error end' <<<"$hits" 2>/dev/null) \
+            || { search_err=$(jq -cn --arg l "$l" '{kind:"malformed", message:("gh search issues (label " + $l + ") returned unexpected JSON")}'); break; }
+        done
+        out=$(jq -c --argjson f "$found" --argjson e "$search_err" --arg o "$owner" '
+          [.repos[].repo] as $listed
+          | ($f | map(select((.repo | ascii_downcase | startswith(($o | ascii_downcase) + "/")) and (.repo | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")))) | unique_by(.repo + "#" + (.number | tostring))) as $hits
+          | ($hits | map(select(.repo as $r | ($listed | index($r)) == null)) | group_by(.repo)
+             | map({repo:.[0].repo, name:(.[0].repo | split("/")[1]), pushed_at:"", private:null, open_prs:0, open_issues:length, approved_issues:length, active:true, found_by:"search"})) as $extra
+          | .repos += $extra | .search = {error:$e, found:($hits | length), repos_added:($extra | map(.repo))}' <<<"$out" 2>/dev/null) || { observe_error malformed "could not merge the issue search into the repository list" "$ctx"; exit 0; }
         emit "$out"
       '';
     };

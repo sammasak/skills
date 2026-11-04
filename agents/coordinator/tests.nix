@@ -38,6 +38,14 @@
         grep -q 'issue list -R sammasak/skills' "$FAKE_LOG" && grep -q 'issue list -R sammasak/nixos-config' "$FAKE_LOG" && ! grep -q 'sammasak/quiet' "$FAKE_LOG" && ok || bad "portfolio: gh:work only for active repos ($(grep -c 'sammasak/quiet' "$FAKE_LOG"))"
         grep -q '## Portfolio (sammasak: 3 of 3 repos' "$TMP/run.log" && grep -q 'sammasak/skills: 1 open PR(s), 1 approved issue(s) → #43' "$TMP/run.log" && ok || bad "portfolio: Markdown section"
         [ "$(jqr '.portfolio.authorizing_labels | join(",")')" = approved ] && [ "$(jqr '.portfolio.active[] | select(.repo=="sammasak/skills") | .approved[0].labels | index("approved")')" != null ] && ok || bad "portfolio: the authorizing labels are the configured list and each listed issue carries one"
+        # an approved issue in a repo the page does not show (pushed long ago) reaches the portfolio through gh:repos's search
+        printf '%s\n' '[{"number":7,"title":"approved but dormant","state":"OPEN","updatedAt":"2026-10-01T00:00:00Z","labels":[{"name":"approved"}],"url":"https://github.com/sammasak/dormant/issues/7"}]' > "$TMP/gh/sammasak__dormant.issues.json"
+        FAKE_GH_SEARCH='[{"repository":{"name":"dormant","nameWithOwner":"sammasak/dormant"},"number":7,"title":"approved but dormant","url":"https://github.com/sammasak/dormant/issues/7"}]' runb
+        [ "$CODE" -eq 0 ] && [ "$(jqr '[.portfolio.active[].repo] | join(",")')" = "sammasak/nixos-config,sammasak/skills,sammasak/dormant" ] && [ "$(jqr '.portfolio.active[] | select(.repo=="sammasak/dormant") | .approved | map(.number) | join(",")')" = 7 ] && grep -q 'sammasak/dormant: 0 open PR(s), 1 approved issue(s) → #7 approved but dormant' "$TMP/run.log" && ok || bad "portfolio: a dormant repo's approved issue is discovered, expanded and shown ($(jqr '[.portfolio.active[].repo]') $(grep 'dormant' "$TMP/run.log" | head -2))"
+        # the issue search alone failing: the page's repos stand, but the brief says repos outside the page went unchecked
+        FAKE_GH_SEARCH_EXIT=1 runb
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.portfolio.search_error.kind')" = gh_error ] && [ "$(jqr '[.portfolio.active[].repo] | join(",")')" = "sammasak/nixos-config,sammasak/skills" ] && [ "$(jqr '.items|length')" = 3 ] && grep -q -- '- issue search unavailable: gh_error — gh search issues (label approved) exited 1: gh: HTTP 403 API rate limit exceeded for search; repos pushed before the page may hold authorized items' "$TMP/run.log" && ok || bad "portfolio: a failing issue search is named in the brief, the page's repos stand ($(jqr '{se:.portfolio.search_error, a:[.portfolio.active[].repo]}') $(grep 'issue search' "$TMP/run.log"))"
+        runb; [ "$(jqr '.portfolio.search_error')" = null ] && ! grep -q 'issue search unavailable' "$TMP/run.log" && ok || bad "portfolio: no search error, no line ($(jqr '.portfolio.search_error'))"
         # gh:repos failing: the brief still succeeds and stays whole for the agents; the portfolio carries its own error
         FAKE_GH_API_EXIT=1 runb
         [ "$CODE" -eq 0 ] && [ "$(jqr '.portfolio.error.kind')" = gh_error ] && [ "$(jqr .partial)" = false ] && [ "$(jqr '[.failed_sources[] | select(.source=="gh:repos")] | length')" = 0 ] && [ "$(jqr '.items|length')" = 3 ] && grep -q 'unavailable (agents above are unaffected): gh_error' "$TMP/run.log" && ok || bad "portfolio: gh failure is the portfolio's own error, the fleet brief is not partial ($(jqr '{partial,failed_sources,pe:.portfolio.error}'))"
@@ -496,7 +504,7 @@
         [ "$CODE" -ne 0 ] && grep -q '"kind":"busy"' "$TMP/run.log" && cmp -s "$TMP/snap-before.json" "$TMP/state/changed/snapshot.json" && ok || bad "second run while locked: busy, snapshot kept ($CODE)"
         [ -z "$(ls -d "$TMP"/state/changed/.run.* 2>/dev/null)" ] && ok || bad "temp dirs cleaned up"
         # (18) read-only and model-free: herdr agent list, the gh:repos query and the idle fleet's list reads; no prompt, no gh write
-        grep -q 'agent list' "$FAKE_LOG" && ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|pr list -R [^ ]+ --state (open|merged) |issue list -R [^ ]+ --state open )')" = 0 ] && ok || bad "only herdr agent list, the gh:repos query and list reads ($(grep -vE '^gh (api graphql|pr list|issue list)|agent list|machine list' "$FAKE_LOG" | sort -u | head -n 5))"
+        grep -q 'agent list' "$FAKE_LOG" && ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|search issues --owner [^ ]+ --label [^ ]+ --state open |pr list -R [^ ]+ --state (open|merged) |issue list -R [^ ]+ --state open )')" = 0 ] && ok || bad "only herdr agent list, the gh:repos query, its issue search and list reads ($(grep -vE '^gh (api graphql|pr list|issue list)|agent list|machine list' "$FAKE_LOG" | sort -u | head -n 5))"
 
         # --- wake budget: printing runs are what start a model session, so they are spaced and capped; a deferred run
         #     prints nothing and leaves the snapshot alone, so its changes stay pending and come out together later
@@ -669,6 +677,7 @@
         FPX=$(fp)
         FAKE_GH_LIST_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'gh pr list' && [ "$(fp)" = "$FPX" ] && ok || bad "gh list failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.evaluated) \(.fired)"')" = "false false" ] && iw .skipped | grep -q 'gh:repos' && ok || bad "gh:repos failure: skipped, logged, no wake ($LINES $(iw .))"
+        FAKE_GH_SEARCH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'issue search failed (gh_error' && [ "$(fp)" = "$FPX" ] && ok || bad "issue search failure: the page alone cannot say no work is left; skipped, logged, no wake ($LINES $(iw .))"
         run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 1 approved issue(s) without a handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
         FP8=$(fp)
         # (9) a blocked worker is not idle: its own line, no idle line; back to idle with the same work: silent
@@ -713,7 +722,7 @@
         run; [ -z "$LINES" ] && ok || bad "burst: silent after the catch-up ($LINES)"
         unset STATE
         # (14) read-only and model-free: list calls only, no prompt, no gh write
-        ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|pr list -R [^ ]+ --state (open|merged)|issue list -R [^ ]+ --state open)')" = 0 ] && ok || bad "only reads ($(grep '^gh ' "$FAKE_LOG" | grep -vE '^gh (api graphql|pr list|issue list)' | sort -u | head -3))"
+        ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|search issues --owner [^ ]+ --label [^ ]+ --state open |pr list -R [^ ]+ --state (open|merged)|issue list -R [^ ]+ --state open)')" = 0 ] && ok || bad "only reads ($(grep '^gh ' "$FAKE_LOG" | grep -vE '^gh (api graphql|pr list|issue list)' | sort -u | head -3))"
         summary
       '';
     };

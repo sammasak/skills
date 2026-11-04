@@ -73,7 +73,7 @@ in
     };
 
     "coord:brief" = {
-      description = "Owner-facing brief: items needing input first, every agent with herdr_state and work_verdict, handoffs from the audit log, and the owner's portfolio (gh:repos, gh:work for active repos only).";
+      description = "Owner-facing brief: items needing input first, every agent with herdr_state and work_verdict, handoffs from the audit log, and the owner's portfolio (gh:repos, gh:work for active repos only; a failed issue search is named, since repos outside the page are then unchecked).";
       after = [ "work:status@completed" "gh:repos@completed" ];
       exec = ''
         ${cfg.prelude}
@@ -85,11 +85,13 @@ in
         # issue with an authorizing label), newest push first, at most portfolioActive of them; the rest are named, not
         # fetched. GitHub being down leaves the agent part of the brief whole: the portfolio carries its own error and
         # is not a failed source of the fleet picture
-        repos=$(upstream "gh:repos"); portfolio_err="null"; active="[]"; skipped="[]"; ptotal=0; plisted=0; ptrunc=false
+        repos=$(upstream "gh:repos"); portfolio_err="null"; search_err="null"; active="[]"; skipped="[]"; ptotal=0; plisted=0; ptrunc=false
         if [ "$repos" = null ]; then portfolio_err='{"kind":"missing","message":"gh:repos produced no output"}'
         elif [ "$(jq -r '.error != null' <<<"$repos")" = true ]; then portfolio_err=$(jq -c .error <<<"$repos")
         else
           ptotal=$(jq -r '.total // 0' <<<"$repos"); plisted=$(jq -r '.listed // 0' <<<"$repos"); ptrunc=$(jq -r '.truncated // false' <<<"$repos")
+          # the issue search failing leaves repos pushed before the page unchecked: the brief says so (below), the page stands
+          search_err=$(jq -c '.search.error // null' <<<"$repos")
           while IFS= read -r repo; do
             [ -n "$repo" ] || continue
             if [ "$(jq -r length <<<"$active")" -ge ${toString cfg.portfolioActive} ]; then skipped=$(jq -c --arg r "$repo" '. + [$r]' <<<"$skipped"); continue; fi
@@ -100,8 +102,8 @@ in
                           open_pr_list:([$w.prs[]? | select(.state == "OPEN") | {number, title, url, review_decision, draft, checks}])}]' <<<"$active")
           done < <(jq -r '.repos[] | select(.active) | .repo' <<<"$repos")
         fi
-        portfolio=$(jq -cn --arg o "${cfg.ghOwner}" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson t "$ptotal" --argjson l "$plisted" --argjson tr "$ptrunc" --argjson a "$active" --argjson s "$skipped" --argjson e "$portfolio_err" \
-          '{owner:$o, authorizing_labels:$labels, repos_total:$t, repos_listed:$l, truncated:$tr, active:$a, skipped_active:$s, error:$e}')
+        portfolio=$(jq -cn --arg o "${cfg.ghOwner}" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson t "$ptotal" --argjson l "$plisted" --argjson tr "$ptrunc" --argjson a "$active" --argjson s "$skipped" --argjson e "$portfolio_err" --argjson se "$search_err" \
+          '{owner:$o, authorizing_labels:$labels, repos_total:$t, repos_listed:$l, truncated:$tr, active:$a, skipped_active:$s, error:$e, search_error:$se}')
         brief=$(jq -c --argjson p "$portfolio" '. + {task:"coord:brief", portfolio:$p}' <<<"$ws")
         printf '%s\n' "$brief" > "$dir/latest.json.tmp" && mv "$dir/latest.json.tmp" "$dir/latest.json"
         printf '%s\n' "$brief" > "''${DEVENV_TASK_OUTPUT_FILE:-/dev/null}"
@@ -130,6 +132,7 @@ in
            elif (.portfolio.active|length) == 0 then "- no repo with an open PR or an approved issue"
            else (.portfolio.active[] | "- \(.repo): \(.open_prs) open PR(s), \(.approved_issues) approved issue(s)" + (if (.approved|length) > 0 then " → " + ([.approved[] | "#\(.number) \(.title)"] | join("; ")) else "" end) + (if .error != null then " (gh:work: \(.error.kind))" else "" end)) end),
           (if (.portfolio.skipped_active|length) > 0 then "- active but not expanded (cap \(.portfolio.active|length)): \(.portfolio.skipped_active | join(", "))" else empty end),
+          (if .portfolio.search_error != null then "- issue search unavailable: \(.portfolio.search_error.kind) — \(.portfolio.search_error.message); repos pushed before the page may hold authorized items" else empty end),
           "", "Full JSON: \($f)", "", "## Agents",
           (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 and .correlation.by != "none" then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
