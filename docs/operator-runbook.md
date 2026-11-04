@@ -98,7 +98,13 @@ The coordinator's GitHub writes are `gh:label` (add or remove one of
 it never speaks as you). Both need the `handoff_id` they serve or a `reason`,
 and append two `phase: gh` lines (attempt, outcome) to the same
 `audit.jsonl`. The label that authorizes a send is yours to apply and must
-be one the coordinator cannot write: `herdr:message` refuses the three
+be one the coordinator cannot write, unless you delegate it:
+`coordinator.mayApprove = true` with `coordinator.approvalDecision` (the URL
+of your decision comment) lets `gh:label approved` label an issue of your
+repos (never a PR, never over `needs-live`, `blocked` or `needs-decision`),
+cited in its audit lines as `owner_delegation`; the send gate accepts such a
+label and records `applied_by: coordinator-delegated` with that `audit_id`.
+Otherwise `herdr:message` refuses the three
 labels above as authorization, and any label its own audit log says it
 added. The record keeps who applied the label and when, from the issue's
 label events.

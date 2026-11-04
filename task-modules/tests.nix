@@ -256,9 +256,9 @@
         : > "$FAKE_LOG"
         run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"needs-live","action":"remove","reason":"live check recorded in #43"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr .reason)" = "live check recorded in #43" ] && [ "$(jqr .handoff_id)" = null ] && grep -q '^gh api -X DELETE repos/sammasak/skills/issues/43/labels/needs-live$' "$FAKE_LOG" && [ "$(audit_lines)" = 4 ] && ok || bad "label remove with reason ($CODE $OUT)"
-        # refusals before any gh call or audit line: a label that authorizes sends (approved, or anything outside the three), unknown action, bad target,
+        # refusals before any gh call or audit line: a label outside the three (approved without delegation is its own case below), unknown action, bad target,
         # dot segments, both or neither of handoff_id/reason, unknown draft, long reason
-        for bad_in in '{"repo":"sammasak/skills","number":43,"label":"approved","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"assign:implementer","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"wontfix","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"toggle","reason":"r"}' \
+        for bad_in in '{"repo":"sammasak/skills","number":43,"label":"assign:implementer","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"wontfix","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"toggle","reason":"r"}' \
             '{"repo":"skills","number":43,"label":"blocked","action":"add","reason":"r"}' '{"repo":"../skills","number":43,"label":"blocked","action":"add","reason":"r"}' '{"repo":"sammasak/..","number":43,"label":"blocked","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":"43; rm","label":"blocked","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":0,"label":"blocked","action":"add","reason":"r"}' \
             "{\"repo\":\"sammasak/skills\",\"number\":43,\"label\":\"blocked\",\"action\":\"add\",\"handoff_id\":\"$HID\",\"reason\":\"r\"}" '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"add"}' \
             '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"add","handoff_id":"000000000000"}' "{\"repo\":\"sammasak/skills\",\"number\":43,\"label\":\"blocked\",\"action\":\"add\",\"reason\":\"$(printf 'r%.0s' $(seq 1 4001))\"}"; do
@@ -311,6 +311,59 @@
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'added by the coordinator' && [ ! -s "$FAKE_LOG" ] && ok || bad "a label the audit log shows the coordinator added cannot authorize ($OUT)"
         run herdr:message --input-json "{\"handoff_id\":\"$HID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/43\",\"label\":\"assign:implementer\"}}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "herdr:message accepts an audit log with gh lines ($CODE $OUT)"
+        # --- delegated approval (the owner's decision, skills#28 comment 6629911996): approved is writable only under
+        #     coordinator.mayApprove, on an issue of the owner's repos that carries no owner hold, never on a PR; the act cites
+        #     the decision in both audit lines, and only such a line lets the send gate accept a coordinator-added approved
+        DEC='https://github.com/sammasak/skills/issues/28#issuecomment-6629911996'
+        DELEG=(--option coordinator.mayApprove:bool true --option coordinator.approvalDecision:string "$DEC")
+        APPROVE='{"repo":"sammasak/skills","number":44,"label":"approved","action":"add","reason":"fits a worker: no live hardware"}'
+        export FAKE_GH_LABELS='["enhancement"]'; unset FAKE_GH_ISSUE_IS_PR
+        : > "$FAKE_LOG"; before=$(audit_lines)
+        run gh:label --input-json "$APPROVE"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused when delegation is off (the default) ($CODE $OUT)"
+        run gh:label --option coordinator.approvalDecision:string "$DEC" --input-json "$APPROVE"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && jqr .error.message | grep -q 'mayApprove is off' && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused when the flag is off even with a decision reference configured ($CODE $OUT)"
+        run gh:label --option coordinator.mayApprove:bool true --input-json "$APPROVE"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused when the flag is on but no decision reference is configured ($CODE $OUT)"
+        run gh:label "''${DELEG[@]}" --input-json '{"repo":"someone-else/skills","number":44,"label":"approved","action":"add","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = not_delegated ] && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused outside the owner's repositories ($CODE $OUT)"
+        run gh:label "''${DELEG[@]}" --input-json '{"repo":"sammasak/skills","number":44,"label":"approved","action":"remove","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: removing approved is refused ($CODE $OUT)"
+        : > "$FAKE_LOG"; FAKE_GH_ISSUE_IS_PR=1 run gh:label "''${DELEG[@]}" --input-json "$APPROVE"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ "$(grep -c '^gh api' "$FAKE_LOG")" = 1 ] && ! grep -q POST "$FAKE_LOG" && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused on a PR after one read, nothing written ($CODE $OUT $(cat "$FAKE_LOG"))"
+        for hold in needs-live blocked needs-decision; do
+          : > "$FAKE_LOG"; FAKE_GH_LABELS="[\"enhancement\",\"$hold\"]" run gh:label "''${DELEG[@]}" --input-json "$APPROVE"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q "$hold" && ! grep -q POST "$FAKE_LOG" && [ "$(audit_lines)" = "$before" ] && ok || bad "approve: refused on an issue carrying $hold ($CODE $OUT)"
+        done
+        : > "$FAKE_LOG"; run gh:label "''${DELEG[@]}" --input-json "$APPROVE"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr '.owner_delegation | "\(.may_approve) \(.decision)"')" = "true $DEC" ] && ok || bad "approve: allowed when delegated, the record cites the decision ($CODE $OUT)"
+        grep -q '^gh api repos/sammasak/skills/issues/44$' "$FAKE_LOG" && grep -q '^gh api -X POST repos/sammasak/skills/issues/44/labels --input -' "$FAKE_LOG" && [ "$(grep -c '^gh' "$FAKE_LOG")" = 2 ] && ok || bad "approve: one issue read, then one POST ($(cat "$FAKE_LOG"))"
+        APP_AID=$(jqr .audit_id); [ "$(audit_lines)" = $((before + 2)) ] && [ "$(jq -r --arg a "$APP_AID" 'select(.audit_id == $a) | "\(.stage) \(.label) \(.action) \(.owner_delegation.may_approve) \(.owner_delegation.decision)"' "$AUDIT" | paste -sd'|')" = "attempt approved add true $DEC|outcome approved add true $DEC" ] && ok || bad "approve: attempt and outcome audit lines both carry owner_delegation ($(tail -2 "$AUDIT"))"
+        # the send gate: the delegated approved authorizes, and the record says so (applied_by, the gh:label audit_id)
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#44","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
+        H44=$(jqr .handoff_id)
+        export FAKE_GH_LABELS='["enhancement","approved"]'; : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$H44\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/44\",\"label\":\"approved\"}}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr '.authorized_by | "\(.verified) \(.applied_by) \(.delegation_audit_id) \(.owner_delegation.decision)"')" = "true coordinator-delegated $APP_AID $DEC" ] && ok || bad "send: a delegated approved authorizes, applied_by coordinator-delegated with the gh:label audit_id ($CODE $OUT)"
+        [ "$(jq -r --arg h "$H44" 'select(.handoff_id == $h and .phase == "attempt") | .authorized_by.applied_by + " " + .authorized_by.delegation_audit_id' "$AUDIT")" = "coordinator-delegated $APP_AID" ] && ok || bad "send: the attempt audit line records the delegation chain ($(grep "$H44" "$AUDIT" | head -1))"
+        # an owner-applied label still reads applied_by owner; a delegated needs-decision and a malformed delegation never authorize
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#45","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
+        H45=$(jqr .handoff_id)
+        echo "{\"audit_id\":\"bbbbbbbbbbbb\",\"phase\":\"gh\",\"stage\":\"outcome\",\"task\":\"gh:label\",\"repo\":\"sammasak/skills\",\"number\":45,\"label\":\"needs-decision\",\"action\":\"add\",\"outcome\":\"done\",\"at\":\"2026-11-04T00:00:00Z\",\"owner_delegation\":{\"may_approve\":true,\"decision\":\"$DEC\"}}" >> "$AUDIT"
+        echo "{\"audit_id\":\"cccccccccccc\",\"phase\":\"gh\",\"stage\":\"outcome\",\"task\":\"gh:label\",\"repo\":\"sammasak/skills\",\"number\":45,\"label\":\"approved\",\"action\":\"add\",\"outcome\":\"done\",\"at\":\"2026-11-04T00:00:00Z\",\"owner_delegation\":{\"may_approve\":true}}" >> "$AUDIT"
+        export FAKE_GH_LABELS='["epic","needs-decision","approved"]'; : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$H45\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/45\",\"label\":\"needs-decision\"}}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'writes itself' && [ ! -s "$FAKE_LOG" ] && ok || bad "send: a delegated needs-decision is still refused ($OUT)"
+        run herdr:message --input-json "{\"handoff_id\":\"$H45\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/45\",\"label\":\"approved\"}}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'added by the coordinator' && [ ! -s "$FAKE_LOG" ] && ok || bad "send: a coordinator-added approved whose delegation lacks the decision is refused ($OUT)"
+        run herdr:message --input-json "{\"handoff_id\":\"$H45\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/45\",\"label\":\"epic\"}}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.authorized_by | "\(.applied_by) \(.delegation_audit_id)"')" = "owner null" ] && ok || bad "send: an owner-applied label reads applied_by owner ($CODE $OUT)"
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#46","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
+        H46=$(jqr .handoff_id)
+        echo "{\"audit_id\":\"dddddddddddd\",\"phase\":\"gh\",\"stage\":\"outcome\",\"task\":\"gh:label\",\"repo\":\"sammasak/skills\",\"number\":46,\"label\":\"epic\",\"action\":\"add\",\"outcome\":\"done\",\"at\":\"2026-11-04T00:00:00Z\",\"owner_delegation\":{\"may_approve\":true,\"decision\":\"$DEC\"}}" >> "$AUDIT"
+        export FAKE_GH_LABELS='["epic"]'; : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$H46\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/46\",\"label\":\"epic\"}}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'added by the coordinator' && [ ! -s "$FAKE_LOG" ] && ok || bad "send: a delegated line for a label that is not an authorizing one never authorizes ($OUT)"
         # a corrupt audit log stops gh acts too
         echo 'not json' >> "$AUDIT"; : > "$FAKE_LOG"
         run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"remove","reason":"r"}'
