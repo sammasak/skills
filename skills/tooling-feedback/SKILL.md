@@ -1,6 +1,6 @@
 ---
 name: tooling-feedback
-description: "Use when reporting a bug, usability problem, performance regression, or enhancement for sammasak's tools (nix-audit, factum, devenv-platform, llm-gateway, NixOS integration), including deciding which GitHub repo owns it and collecting a safe reproducer. Not for implementing a feature or fix in those tools, or for filing without the owner's approval."
+description: "Use when drafting a bug report or GitHub issue about one of sammasak's tools misbehaving (nix-audit, factum, devenv-platform, sdlc-status, llm-gateway, NixOS integration), including wrong or inconsistent results it reports: deciding which repo owns it and collecting a safe reproducer. Not for implementing a feature or fix in those tools (use rust-engineering), or for filing without the owner's approval."
 allowed-tools: Bash, Read, Grep
 ---
 
