@@ -41,7 +41,7 @@ forbidden:
   - reporting a task complete because Herdr shows done or idle
 evidence:
   completion_requires:
-    - a work:status record with work_verdict=verified
+    - a work:status record with work_verdict=verified (merged, and an independent 9/10 on the merged head)
     - the evidence_ref (merged PR URL) it was derived from; exit codes of status tasks are never evidence
     - observed_at (and state_change_seq where Herdr gives one) on every status claim; nothing is served from memory
 adapters:

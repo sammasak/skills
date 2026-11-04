@@ -9,7 +9,7 @@ $inv[0] as $inv | $handoffs[0] as $log | $log.omitted as $omitted | $log.handoff
 | def title_repo: [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first;
 
 # per-PR stages; reviewed = a signed grade >= 9 on the PR's head (the review's commit, or the head's short sha in the
-# comment); passed_by names its signers, so a handoff never counts its own agent's grade (see the windows below);
+# comment); graded_by names the signers of any grade, so a handoff never counts a PR its own agent graded (see below);
 # live = a comment with a "Live acceptance:" line
 def pr_view: (.headRefOid // "") as $head
   | passes as $passes
@@ -19,21 +19,24 @@ def pr_view: (.headRefOid // "") as $head
              reviewed:($passes | last | if . then {grade, by, head:$head, url} else null end),
              merged:(if .mergedAt then {url, merged_at:.mergedAt} else null end),
              live:(if $live then {url:$live.url} else null end)},
-     passed_by:[$passes[].by] | unique};
+     graded_by:[notes[] | select(.grade != null and .by != null) | .by] | unique};
 
 def agent_at($h; $a): [$inv.hosts[]? | select(.host == $h) | .agents[]? | select(.agent_id == $a)] | first;
 def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
 
-# a handoff owns the PRs naming its task_ref opened in its window [sent_at, until), except a PR its own agent passed
-# (a >= 9 grade on the head): that agent reviewed it, a concurrent handoff implemented it
+# a handoff owns the PRs naming its task_ref opened, or given commits, in its window [sent_at, until), except a PR its own agent
+# graded (at any grade, on any head): that agent reviewed it, a concurrent handoff implemented it
 ($handoffs
  | map(. as $h | ($h.task_ref | num) as $n | ($repos[$h.repo // ""] // null) as $d | "\($h.host)/\($h.agent_id)" as $impl
    | agent_at($h.host; $h.agent_id) as $now
    | (if $now == null then (if host_answered($h.host) then "gone" else "unobserved" end)
       elif $h.session_id != null and $now.session_id != null and $h.session_id != $now.session_id then "session_changed" else "same" end) as $sess
    | (if $d != null and $d.error == null and $n != null then
-        [$d.prs[] | select(refs($n)) | select(.number == $n or (.createdAt >= $h.sent_at and ($h.until == null or .createdAt < $h.until)))
-         | pr_view | select(.passed_by | index($impl) | not) | del(.passed_by)] | sort_by(.number)
+        # owned: the PR is the task_ref itself, was opened in the window, or got commits in the window (a fix-up round on an
+        # existing PR, its review findings handed back as a new handoff)
+        def in_window: . != null and . >= $h.sent_at and ($h.until == null or . < $h.until);
+        [$d.prs[] | select(refs($n)) | select(.number == $n or (.createdAt | in_window) or any((.commits // [])[]; .committedDate | in_window))
+         | pr_view | select(.graded_by | index($impl) | not) | del(.graded_by)] | sort_by(.number)
       else [] end) as $prs
    | [$prs[] | select(.state != "CLOSED" or .stages.merged != null)] as $live_prs
    | (reduce ("implemented", "reviewed", "merged", "live") as $k ({};
@@ -43,7 +46,8 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
       elif $h.repo == null then {v:"unknown", r:["the handoff names no repo (authorized_by.issue_url)"]}
       elif $d == null or $d.error != null then {v:"unknown", r:["GitHub evidence unavailable for \($h.repo)" + (if $d.error then " (\($d.error))" else "" end)]}
       elif ($live_prs | length) == 0 then {v:"unknown", r:["no PR in \($h.repo) references \($h.task_ref) since the handoff"]}
-      elif $st.merged != null then {v:"verified", r:[]}
+      elif $st.merged != null and $st.reviewed != null then {v:"verified", r:[]}
+      elif $st.merged != null then {v:"unverified", r:[$live_prs[] | select(.stages.reviewed == null) | "PR #\(.number) merged without an independent 9/10 on its head"]}
       else {v:"unverified", r:[$live_prs[] | select(.stages.merged == null) | "PR #\(.number) open, not merged"]} end) as $verdict
    | ([$d.prs[]?.createdAt] | min) as $oldest
    | $h + {prs:$prs, stages:$st, work_verdict:$verdict.v,

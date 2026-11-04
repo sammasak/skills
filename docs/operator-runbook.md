@@ -46,9 +46,10 @@ invents one, and does not ask you to confirm each draft; ROLE.md, Autonomy), (`h
 through `gh` first and refuses with `authorization_missing` when the label is
 not there), awaits (`herdr:await`), and verifies with `work:status`. Every
 attempt in `audit.jsonl` records `allowed_actions` and `authorized_by`
-(`verified: true`, `verified_at`). "delivered" is not "done"; only a merged
-PR for the handoff's `task_ref` in the authorizing issue's repo, opened after
-the send, makes `work_verdict: verified`. Only the newest 50 handoffs are
+(`verified: true`, `verified_at`). "delivered" is not "done"; only merged
+PRs for the handoff's `task_ref` in the authorizing issue's repo, opened or
+committed to after the send, each with an independent signed 9/10 on its
+head, make `work_verdict: verified`. Only the newest 50 handoffs are
 evaluated (`handoffs_omitted` counts the rest); an agent whose handoff is
 older reports `correlation.by: omitted`, not a verdict from its title. The
 brief's Markdown is `brief/latest.md` beside `latest.json`; devenv's own

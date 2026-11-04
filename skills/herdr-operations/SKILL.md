@@ -61,19 +61,21 @@ inventory as `error.kind: invalid_label` until it is renamed.
   its current session (audit log, matched by host, pane and Herdr session) is
   judged by that handoff, whatever its title says (`correlation.by:
   handoff`); only an agent without one falls back to an `OWNER/REPO #N` title
-  (`correlation.by: title`). `verified` (the handoff's PRs are merged, or for
-  a title: a merged PR and the issue closed), `unverified` (an open PR or open
+  (`correlation.by: title`). `verified` (the handoff's PRs are merged and
+  `reviewed`, or for a title: a merged PR and the issue closed; a merged PR
+  without that review is `unverified`), `unverified` (an open PR or open
   issue), `blocked` (Herdr shows an approval/question UI), `unknown` (no
   evidence, or GitHub unreachable; `reasons` says which). `evidence_ref` is a
   merged PR URL, set only on `verified`.
 - Each handoff carries `stages`, distinct and each `null` until met:
-  `implemented` (a PR naming its `task_ref` opened from the send until the
-  next handoff to that pane), `reviewed` (a grade of 9/10 or more on the PR's
+  `implemented` (a PR naming its `task_ref` opened, or given commits, from the
+  send until the next handoff to that pane), `reviewed` (a grade of 9/10 or more on the PR's
   exact head, signed `(<host> <agent>` or `-- <host> <agent>`), `merged` (the
   merged PR URLs), `live` (a PR comment with a `Live acceptance:` line). A PR
-  whose 9/10-or-more grade is signed by the handoff's own agent is that agent's
-  review, not its work: it leaves the handoff's PRs instead of counting as
-  reviewed. Children of an epic that stays open are verified per handoff;
+  the handoff's own agent graded, at any grade, is that agent's review, not
+  its work: it leaves the handoff's PRs instead of counting as reviewed. A
+  grade on a line naming another pane (`(wR:p1, 8/10)` in the author's reply)
+  quotes that pane and is no one's grade. Children of an epic that stays open are verified per handoff;
   `stale: true` marks a handoff whose pane is gone, restarted, or superseded
   without a PR.
 - Only the newest 50 handoffs in the audit log are evaluated; `handoffs_omitted`
