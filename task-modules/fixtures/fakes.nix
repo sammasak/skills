@@ -111,6 +111,13 @@
             "GET "repos/*/issues/[0-9]*) printf '%s\n' "''${FAKE_GH_LABELS:-[]}" | jq --arg n "''${path##*/}" --arg pr "''${FAKE_GH_ISSUE_IS_PR:-}" --arg u "''${FAKE_GH_ISSUE_USER:-sammasak}" --arg st "''${FAKE_GH_ISSUE_STATE:-open}" '{number:($n|tonumber), state:$st, user:{login:$u}, author_association:(if $u == "sammasak" then "OWNER" else "NONE" end), labels:map({name:.})} + (if $pr == "" then {} else {pull_request:{url:"x"}} end)' ;;
             "POST "*/labels) jq -c --argjson have "''${FAKE_GH_LABELS:-[]}" '($have + .labels) | unique | map({name:.})' <<<"$body" ;;
             "DELETE "*/labels/*) echo '[]' ;;
+            # `gh api repos/O/R/issues?state=open…`: FAKE_GH_OPEN_ISSUES (the open issues); POST creates one: FAKE_GH_ISSUE_OUT
+            # captures the request, FAKE_GH_ISSUE_RAW replaces the answer, FAKE_GH_POST_ISSUE_EXIT fails the create alone
+            "GET "repos/*/issues) printf '%s\n' "''${FAKE_GH_OPEN_ISSUES:-[]}" ;;
+            "POST "repos/*/issues) [ -n "''${FAKE_GH_ISSUE_OUT:-}" ] && printf '%s\n' "$body" > "$FAKE_GH_ISSUE_OUT"
+              [ -n "''${FAKE_GH_POST_ISSUE_EXIT:-}" ] && { echo "gh: HTTP 422 Validation Failed" >&2; exit "$FAKE_GH_POST_ISSUE_EXIT"; }
+              [ -n "''${FAKE_GH_ISSUE_RAW:-}" ] && { printf '%s\n' "$FAKE_GH_ISSUE_RAW"; exit 0; }
+              printf '{"number":99,"html_url":"https://github.com/%s/issues/99"}\n' "$(sed -E 's#^repos/([^/]+/[^/]+)/issues$#\1#' <<<"$path")" ;;
             "POST "*/comments) [ -n "''${FAKE_GH_COMMENT_OUT:-}" ] && jq -r .body <<<"$body" > "$FAKE_GH_COMMENT_OUT"
               [ -n "''${FAKE_GH_COMMENT_RAW:-}" ] && { printf '%s\n' "$FAKE_GH_COMMENT_RAW"; exit 0; }
               printf '{"id":1,"html_url":"https://github.com/%s#issuecomment-1"}\n' "$(sed -E 's#^repos/([^/]+/[^/]+)/issues/([0-9]+)/comments$#\1/issues/\2#' <<<"$path")" ;;

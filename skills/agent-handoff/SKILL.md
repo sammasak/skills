@@ -84,7 +84,7 @@ fixed; skipping a step is a boundary violation.
 6. **Verify** with `work:status`: only `work_verdict: verified` with its
    `evidence_ref` closes the loop. Report that, or report what is missing.
 
-## GitHub writes (`gh:label`, `gh:comment`)
+## GitHub writes (`gh:label`, `gh:comment`, `gh:issue`)
 
 The coordinator's only other acts. Each is bounded to one issue or PR and
 appends two `phase: gh` lines to the same `audit.jsonl` (`stage: attempt`
@@ -98,7 +98,13 @@ authorizes a send; actions: `add`, `remove`) and
 signature `-- Coordinator (automated; not the owner)`, replacing any
 `-- Coordinator` line the body already had. A comment reports, quotes or
 asks; it never answers, decides, approves or promises in the owner's name.
-Both run only after the owner confirmed, in this conversation, the exact
+`devenv tasks run gh:issue --input-json '{"repo":"OWNER/REPO","title":"...","body":"...","labels":["enhancement"],"reason":"..."}'`
+creates one issue in the owner's repositories (title one line, up to 256
+characters; body up to 8000, signed the same way; labels only `enhancement`,
+`needs-decision`, `blocked`, `needs-live`, never one that authorizes a send).
+It refuses when an open issue already has that title, so a retry never opens
+a second one. Approval stays `gh:label`'s, under the owner's delegation.
+They run only after the owner confirmed, in this conversation, the exact
 label or text and its issue (inside the coordinator role, its Autonomy rules
 instead). A `gh` failure is recorded in the audit line and
 returned as `error.kind` (`command_failed`, `timeout`, `malformed`); report it

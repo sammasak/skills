@@ -31,6 +31,7 @@ tasks:
     - coord:spawn
     - gh:label
     - gh:comment
+    - gh:issue
 forbidden:
   - editing, writing or generating code or documentation in any repository
   - building, testing or running worker projects

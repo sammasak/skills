@@ -8,14 +8,18 @@
 let
   cfg = config.coordinator;
   t = toString cfg.timeoutSeconds;
-  # shared by both tasks: target checks, the handoff-or-reason rule, one audit line under the audit lock
-  ghPrelude = ''
+  # shared by every gh act task: target checks, the handoff-or-reason rule, one audit line under the audit lock; gh:issue
+  # creates the issue, so it has no number yet
+  ghPreludeFor = withNumber: ''
     ${cfg.prelude}
     repo=$(input .repo); num=$(input .number); hid=$(input .handoff_id); reason=$(input .reason)
     [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail 3 invalid_input "repo must be OWNER/REPO" "$ctx"
     case "$repo" in ./*|../*|*/.|*/..) fail 3 invalid_input "repo segments may not be . or .." "$ctx" ;; esac
+    ${if withNumber then ''
     [[ "$num" =~ ^[1-9][0-9]{0,8}$ ]] || fail 3 invalid_input "number must be the issue or PR number" "$ctx"
-    ctx=$(jq -c --arg r "$repo" --argjson n "$num" '. + {repo:$r, number:$n}' <<<"$ctx")
+    ctx=$(jq -c --arg r "$repo" --argjson n "$num" '. + {repo:$r, number:$n}' <<<"$ctx")'' else ''
+    [ -z "$num" ] || fail 3 invalid_input "number is not an input here (the issue does not exist yet)" "$ctx"
+    ctx=$(jq -c --arg r "$repo" '. + {repo:$r}' <<<"$ctx")''}
     # exactly one of handoff_id (an existing coord:handoff draft) or reason (free text, bounded) says why
     if [ -n "$hid" ] && [ -n "$reason" ]; then fail 3 invalid_input "give handoff_id or reason, not both" "$ctx"; fi
     if [ -n "$hid" ]; then
@@ -43,6 +47,9 @@ let
         '{schema_version:1} + $c + {audit_id:$a} + $w + {at:$at, outcome:$o} + ($x | del(.message)) + {error:(if $o == "done" then null else {kind:$o, message:($x.message // "gh failed")} end)}')"
       [ "$1" = done ] || exit 2; }
   '';
+  ghPrelude = ghPreludeFor true;
+  # labels a new issue may carry: the owner-protocol ones and enhancement, never one that authorizes a send
+  issueLabels = [ "enhancement" "needs-decision" "blocked" "needs-live" ];
 in
 {
   imports = [ ./common.nix ];
@@ -111,6 +118,47 @@ in
         url=$(jq -r '.html_url // empty' <<<"$res" 2>/dev/null || true)
         if [ "$rc" -eq 0 ] && [ -n "$url" ]; then record done "$(jq -cn --arg u "$url" --argjson n "''${#body}" '{comment_url:$u, body_chars:$n}')"
         elif [ "$rc" -eq 0 ]; then record malformed '{"message":"gh api returned no html_url; the comment may or may not exist, check the issue"}'
+        else record "$(rc_kind $rc)" "$(jq -cn --arg m "gh api exited $rc''${msg:+: $msg}" '{message:$m}')"; fi
+      '';
+    };
+
+    "gh:issue" = {
+      description = "ACT: create one issue in one of ${cfg.ghOwner}'s repositories (title one line, max 256; body max 8000, signed Coordinator; labels only ${lib.concatStringsSep ", " issueLabels}, never an authorizing label); refused when an open issue has the same title; audited with the handoff or reason.";
+      input = { repo = null; title = null; body = null; labels = null; handoff_id = null; reason = null; };
+      exec = ''
+        ctx='{"task":"gh:issue"}'
+        ${ghPreludeFor false}
+        [ "''${repo%%/*}" = ${lib.escapeShellArg cfg.ghOwner} ] || fail 3 invalid_input "gh:issue creates issues in ${cfg.ghOwner}'s repositories only, not $repo" "$ctx"
+        title=$(input .title); body=$(input .body)
+        [ -n "$title" ] || fail 3 invalid_input "title is required" "$ctx"
+        [ "''${#title}" -le 256 ] || fail 3 invalid_input "title exceeds 256 characters" "$ctx"
+        ! [[ "$title" =~ [[:cntrl:]] ]] || fail 3 invalid_input "title must be one line without control characters" "$ctx"
+        [ -n "$body" ] || fail 3 invalid_input "body is required" "$ctx"
+        [ "''${#body}" -le 8000 ] || fail 3 invalid_input "body exceeds 8000 characters" "$ctx"
+        labels=$(jq -c '.labels // []' <<<"''${DEVENV_TASK_INPUT:-{\}}")
+        jq -e 'type == "array" and length <= 4 and all(.[]; type == "string") and (unique | length) == length' <<<"$labels" >/dev/null 2>&1 \
+          || fail 3 invalid_input "labels must be a list of at most 4 distinct names" "$ctx"
+        jq -e --argjson a ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} 'any(.[]; . as $l | $a | index($l))' <<<"$labels" >/dev/null \
+          && fail 3 invalid_input "a new issue never carries a label that authorizes a send ($(jq -r --argjson a ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} '[.[] | select(. as $l | $a | index($l))] | join(", ")' <<<"$labels")); approval is gh:label's, under the owner's delegation" "$ctx"
+        jq -e --argjson ok ${lib.escapeShellArg (builtins.toJSON issueLabels)} 'all(.[]; . as $l | $ok | index($l))' <<<"$labels" >/dev/null \
+          || fail 3 invalid_input "labels must be among ${lib.concatStringsSep ", " issueLabels}" "$ctx"
+        ctx=$(jq -c --arg t "$title" '. + {title:$t}' <<<"$ctx")
+        # one issue per call and per title: a retry after an ambiguous outcome must not open a second one
+        errf=$(mktemp); rc=0
+        open=$(timeout -k 1 ${t} ${cfg.ghCommand} api "repos/$repo/issues?state=open&per_page=100" 2>"$errf" 9>&-) || rc=$?
+        msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+        [ "$rc" -eq 0 ] || fail 2 "$(rc_kind $rc)" "could not list the open issues of $repo before creating one: gh api exited $rc''${msg:+: $msg}" "$ctx"
+        dup=$(jq -r --arg t "$title" 'if type == "array" then [.[] | select((has("pull_request") | not) and .title == $t) | .number] | first // empty else "unreadable" end' <<<"$open" 2>/dev/null || echo unreadable)
+        [ "$dup" != unreadable ] || fail 2 malformed "the open-issue list of $repo was not a JSON array; not creating" "$ctx"
+        [ -z "$dup" ] || fail 3 duplicate "$repo#$dup is open with the same title; not creating a second one" "$ctx"
+        body=$(jq -rn --arg b "$body" '$b | sub("(\\s*\n-- Coordinator[^\n]*)*\\s*\\z"; "") + "\n\n-- Coordinator (automated; not the owner)"')
+        attempt "$(jq -cn --argjson l "$labels" --argjson n "''${#body}" '{labels:$l, body_chars:$n}')"
+        errf=$(mktemp); rc=0
+        res=$(jq -cn --arg t "$title" --arg b "$body" --argjson l "$labels" '{title:$t, body:$b, labels:$l}' | timeout -k 1 ${t} ${cfg.ghCommand} api -X POST "repos/$repo/issues" --input - 2>"$errf" 9>&-) || rc=$?
+        msg=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+        url=$(jq -r '.html_url // empty' <<<"$res" 2>/dev/null || true); number=$(jq -r '.number // empty' <<<"$res" 2>/dev/null || true)
+        if [ "$rc" -eq 0 ] && [ -n "$url" ] && [[ "$number" =~ ^[0-9]+$ ]]; then record done "$(jq -cn --arg u "$url" --argjson n "$number" --argjson l "$labels" '{issue_url:$u, number:$n, labels:$l}')"
+        elif [ "$rc" -eq 0 ]; then record malformed '{"message":"gh api returned no html_url or number; the issue may or may not exist, check the repository"}'
         else record "$(rc_kind $rc)" "$(jq -cn --arg m "gh api exited $rc''${msg:+: $msg}" '{message:$m}')"; fi
       '';
     };
