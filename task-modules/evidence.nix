@@ -40,13 +40,13 @@ in
         [ "$rc" -eq 0 ] || { observe_error gh_error "gh api graphql exited $rc''${msg:+: $msg}" "$ctx"; exit 0; }
         # archived repos are dropped here too, and the cap is applied here too, so a server that ignored either argument
         # could not widen the list; truncated means the page was full and GitHub counts more
-        out=$(jq -cn --argjson c "$ctx" --arg at "$at" --argjson l "$limit" --arg o "$owner" --argjson r "$raw" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} '
+        out=$(jq -cn --argjson c "$ctx" --arg at "$at" --argjson l "$limit" --argjson may ${lib.boolToString cfg.mayApprove} --arg o "$owner" --argjson r "$raw" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} '
           ($r.data.repositoryOwner.repositories) as $rs
           | select(($rs|type) == "object" and ($rs.nodes|type) == "array")
           | ($rs.nodes | map(select(type == "object" and (.name|type) == "string" and (.isArchived // false) == false))
              | map({repo:($o + "/" + .name), name, pushed_at:(.pushedAt // ""), private:(.isPrivate // false),
                     open_prs:(.pullRequests.totalCount // 0), open_issues:(.issues.totalCount // 0), approved_issues:(.approved.totalCount // 0)})
-             | map(. + {active:(.open_prs > 0 or .approved_issues > 0)}) | sort_by(.pushed_at) | reverse | .[:$l]) as $repos
+             | map(. + {active:(.open_prs > 0 or .approved_issues > 0 or ($may and .open_issues > 0))}) | sort_by(.pushed_at) | reverse | .[:$l]) as $repos
           | $c + {schema_version:1, observed_at:$at, error:null, limit:$l, authorizing_labels:$labels, total:($rs.totalCount // ($repos|length)), listed:($repos|length),
                   truncated:((($rs.nodes|length) >= $l) and (($rs.totalCount // 0) > $l)), repos:$repos}' 2>/dev/null) || out=""
         [ -n "$out" ] || { observe_error malformed "gh api graphql returned no repository list (GraphQL error or unexpected JSON)" "$ctx"; exit 0; }
