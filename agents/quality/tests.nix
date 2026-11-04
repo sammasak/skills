@@ -9,6 +9,9 @@
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
         export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
+        # hermetic: a devenv.local.nix in the checkout (the coordinator host writes the owner's delegation and panes there)
+        # must not reach the suites; the last --option wins, so each case still sets its own
+        devenv() { command devenv "$1" "$2" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" "''${@:3}"; }
         FX="$ROOT/task-modules/fixtures"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         export FAKE_LOG="$TMP/calls.log" FAKE_SDLC_DIR="$FX/sdlc"
