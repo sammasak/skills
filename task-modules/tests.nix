@@ -238,7 +238,7 @@
     };
 
     "skills:test:tasks:gh-act" = {
-      description = "gh:label and gh:comment: bounded targets, handoff-or-reason, canonical Coordinator signature, attempt+outcome audit lines, gh failures as data, never a label that authorizes a send";
+      description = "gh:label, gh:comment and gh:issue: bounded targets, handoff-or-reason, canonical Coordinator signature, attempt+outcome audit lines, gh failures as data, never a label that authorizes a send";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -305,6 +305,41 @@
           run gh:comment --input-json "{\"repo\":\"sammasak/skills\",\"number\":43,\"body\":\"$pre\",\"reason\":\"r\"}"
           [ "$CODE" -eq 0 ] && [ "$(grep -c 'Coordinator' "$FAKE_GH_COMMENT_OUT")" = 1 ] && [ "$(printf '%s' "$(cat "$FAKE_GH_COMMENT_OUT")")" = "$(printf 'done\n\n-- Coordinator (automated; not the owner)')" ] && ok || bad "canonical signature once for '$pre' ($(cat "$FAKE_GH_COMMENT_OUT"))"
         done
+        # gh:issue: one issue in an owner repo, signed body, labels only from the issue vocabulary, audited attempt+outcome
+        export FAKE_GH_ISSUE_OUT="$TMP/issue.json"; : > "$FAKE_LOG"; before=$(audit_lines)
+        run gh:issue --input-json '{"repo":"sammasak/skills","title":"Coordinator: a new item","body":"What and why.","labels":["enhancement"],"reason":"found in triage"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.outcome) \(.number) \(.issue_url) \(.labels | join(","))"')" = "done 99 https://github.com/sammasak/skills/issues/99 enhancement" ] && ok || bad "issue: created, the record has the url and number ($CODE $OUT)"
+        [ "$(grep -c '^gh api' "$FAKE_LOG")" = 2 ] && grep -q '^gh api repos/sammasak/skills/issues?state=open&per_page=100$' "$FAKE_LOG" && grep -q '^gh api -X POST repos/sammasak/skills/issues --input -$' "$FAKE_LOG" && ok || bad "issue: one open-issue read, then one POST ($(cat "$FAKE_LOG"))"
+        [ "$(jq -r '"\(.title)|\(.labels | join(","))"' "$FAKE_GH_ISSUE_OUT")" = "Coordinator: a new item|enhancement" ] && [ "$(jq -r .body "$FAKE_GH_ISSUE_OUT" | tail -1)" = "-- Coordinator (automated; not the owner)" ] && [ "$(jq -r .body "$FAKE_GH_ISSUE_OUT" | head -1)" = "What and why." ] && ok || bad "issue: the request carries title, labels and the signed body ($(cat "$FAKE_GH_ISSUE_OUT"))"
+        IAID=$(jqr .audit_id); [ "$(audit_lines)" = $((before + 2)) ] && [ "$(jq -r --arg a "$IAID" 'select(.audit_id == $a) | "\(.task) \(.stage) \(.repo) \(.title) \(.reason)"' "$AUDIT" | paste -sd'|')" = "gh:issue attempt sammasak/skills Coordinator: a new item found in triage|gh:issue outcome sammasak/skills Coordinator: a new item null" ] && [ "$(tail -1 "$AUDIT" | jq -r '"\(.outcome) \(.issue_url)"')" = "done https://github.com/sammasak/skills/issues/99" ] && ok || bad "issue: attempt and outcome audit lines ($(tail -2 "$AUDIT"))"
+        # refusals before any gh call or audit line: an authorizing label, a label outside the vocabulary, another owner's
+        # repo, a number, an empty, multi-line or long title, a long body, too many labels, both or neither of handoff_id/reason
+        : > "$FAKE_LOG"; before=$(audit_lines)
+        run gh:issue --input-json '{"repo":"sammasak/skills","title":"t","body":"b","labels":["approved"],"reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'authorizes a send' && ok || bad "issue: never an authorizing label ($CODE $OUT)"
+        L5='"labels":["enhancement","blocked","needs-live","needs-decision","enhancement"]'
+        for bad_in in '{"repo":"sammasak/skills","title":"t","body":"b","labels":["wontfix"],"reason":"r"}' '{"repo":"someone-else/skills","title":"t","body":"b","reason":"r"}' '{"repo":"sammasak/skills","number":5,"title":"t","body":"b","reason":"r"}' \
+            '{"repo":"sammasak/skills","title":"","body":"b","reason":"r"}' '{"repo":"sammasak/skills","title":"two\nlines","body":"b","reason":"r"}' "{\"repo\":\"sammasak/skills\",\"title\":\"$(printf 't%.0s' $(seq 1 257))\",\"body\":\"b\",\"reason\":\"r\"}" \
+            "{\"repo\":\"sammasak/skills\",\"title\":\"t\",\"body\":\"$(printf 'b%.0s' $(seq 1 8001))\",\"reason\":\"r\"}" "{\"repo\":\"sammasak/skills\",\"title\":\"t\",\"body\":\"b\",$L5,\"reason\":\"r\"}" '{"repo":"sammasak/skills","title":"t","body":"b","labels":"enhancement","reason":"r"}' \
+            "{\"repo\":\"sammasak/skills\",\"title\":\"t\",\"body\":\"b\",\"handoff_id\":\"$HID\",\"reason\":\"r\"}" '{"repo":"sammasak/skills","title":"t","body":"b"}'; do
+          run gh:issue --input-json "$bad_in"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "issue: refused $bad_in ($CODE $(jqr .error.message))"
+        done
+        [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] && ok || bad "issue: no refusal reached gh or the audit log ($(cat "$FAKE_LOG"))"
+        # an open issue with the same title: refused after the one read, nothing created, nothing audited
+        FAKE_GH_OPEN_ISSUES='[{"number":12,"title":"Coordinator: a new item"},{"number":13,"title":"Coordinator: a new item","pull_request":{}}]' run gh:issue --input-json '{"repo":"sammasak/skills","title":"Coordinator: a new item","body":"b","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = duplicate ] && jqr .error.message | grep -q 'sammasak/skills#12' && ! grep -q POST "$FAKE_LOG" && [ "$(audit_lines)" = "$before" ] && ok || bad "issue: a duplicate open title is refused ($CODE $OUT)"
+        FAKE_GH_OPEN_ISSUES='[{"number":13,"title":"Coordinator: a PR, not an issue","pull_request":{}}]' run gh:issue --input-json '{"repo":"sammasak/skills","title":"Coordinator: a PR, not an issue","body":"b","reason":"r"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && ok || bad "issue: an open PR with the same title is not a duplicate issue ($CODE $OUT)"
+        # gh failing: the list read refuses before any audit line; the create failing is recorded, never retried
+        before=$(audit_lines)
+        FAKE_GH_API_EXIT=1 run gh:issue --input-json '{"repo":"sammasak/skills","title":"t2","body":"b","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = command_failed ] && [ "$(audit_lines)" = "$before" ] && ok || bad "issue: a failed open-issue read creates nothing and audits nothing ($CODE $OUT)"
+        FAKE_GH_POST_ISSUE_EXIT=1 run gh:issue --input-json '{"repo":"sammasak/skills","title":"t3","body":"b","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = command_failed ] && [ "$(audit_lines)" = $((before + 2)) ] && [ "$(tail -1 "$AUDIT" | jq -r '.task + " " + .outcome')" = "gh:issue command_failed" ] && ok || bad "issue: a failed create is recorded ($CODE $OUT)"
+        FAKE_GH_ISSUE_RAW='{}' run gh:issue --input-json '{"repo":"sammasak/skills","title":"t4","body":"b","reason":"r"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = malformed ] && ok || bad "issue: an answer without url or number is malformed, not done ($CODE $OUT)"
+        unset FAKE_GH_ISSUE_OUT
         # gh failing or answering without a url: recorded, not retried, error.kind says which
         before=$(audit_lines)
         FAKE_GH_API_EXIT=1 run gh:comment --input-json '{"repo":"sammasak/skills","number":43,"body":"x","reason":"r"}'
