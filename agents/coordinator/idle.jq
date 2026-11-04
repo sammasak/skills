@@ -1,13 +1,16 @@
 # coord:changed F1 (sammasak/skills#28): is the fleet idle with work left? Inputs (slurped): $inv (herdr:inventory),
 # $work ({"OWNER/REPO": {prs (open), merged, issues}}, fetched only for an idle fleet, {} otherwise), $open (the open
-# delivered handoffs by id, with repo), $prev (the previous snapshot); $labels (the authorizing labels), $skipped (why
-# GitHub was not asked or did not answer, else null). Output: the idle_wake record; fired means the line prints this run.
+# delivered handoffs by id, with repo), $prev (the previous snapshot), $workers (host/agent_id of every handoff target
+# plus coordinator.workers); $labels (the authorizing labels), $skipped (why GitHub was not asked or did not answer, else
+# null). Output: the idle_wake record; fired means the line prints this run.
 include "evidence";
-$inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev
+$inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev | $workers[0] as $workers
 # an agent is its pane (host/agent_id), not its session: /clear and a harness restart keep the pane and must not buy a
-# new wake for the same work; herdr never reuses a pane id, so a new worker still changes the fingerprint
-| [$inv.hosts[]? | .host as $h | .agents[]? | {id:($h + "/" + .agent_id), state:(.observed_state // "unknown")}] as $agents
-# idle: every host answered, at least one agent, every agent idle or done (blocked, working and unknown are not idle)
+# new wake for the same work; herdr never reuses a pane id, so a new worker still changes the fingerprint. The fleet is
+# the workers among the listed agents: the Coordinator's own panes (never a handoff target) do not keep it busy
+| [$inv.hosts[]? | .host as $h | .agents[]? | {id:($h + "/" + .agent_id), state:(.observed_state // "unknown")}] as $all
+| [$all[] | select(.id as $i | $workers | index($i))] as $agents
+# idle: every host answered, at least one worker, every worker idle or done (blocked, working and unknown are not idle)
 | (all($inv.hosts[]?; .reachable == true) and ($agents | length) > 0 and all($agents[]; .state == "idle" or .state == "done")) as $idle
 | ($open | to_entries | map(.value + {handoff_id:.key})) as $hs
 | (if $idle and $skipped == null then
@@ -29,5 +32,5 @@ $inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev
      | map_values(sort)
    else null end) as $w
 | (if $w == null then null else {agents:([$agents[].id] | sort), work:([($w.open_prs[] | "pr:" + .), ($w.approved_issues[] | "issue:" + .), ($w.unverified_handoffs[] | "handoff:" + .)] | sort)} end) as $fp
-| {fleet_idle:$idle, agents:($agents | length), hosts:($inv.hosts | length), evaluated:($w != null), skipped:$skipped, work:$w, fingerprint:$fp,
+| {fleet_idle:$idle, agents:($agents | length), non_workers:(($all | length) - ($agents | length)), hosts:($inv.hosts | length), evaluated:($w != null), skipped:$skipped, work:$w, fingerprint:$fp,
    fired:($w != null and ($fp.work | length) > 0 and $fp != $prev.idle_wake.fingerprint)}

@@ -29,6 +29,15 @@ in
     description = "A delivered handoff older than this no longer counts as open for coord:changed.";
   };
 
+  # The fleet whose idleness wakes the Coordinator (F1) is its workers: the panes a handoff was sent to (audit.jsonl
+  # attempt lines, as host/agent_id) plus these. The Coordinator's own panes and the wake session never receive a
+  # handoff, so they never count: an interactive Coordinator working all day kept the fleet from ever being idle.
+  options.coordinator.workers = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = "Agents counted as workers for the idle-fleet wake besides handoff targets, as host/agent_id.";
+  };
+
   config.tasks."coord:changed" = {
     description = "Zero-LLM change check for a timer (and the idle-fleet-with-work wake, once per fleet+work fingerprint), with a wake budget (min gap, per-hour cap; deferred runs print nothing and keep the snapshot): diffs herdr agent state (state_change_seq), gh:repos counts (upstream in the same DAG) and the audit log's open handoffs against the last snapshot; prints nothing and exits 0 when nothing is actionable, else one compact line per actionable change. The plain form reads without consuming; consume=true (the timer's form) moves the snapshot and spends the wake budget.";
     after = [ "herdr:inventory@completed" "gh:repos@completed" ];
@@ -77,6 +86,14 @@ in
             | from_entries' "$audit" > "$tmpd/open.json" 2>/dev/null; then audit_state=ok; else printf '{}\n' > "$tmpd/open.json"; audit_state=unreadable; fi
       fi
 
+      # workers: every pane a handoff was attempted to (any age, any outcome) plus coordinator.workers; the inventory
+      # decides which of them exist right now
+      printf '%s\n' ${lib.escapeShellArg (builtins.toJSON cfg.workers)} > "$tmpd/workers.json"
+      if [ -s "$audit" ]; then
+        jq -sc --slurpfile W "$tmpd/workers.json" '[.[] | select(type == "object" and .phase == "attempt" and (.host | type) == "string" and (.agent_id | type) == "string") | .host + "/" + .agent_id] + $W[0] | unique' "$audit" > "$tmpd/workers.tmp" 2>/dev/null \
+          && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
+      fi
+
       # the previous snapshot: absent means baseline; unreadable means the baseline is rebuilt and the owner is told
       baseline=false; reset=false; printf '{}\n' > "$tmpd/prev.json"
       if [ -e "$snap" ]; then
@@ -99,11 +116,12 @@ in
            audit_ok:($as != "unreadable"), idle_wake:($p.idle_wake // null)}' > "$tmpd/cur.json" || fail 2 malformed "herdr:inventory record has an unexpected shape" "$ctx"
 
       # F1 (sammasak/skills#28): an idle fleet with work left wakes the Coordinator once per distinct fleet+work fingerprint.
-      # The fleet test costs nothing (the inventory); GitHub is asked only when every agent is idle/done: the open PRs (with
+      # The fleet test costs nothing (the inventory); GitHub is asked only when every worker is idle/done: the open PRs (with
       # comments and reviews, for grades) and open issues of each active repo (newest push first, at most portfolioActive)
       # and of each open-handoff repo, plus the merged PRs of the handoff repos (verification). A gh failure skips the
       # condition for this run and is recorded under idle_wake.skipped, never guessed around
-      fleet=$(jq -c '[.hosts[]? | select(.reachable == true) | .agents[]?] as $a | all(.hosts[]?; .reachable == true) and ($a | length) > 0 and all($a[]; .observed_state == "idle" or .observed_state == "done")' "$tmpd/inv.json")
+      fleet=$(jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(($h + "/" + .agent_id) as $id | $W[0] | index($id))] as $a
+                | all(.hosts[]?; .reachable == true) and ($a | length) > 0 and all($a[]; .observed_state == "idle" or .observed_state == "done")' "$tmpd/inv.json")
       skipped=null; : > "$tmpd/work.jsonl"
       if [ "$fleet" = true ]; then
         if [ "$repos_src" != upstream ]; then skipped=$(jq -cn --arg s "$repos_src" '"gh:repos unavailable (\($s)); the active repos are unknown"')
@@ -128,7 +146,7 @@ in
       fi
       jq -sc 'INDEX(.repo)' "$tmpd/work.jsonl" > "$tmpd/work.json"
       jq -nc -L ${./.} --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson skipped "$skipped" \
-        --slurpfile inv "$tmpd/inv.json" --slurpfile work "$tmpd/work.json" --slurpfile open "$tmpd/open.json" --slurpfile prev "$tmpd/prev.json" \
+        --slurpfile inv "$tmpd/inv.json" --slurpfile work "$tmpd/work.json" --slurpfile open "$tmpd/open.json" --slurpfile prev "$tmpd/prev.json" --slurpfile workers "$tmpd/workers.json" \
         -f ${./.}/idle.jq > "$tmpd/idle.json" || fail 2 malformed "idle-fleet check failed" "$ctx"
 
       jq -c --argjson baseline "$baseline" --argjson reset "$reset" --arg snap "$snap" --arg audit "$audit" --slurpfile P "$tmpd/prev.json" --slurpfile W "$tmpd/idle.json" '
@@ -175,7 +193,7 @@ in
                  else empty end)
            else empty end),
           (if ($c.audit_ok | not) and ($p.audit_ok != false) then {kind:"audit", line:("audit " + $audit + " unreadable (not JSON lines); herdr:message refuses to send until the owner inspects it")} else empty end),
-          (if $w.fired then {kind:"idle", line:("idle " + n($w.agents) + " agents idle/done on " + n($w.hosts) + " host(s); work left: "
+          (if $w.fired then {kind:"idle", line:("idle " + n($w.agents) + " worker(s) idle/done on " + n($w.hosts) + " host(s); work left: "
              + ([(if ($w.work.open_prs | length) > 0 then n($w.work.open_prs | length) + " open PR(s) without a 9/10 review (" + refs3($w.work.open_prs) + ")" else empty end),
                  (if ($w.work.approved_issues | length) > 0 then n($w.work.approved_issues | length) + " approved issue(s) without a handoff (" + refs3($w.work.approved_issues) + ")" else empty end),
                  (if ($w.work.unverified_handoffs | length) > 0 then n($w.work.unverified_handoffs | length) + " unverified handoff(s) (" + refs3($w.work.unverified_handoffs) + ")" else empty end)] | join(", ")))}
