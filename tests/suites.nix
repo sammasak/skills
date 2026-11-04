@@ -119,6 +119,15 @@
           fi
         done
 
+        # skills#36: the wake path is documented against each acceptance criterion, and process.md no longer says no re-arm
+        doc=docs/coordinator-continuity.md
+        [ -f "$doc" ] && ok || bad "$doc is missing"
+        for rule in "events.subscribe" "herdr agent wait" "no daemon" "no Claude Code or Codex process is started" "Wake budget:" "Spend cap:" "Failure back-off:" "No endless retry of a refused act:" "One campaign at a time:" "Outages:" "Rollback is one option"; do
+          grep -qF "$rule" "$doc" 2>/dev/null && ok || bad "$doc lost: $rule"
+        done
+        [ "$(grep -c '^| [A-Z]' "$doc" 2>/dev/null)" -ge 10 ] && ok || bad "$doc: the capability and criteria tables lost rows"
+        ! tr '\n' ' ' < docs/process.md | grep -qE 'cron re-arm or background poll' && grep -qF 'docs/coordinator-continuity.md' docs/process.md && ok || bad "docs/process.md still says there is no re-arm, or does not point at the continuity doc"
+
         echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]
       '';
     };

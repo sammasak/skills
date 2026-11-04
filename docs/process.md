@@ -106,7 +106,8 @@ review recorded on the PR (`work:status` verdict `verified` with its
 
 ## Not in this increment
 
-No `coord:loop` task, scheduler, cron re-arm or background poll; no
-`coord:spawn`; no model tiers; no label creation; no GitHub pagination. Those
-are later increments of #28, added only when a tick run by hand shows the
-need.
+No `coord:loop` task, scheduler or LLM polling loop: a tick starts only when
+the lenovo wake-up timer's `coord:changed` check finds an actionable change
+(docs/coordinator-continuity.md), and a quiet check starts nothing. No model
+tiers, no label creation, no GitHub pagination; those are later increments of
+#28, added only when a tick shows the need.
