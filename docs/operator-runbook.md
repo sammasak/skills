@@ -82,9 +82,14 @@ died before writing one. A request refused earlier (`invalid_input`, a
 missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
 has no assignment until the coordinator hands it one (`coord:handoff`,
 `herdr:message`). `--dangerously-skip-permissions` starts unattended only where
-Home Manager pre-accepted the bypass and `$HOME` trust dialogs (nixos-config
-`mcp.nix`, `acceptClaudeStartupDialogs`); elsewhere `agent start` returns
-`agent_not_ready` and the workspace stays for you to inspect. The task never
+user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code
+2.1.300 no longer reads `~/.claude.json`'s `bypassPermissionsModeAccepted`)
+and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` only
+(nixos-config `mcp.nix`, `acceptClaudeStartupDialogs`), so spawn in `$HOME`
+and name the checkout in the handoff. Elsewhere `agent start` returns
+`agent_not_ready` and the workspace stays for you to inspect. A host
+configured with spawning off is refused as `capacity` whether or not it is
+in the inventory. The task never
 closes a pane or workspace.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of
@@ -168,7 +173,7 @@ handoff of the last `openHandoffDays` with no merged PR for its issue opened
 after the send. The fleet test is free; GitHub lists (open PRs with comments,
 open issues, and merged PRs for handoff repos) are fetched only once the
 fleet is idle. The line prints once per distinct fleet+work fingerprint
-(the agents by session plus the work items) and not again until that
+(the agents by pane plus the work items; a new session in the same pane is the same agent) and not again until that
 fingerprint differs from the last one printed: a worker flapping between
 working and idle, or the same work seen again, never repeats it, while new
 work, a review landing, or the fleet changing does. It counts against the
