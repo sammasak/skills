@@ -16,7 +16,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -97,7 +97,7 @@
         mkdir -p "$TMP/state" "$TMP/claude"; A="$TMP/state/audit.jsonl"
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.capacity:string "$CAP" \
             --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
@@ -153,7 +153,7 @@
         # (5b) two concurrent spawns for one free worker slot decide under the lock on a fresh agent list plus the spawns in
         #      flight: one starts, the other is refused; the audit lock is free while the winner waits in agent start
         : > "$FAKE_HERDR_STARTED"; jq '.result.agents += [(.result.agents[0] | .pane_id = "wB:p9" | .agent_status = "idle")]' "$FX/herdr/remote-ok.json" > "$TMP/worker-a.json"
-        sp() { FAKE_HERDR_START_SLEEP=8 FAKE_HERDR_WS="$2" devenv tasks run coord:spawn --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        sp() { FAKE_HERDR_START_SLEEP=8 FAKE_HERDR_WS="$2" devenv tasks run coord:spawn --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.capacity:string "$CAP" --show-output \
           --input-json "{\"machine\":\"worker-a\",\"kind\":\"mechanical\",\"task_ref\":\"#28\",\"cwd\":\"/home/lukas\",$AUTH}" > "$TMP/race-$1.log" 2>&1; }
         : > "$FAKE_LOG"; sp 1 wX & p1=$!; sp 2 wY & p2=$!
@@ -254,7 +254,7 @@
         handoff h00000000007 wB:p1 sB "#29" 2026-11-03T15:00:00Z     # a fix-up round: PR 53 (opened under 003) gets a commit at 15:30
         handoff h00000000008 wC:p1 sC "#32" 2026-11-03T12:00:00Z     # fix-up on PR 55 (commit 12:30), merged with no grade at all
         handoff h00000000009 wR:p1 sR "#33" 2026-11-03T12:00:00Z     # review of PR 56: wR:p1 graded it 7/10, the author pushed at 12:30
-        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         B="$TMP/state/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
         q() { jq -r "$1" "$B"; }
@@ -298,7 +298,7 @@
         [ -s "$M" ] && [ "$(sed -E 's/^\s+//' <<<"$md")" = "$(sed -n '/# Fleet brief/,/^Full JSON:/p' "$M")" ] && ! grep -q '{"' "$M" && ok || bad "latest.md is the printed Markdown, no JSON ($(head -c 300 "$M"))"
         [ $(( $(wc -c < "$M") * 2 )) -le "$(wc -c < "$TMP/run.log")" ] && ok || bad "latest.md is at most half the --show-output bytes ($(wc -c < "$M") vs $(wc -c < "$TMP/run.log"))"
         mv "$M" "$M.prev"
-        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 > /dev/null 2> "$TMP/quiet.err"; CODE=$?
         [ "$CODE" -eq 0 ] && grep -q '^# Fleet brief' "$M" && [ "$(wc -c < "$TMP/quiet.err")" -lt 1000 ] && ok || bad "default form (stdout to /dev/null) rewrites latest.md with little else ($CODE, stderr $(wc -c < "$TMP/quiet.err") bytes)"
         # a Markdown render that fails (here: a merged PR without a URL) fails the task and leaves no latest.md, never the
@@ -306,7 +306,7 @@
         mkdir -p "$TMP/gh-bad"; cp "$FX"/gh-correlation/*.json "$TMP/gh-bad/"
         jq 'map(if .number == 52 then .url = null else . end)' "$FX/gh-correlation/sammasak__skills.prs.json" > "$TMP/gh-bad/sammasak__skills.prs.json"
         printf 'STALE BRIEF FROM AN EARLIER RUN\n' > "$M"
-        FAKE_GH_DIR="$TMP/gh-bad" devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        FAKE_GH_DIR="$TMP/gh-bad" devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/bad.log" 2>&1; CODE=$?
         [ "$CODE" -ne 0 ] && [ ! -e "$M" ] && ! grep -q 'STALE BRIEF' "$TMP/bad.log" && grep -q 'Markdown render failed' "$TMP/bad.log" && ok || bad "render failure fails the brief, no stale latest.md ($CODE, $(ls "$TMP/state/brief"))"
         # the documented default form: ROLE.md spells it out (stdout to /dev/null, then Read latest.md), and no doc gates the
@@ -315,7 +315,7 @@
         ! grep -rqF --exclude=tests.nix 'coord:brief >/dev/null &&' agents skills docs && grep -qF 'coord:brief >/dev/null; cat' docs/operator-runbook.md && grep -qF 'coord:brief >/dev/null; cat' skills/herdr-operations/SKILL.md && ok || bad "the default read is not gated on exit 0 ($(grep -rnF --exclude=tests.nix 'coord:brief >/dev/null &&' agents skills docs))"
         # (7) only the newest 50 handoffs are carried (the record travels in devenv's environment); the rest are counted
         for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
-        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 9 q000000000010" ] && grep -q '59 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
         # an agent whose handoff fell out of the evaluated window says so, rather than being judged by its (wrong) title
@@ -343,7 +343,7 @@
           # the interactive form, no input at all
           local in=(--input-json '{"consume":true}')
           if [ "''${1:-}" = --plain ]; then in=(); shift; elif [ "''${1:-}" = --input-json ]; then in=(--input-json "$(jq -cn --argjson u "$2" '{consume:true} + $u')"); shift 2; fi
-          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
             --option coordinator.stateDir:string "''${STATE:-$TMP/state}" --option coordinator.timeoutSeconds:int 2 $BUDGET "''${in[@]}" --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           # the idle-fleet line (F1) is the coord-idle suite's business; these cases look at the other kinds only
           LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot) ' "$TMP/run.log" | sed -E 's/^\s+//')
@@ -582,7 +582,7 @@
         BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000'
         run() { # [--plain] -> CODE, LINES (printed change lines), OUT (latest.json or, for --plain, the task record)
           local in=(--input-json '{"consume":true}'); [ "''${1:-}" = --plain ] && { in=(); shift; }
-          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
             --option coordinator.stateDir:string "''${STATE:-$TMP/state}" --option coordinator.timeoutSeconds:int 2 $BUDGET "''${in[@]}" --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot|idle) ' "$TMP/run.log" | sed -E 's/^\s+//')
           OUT=$(grep -E '^\s*\{' "$TMP/run.log" | sed -E 's/^\s+//' | jq -c 'select(type == "object") | (.["coord:changed"] // select(.task == "coord:changed")) // empty' 2>/dev/null | tail -1); [ -n "$OUT" ] || OUT='{}'
@@ -780,7 +780,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -867,7 +867,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -928,7 +928,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
