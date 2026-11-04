@@ -102,7 +102,11 @@ be one the coordinator cannot write, unless you delegate it:
 `coordinator.mayApprove = true` with `coordinator.approvalDecision` (the URL
 of your decision comment) lets `gh:label approved` label an issue of your
 repos (never a PR, never over `needs-live`, `blocked` or `needs-decision`),
-cited in its audit lines as `owner_delegation`; the send gate accepts such a
+cited in its audit lines as `owner_delegation`. With it on, `gh:repos` also
+counts a repo with open issues as active and `coord:brief` lists, per active
+repo, the `approvable` issues (open, no authorizing label, no
+`needs-live`/`blocked`/`needs-decision`/`needs-triage`), so a wake session
+sees what it may approve; the send gate accepts such a
 label only while the delegation is in force (same flag, same decision URL),
 on an issue you wrote that carries no hold, and records `applied_by:
 coordinator-delegated` with that `audit_id`. Switching the flag off or
