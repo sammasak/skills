@@ -689,9 +689,11 @@
         changed; [ -z "$LINES" ] && [ "$(jqr '.wake.reason')" = interactive_coordinator ] && ok || bad "idle, but within the quiet period: still deferred ($LINES $(jqr .wake))"
         printf '{"last_working_epoch":%s}\n' "$(( $(date +%s) - 601 ))" > "$STATE/changed/interactive.json"
         changed; grep -q "^retry sammasak/nixos-config#44 1 send(s) refused agent_busy ($D4→$H/wT:p1)" <<<"$LINES" && [ "$(jqr '.wake.deferred')" = false ] && ok || bad "after the quiet period the held line comes out ($LINES $(jqr .wake))"
-        # a plain read is never deferred and never spends anything
+        # a plain read is never deferred, never spends anything and never moves the quiet clock (review of #66)
         set_agent wM:p1 '.agent_status = "working" | .state_change_seq += 1'
-        task coord:changed '{}'; [ "$CODE" -eq 0 ] && [ "$(jqr '.wake.deferred')" = false ] && ok || bad "a plain read is not deferred ($(jqr .wake))"
+        rm -f "$STATE/changed/interactive.json"
+        task coord:changed '{}'; [ "$CODE" -eq 0 ] && [ "$(jqr '.wake.deferred')" = false ] && [ ! -e "$STATE/changed/interactive.json" ] && ok || bad "a plain read is not deferred and writes no interactive.json ($(jqr .wake) $(ls "$STATE/changed"))"
+        changed; [ -e "$STATE/changed/interactive.json" ] && ok || bad "the consuming run records the working Coordinator pane"
         summary
       '';
     };

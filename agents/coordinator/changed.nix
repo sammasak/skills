@@ -110,7 +110,8 @@ in
           | $h + "/" + .agent_id | select(. as $i | $W[0] | index($i))] | sort' "$tmpd/inv.json" > "$tmpd/free.json"
       coord_working=$(jq -r --slurpfile P "$tmpd/panes.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "working")
           | $h + "/" + .agent_id | select(. as $i | $P[0] | index($i))] | length > 0' "$tmpd/inv.json")
-      [ "$coord_working" != true ] || printf '{"last_working_epoch":%s}\n' "$(now_epoch)" > "$dir/interactive.json"
+      # the quiet clock moves only on the timer's consuming run: a plain read observes, it never writes state
+      [ "$coord_working" != true ] || [ "$consume" != true ] || printf '{"last_working_epoch":%s}\n' "$(now_epoch)" > "$dir/interactive.json"
 
       # the previous snapshot: absent means baseline; unreadable means the baseline is rebuilt and the owner is told
       baseline=false; reset=false; printf '{}\n' > "$tmpd/prev.json"
