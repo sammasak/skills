@@ -106,22 +106,6 @@ in
           && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
       fi
       jq -c --slurpfile P "$tmpd/panes.json" '. - $P[0]' "$tmpd/workers.json" > "$tmpd/workers.tmp" && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
-      # parked sends (herdr:message refused agent_busy, skills#28 06:19Z): still parked while no attempt of that handoff followed
-      # the refusal and no handoff for the same item was delivered within openHandoffDays, before or after it (a worker busy
-      # on the very item must not buy a second assignment), and not older than openHandoffDays; a free worker is a
-      # worker the inventory lists idle or done
-      printf '[]\n' > "$tmpd/parked.json"
-      if [ "$audit_state" = ok ]; then
-        jq -sc --argjson cut "$(( $(now_epoch) - ${toString cfg.openHandoffDays} * 86400 ))" '
-            def repo: ((.authorized_by.issue_url // "") | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first) // null;
-            map(select(type == "object")) as $all | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $byid
-            | [$all[] | select(.phase == "attempt") | . + {repo:repo, delivered:(($byid[.audit_id | tostring].outcome // "") == "delivered")}] as $att
-            | [$all[] | select(.phase == "parked" and (.handoff_id | type) == "string" and (.host | type) == "string" and (.agent_id | type) == "string" and (.at | type) == "string")
-               | select((.at | try fromdateiso8601 catch 0) >= $cut) | . + {repo:repo} | . as $k
-               | select(any($att[]; (.handoff_id == $k.handoff_id and .at >= $k.at)
-                                       or (.delivered and .repo == $k.repo and .task_ref == $k.task_ref and ((.at // "") | try fromdateiso8601 catch 0) >= $cut)) | not)
-               | {audit_id, handoff_id, host, agent_id, task_ref, repo, at}]' "$audit" > "$tmpd/parked.json" 2>/dev/null || printf '[]\n' > "$tmpd/parked.json"
-      fi
       jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "idle" or .observed_state == "done")
           | $h + "/" + .agent_id | select(. as $i | $W[0] | index($i))] | sort' "$tmpd/inv.json" > "$tmpd/free.json"
       coord_working=$(jq -r --slurpfile P "$tmpd/panes.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "working")
@@ -135,6 +119,24 @@ in
           printf '{}\n' > "$tmpd/prev.json"; baseline=true; reset=true
         fi
       else baseline=true; fi
+      # parked sends (herdr:message refused agent_busy, skills#28 06:19Z): still parked while no attempt of that handoff followed
+      # the refusal, no handoff for the same item was delivered after it, and no earlier delivered one for the item is still
+      # open (open_handoffs minus the closed ones: a worker busy on the very item must not buy a second assignment, a
+      # settled one leaves a follow-up to retry); not older than openHandoffDays
+      printf '[]\n' > "$tmpd/parked.json"
+      if [ "$audit_state" = ok ]; then
+        jq -sc --argjson cut "$(( $(now_epoch) - ${toString cfg.openHandoffDays} * 86400 ))" --slurpfile O "$tmpd/open.json" --slurpfile P "$tmpd/prev.json" '
+            def repo: ((.authorized_by.issue_url // "") | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first) // null;
+            map(select(type == "object")) as $all | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $byid
+            | [$all[] | select(.phase == "attempt") | . + {repo:repo, delivered:(($byid[.audit_id | tostring].outcome // "") == "delivered")}] as $att
+            | [$all[] | select(.phase == "parked" and (.handoff_id | type) == "string" and (.host | type) == "string" and (.agent_id | type) == "string" and (.at | type) == "string")
+               | select((.at | try fromdateiso8601 catch 0) >= $cut) | . + {repo:repo} | . as $k
+               | ([$O[0] | keys[]] - [($P[0].closed_handoffs // {}) | keys[]]) as $live
+               | select(any($att[]; (.handoff_id == $k.handoff_id and .at >= $k.at)
+                                       or (.delivered and .repo == $k.repo and .task_ref == $k.task_ref
+                                           and (.at >= $k.at or (.handoff_id as $i | $live | index($i)) != null))) | not)
+               | {audit_id, handoff_id, host, agent_id, task_ref, repo, at}]' "$audit" > "$tmpd/parked.json" 2>/dev/null || printf '[]\n' > "$tmpd/parked.json"
+      fi
 
       # the current snapshot: hosts keyed by machine label (this host under its own name), agents of an unreachable host and
       # repos without a source carried forward from the previous snapshot, so an outage hides nothing

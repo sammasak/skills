@@ -666,6 +666,15 @@
         FAKE_HERDR_STATE=working task herdr:message "{\"handoff_id\":\"$D5\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/nixos-config/issues/45\",\"label\":\"approved\"}}"
         [ "$(jqr .error.kind)" = agent_busy ] && [ "$(jq -s --arg i "$D5" '[.[] | select(.phase == "parked" and .handoff_id == $i)] | length' "$A")" = 0 ] && ok || bad "a resend of a delivered handoff to a busy target is not parked ($(jqr .error))"
         changed; ! grep -q '#45' <<<"$LINES" && [ "$(jqr '[.parked[] | select(.task_ref == "#45")] | length')" = 0 ] && ok || bad "an item delivered before the busy refusal is resolved: no retry line, not parked ($LINES $(jqr .parked))"
+        # (5c) a follow-up after the earlier delivery settled (re-review of #66): #46 delivered to wF:p1, which works and settles
+        #      (its handoff is closed); a new draft for #46 refused busy is a real lost send: the retry line comes
+        D7=$(draft wF:p1 "#46" "first round"); FAKE_HERDR_STATE=idle send "$D7" wF:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/46","label":"approved"}'
+        changed; set_agent wF:p1 '.agent_status = "working" | .state_change_seq += 1'; changed
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq += 1'; changed
+        grep -q "^settled $H/wF:p1 #46 handoff $D7" <<<"$LINES" && ok || bad "the first round settles ($LINES)"
+        sleep 1
+        D8=$(draft wT:p1 "#46" "fix-up round"); FAKE_HERDR_STATE=working send "$D8" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/46","label":"approved"}'
+        changed; grep -q "^retry sammasak/nixos-config#46 1 send(s) refused agent_busy ($D8→$H/wT:p1)" <<<"$LINES" && ok || bad "a follow-up refused busy after the first round settled gets its retry line ($LINES $(jqr .parked))"
         # a corrupt interactive.json falls back to 0, never aborts the run
         printf '{"last_working_epoch":"x; rm"}\n' > "$STATE/changed/interactive.json"; QUIET=600; changed; QUIET=0
         [ "$CODE" -eq 0 ] && ok || bad "a non-numeric interactive.json does not abort coord:changed ($CODE)"; rm -f "$STATE/changed/interactive.json"
