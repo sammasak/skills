@@ -23,7 +23,16 @@ in
                session_id:(.agent_session.value? // null), cwd:(.cwd // null), title:(.terminal_title_stripped // .terminal_title // ""),
                observed_state:(.agent_status // "unknown"), observed_at:$at, state_change_seq:(.state_change_seq // null),
                task_ref:((.terminal_title_stripped // "") | capture("(?<r>#[0-9]+)")?.r // null), evidence_ref:null,
-               approval_required:(.agent_status == "blocked"), error:null})' <<<"$3" 2>/dev/null; }
+               approval_required:(.agent_status == "blocked"), unavailable:null, error:null})' <<<"$3" 2>/dev/null; }
+        # a worker at its usage limit sits idle at its prompt: unavailable, not free (the owner switches its model or waits)
+        mark_unavailable() { # <machine-or-empty> <records json>
+          local recs="$2" a line
+          while IFS= read -r a; do
+            valid_id "$a" || continue
+            line=$(usage_limit_line "$1" "$a")
+            [ -z "$line" ] || recs=$(jq -c --arg a "$a" --arg l "$line" 'map(if .agent_id == $a then .unavailable = {reason:"usage_limit", line:$l} else . end)' <<<"$recs")
+          done < <(jq -r '.[] | select(.observed_state != "working") | .agent_id' <<<"$recs")
+          printf '%s\n' "$recs"; }
         observe() { # <host-label> <machine-or-empty>
           local host="$1" m="$2" rc=0 raw records errf herr
           errf=$(mktemp); raw=$(herdr_at ${t} "$m" agent list 2>"$errf") || rc=$?
@@ -33,6 +42,7 @@ in
             hosts_out=$(jq -c --arg h "$host" --arg m "$m" --arg k "$(rc_kind $rc)" --argjson rc "$rc" --arg e "$herr" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:$k, message:("herdr agent list: " + $k + " (exit " + ($rc|tostring) + ")" + (if $e == "" then "" else ": " + $e end))}, agents:[]}]' <<<"$hosts_out"); return; fi
           records=$(normalise "$host" "$m" "$raw") && [ -n "$records" ] \
             || { hosts_out=$(jq -c --arg h "$host" --arg m "$m" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:"malformed", message:"herdr agent list did not return an agent_list"}, agents:[]}]' <<<"$hosts_out"); return; }
+          records=$(mark_unavailable "$m" "$records")
           answered=$((answered+1))
           hosts_out=$(jq -c --arg h "$host" --arg m "$m" --argjson r "$records" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:true, error:null, agents:$r}]' <<<"$hosts_out")
         }
@@ -132,6 +142,12 @@ in
               || fail 2 audit_failed "agent $host/$agent is mid-turn, and the parked line could not be written" "$ctx"
             fail 2 agent_busy "agent $host/$agent is mid-turn; a queued prompt would blur which turn answered it. Parked in the audit log: hand the item to another free worker now, or coord:changed prints a retry line once one is free" "$ctx" ;;
           *) fail 2 agent_state_unknown "herdr agent get returned no usable state for $host/$agent; not sending" "$ctx" ;; esac
+        limit=$(usage_limit_line "$m" "$agent")
+        [ -z "$limit" ] || fail 2 worker_unavailable "agent $host/$agent is at its usage limit ($limit); not sending. Hand the item to another available worker, or have the owner switch its model (/model) first" "$ctx"
+        if jq -e 'index("merge")' <<<"$acts" >/dev/null; then
+          impl=$(implementer_of "$audit" "$host/$agent" "$ref" "$id")
+          [ -z "$impl" ] || fail 3 author_merge "$host/$agent implemented $ref (handoff $impl); the implementer never merges its own change. Draft the merge for the independent reviewer" "$ctx"
+        fi
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then
           fail 2 agent_changed "pane $host/$agent now runs session ''${session:-?} (draft was for $want_session); the agent restarted or the pane was reused" "$ctx"

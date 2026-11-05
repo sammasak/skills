@@ -1,0 +1,8 @@
+Scope: mark an agent unavailable when its last visible pane output contains the harness usage-limit line (e.g. You have reached your ... limit), and
+the brief lists it; the test pins the text "You've reached your Fable limit. Run /usage-credits to continue" as a fixture.
+
+● Writing the detector now.
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯

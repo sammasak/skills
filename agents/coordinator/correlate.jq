@@ -114,7 +114,9 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
    | {host:$host, machine:$m, agent_id:$a.agent_id, harness:$a.harness, session_id:$a.session_id, title:($a.title // ""), task_ref:$c.task_ref, title_ref:$a.task_ref, repo:$c.repo,
       correlation:{by:$c.by, handoff_id:($h.handoff_id // $old.handoff_id // null)},
       herdr_state:$s, state_change_seq:$a.state_change_seq, observed_at:$at,
-      work_verdict:(if $s == "blocked" then "blocked" else $c.verdict end), needs_owner:($s == "blocked"),
+      work_verdict:(if $s == "blocked" then "blocked" else $c.verdict end), needs_owner:($s == "blocked" or $a.unavailable != null),
+      unavailable:($a.unavailable // null),
       evidence_ref:(if $s != "blocked" then $c.evidence_ref // null else null end), refs:$c.refs,
-      reasons:$c.reasons, sources:[{task:"herdr:inventory", observed_at:$at}]}] as $items
+      # a worker at its usage limit is told to the owner first: it gets no work until its model is switched or the limit resets
+      reasons:((if $a.unavailable != null then ["unavailable (\($a.unavailable.reason)): \($a.unavailable.line); switch it to an available authorized model (/model) or wait for the reset; route its work to another worker"] else [] end) + $c.reasons), sources:[{task:"herdr:inventory", observed_at:$at}]}] as $items
 | {items:$items, handoffs:$hs, handoffs_omitted:$omitted}

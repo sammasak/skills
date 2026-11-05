@@ -86,6 +86,19 @@
         [ "$(jqr '.hosts[0].agents|length')" = 2 ] && [ "$(jqr '.hosts[0].agents[1].observed_state')" = done ] && [ "$(jqr '.hosts[0].agents[1].task_ref')" = "#42" ] && ok || bad "local: agent records"
         [ "$(jqr .partial)" = false ] && ok || bad "local: not partial"
         grep -q '^herdr machine list --json' "$FAKE_LOG" && ! grep -q 'herdr(machine=' "$FAKE_LOG" && ok || bad "local: machine list asked, no forwarding"
+        [ "$(jqr '[.hosts[0].agents[].unavailable] | map(tostring) | join(",")')" = "null,null" ] && ok || bad "local: an unreadable pane is not a usage limit ($OUT)"
+        # 1b. usage limits: the done agent's pane ends on the harness's Fable limit line -> unavailable with that line; the
+        # working agent is never read; a pane that only quotes the phrase mid-line, and the weekly-limit form
+        : > "$FAKE_LOG"; export FAKE_HERDR_READ_wT_p1="$FX/herdr/read-fable-limit.txt" FAKE_HERDR_READ_wF_p1="$FX/herdr/read-fable-limit.txt"
+        run herdr:inventory
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.hosts[0].agents[1] | "\(.observed_state) \(.unavailable.reason)"')" = "done usage_limit" ] && ok || bad "usage limit: the done agent is unavailable ($OUT)"
+        [ "$(jqr '.hosts[0].agents[1].unavailable.line')" = "You've reached your Fable limit. Run /usage-credits to continue or switch models with /model." ] && ok || bad "usage limit: the exact Fable line is kept ($(jqr '.hosts[0].agents[1].unavailable'))"
+        [ "$(jqr '.hosts[0].agents[0].unavailable')" = null ] && grep -q '^herdr agent read wT:p1 --lines 30 --source visible' "$FAKE_LOG" && ! grep -q 'agent read wF:p1' "$FAKE_LOG" && ok || bad "usage limit: a working agent is not read ($(grep 'agent read' "$FAKE_LOG"))"
+        export FAKE_HERDR_READ_wT_p1="$FX/herdr/read-quoted-limit.txt"; run herdr:inventory
+        [ "$(jqr '.hosts[0].agents[1].unavailable')" = null ] && ok || bad "usage limit: a quoted phrase is not a limit ($(jqr '.hosts[0].agents[1].unavailable'))"
+        export FAKE_HERDR_READ_wT_p1="$FX/herdr/read-weekly-limit.txt"; run herdr:inventory
+        jqr '.hosts[0].agents[1].unavailable.line' | grep -q "You've hit your weekly limit · resets Nov 9" && ok || bad "usage limit: the weekly form ($(jqr '.hosts[0].agents[1].unavailable'))"
+        unset FAKE_HERDR_READ_wT_p1 FAKE_HERDR_READ_wF_p1
         # 2. the coordinator host: two saved machines, one unreachable -> forwarded reads, partial, errors as data
         : > "$FAKE_LOG"
         export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","session":"default","enabled":true},{"id":"ab","label":"pi-down","target":"pi","enabled":true},{"id":"cd","label":"old","target":"old","enabled":false}]'
@@ -284,6 +297,23 @@
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#11","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; ID4=$(jqr .handoff_id)
         run herdr:message --input-json "{\"handoff_id\":\"$ID4\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/pull/pull/pull/11\",\"label\":\"deployment-ready\"}}"
         [ "$CODE" -eq 0 ] && grep -q '^gh api repos/pull/pull/issues/11/labels' "$FAKE_LOG" && ok || bad "pull-named owner and repo survive the URL mapping ($(grep '^gh' "$FAKE_LOG"))"
+        # a worker at its usage limit is refused (worker_unavailable) before any attempt line or prompt
+        : > "$FAKE_LOG"; draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#12","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; ID5=$(jqr .handoff_id)
+        FAKE_HERDR_READ_wF_p1="$FX/herdr/read-fable-limit.txt" run herdr:message --input-json "{\"handoff_id\":\"$ID5\",\"confirm\":\"$H/wF:p1\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = worker_unavailable ] && jqr .error.message | grep -q "reached your Fable limit" && ! grep -q 'agent prompt' "$FAKE_LOG" \
+          && ! jq -e --arg i "$ID5" 'select(.handoff_id == $i)' "$TMP/state/audit.jsonl" >/dev/null && ok || bad "usage-limited worker refused, nothing sent or audited ($CODE $OUT)"
+        # the implementer never merges: acer-swift/wA:p2 took #7 without merge, so a merge draft for it is refused, the reviewer's is not
+        run coord:handoff --input-json '{"machine":"acer-swift","agent_id":"wA:p2","task_ref":"#7","scope":"merge it","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","comment"]}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && jqr .error.message | grep -Eq 'implemented #7 \(handoff [a-f0-9]{12}\)' && ok || bad "handoff: merge to the implementer refused ($CODE $OUT)"
+        draft '{"machine":"acer-swift","agent_id":"wB:p1","task_ref":"#7","scope":"review and merge","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","comment"]}'
+        [ "$CODE" -eq 0 ] && ok || bad "handoff: merge to an independent reviewer drafts ($CODE $OUT)"
+        # a merge draft made before its pane implemented the item is refused at the send
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#13","scope":"merge","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"]}'; ID6=$(jqr .handoff_id)
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#13","scope":"implement","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; ID7=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$ID7\",\"confirm\":\"$H/wF:p1\",$AUTH}"
+        [ "$CODE" -eq 0 ] && ok || bad "implementation send for #13 ($CODE $OUT)"
+        : > "$FAKE_LOG"; run herdr:message --input-json "{\"handoff_id\":\"$ID6\",\"confirm\":\"$H/wF:p1\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: merge to the implementer refused ($CODE $OUT)"
         # await by audit id: turn observed (working), then idle; through the same machine
         export FAKE_HERDR_STATE_SEQ="working,idle" ; rm -f "$FAKE_LOG.seq"; : > "$FAKE_LOG"
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"

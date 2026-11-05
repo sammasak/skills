@@ -106,7 +106,7 @@ in
           && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
       fi
       jq -c --slurpfile P "$tmpd/panes.json" '. - $P[0]' "$tmpd/workers.json" > "$tmpd/workers.tmp" && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
-      jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "idle" or .observed_state == "done")
+      jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select((.observed_state == "idle" or .observed_state == "done") and .unavailable == null)
           | $h + "/" + .agent_id | select(. as $i | $W[0] | index($i))] | sort' "$tmpd/inv.json" > "$tmpd/free.json"
       coord_working=$(jq -r --slurpfile P "$tmpd/panes.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "working")
           | $h + "/" + .agent_id | select(. as $i | $P[0] | index($i))] | length > 0' "$tmpd/inv.json")
@@ -146,7 +146,7 @@ in
         | {schema_version:1, observed_at:$at,
            hosts:($inv.hosts | map((if .machine == null then "~" + .host else .machine end) as $k
                    | {key:$k, value:{host:.host, machine:.machine, reachable:.reachable, error_kind:(.error.kind // null),
-                        agents:(if .reachable == true then (.agents | map({key:.agent_id, value:{state:.observed_state, seq:.state_change_seq, session_id, harness, task_ref}}) | from_entries)
+                        agents:(if .reachable == true then (.agents | map({key:.agent_id, value:{state:.observed_state, seq:.state_change_seq, session_id, harness, task_ref, unavailable:(.unavailable.reason // null)}}) | from_entries)
                                 else ($p.hosts[$k].agents // {}) end)}}) | from_entries),
            repos:(if $repos == null then ($p.repos // null) else ($repos.repos | map({key:.repo, value:{open_prs:(.open_prs // 0), approved_issues:(.approved_issues // 0), active:(.active // false)}}) | from_entries) end),
            open_handoffs:$open, closed_handoffs:(($p.closed_handoffs // {}) | with_entries(select(.key as $k | $open | has($k)))),
@@ -158,7 +158,7 @@ in
       # and of each open-handoff repo, plus the merged PRs of the handoff repos (verification). A gh failure, the issue
       # search's included (repos outside the page would go unchecked), skips the condition for this run and is recorded
       # under idle_wake.skipped, never guessed around
-      fleet=$(jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(($h + "/" + .agent_id) as $id | $W[0] | index($id))] as $a
+      fleet=$(jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.unavailable == null and (($h + "/" + .agent_id) as $id | $W[0] | index($id)))] as $a
                 | all(.hosts[]?; .reachable == true) and ($a | length) > 0 and all($a[]; .observed_state == "idle" or .observed_state == "done")' "$tmpd/inv.json")
       skipped=null; : > "$tmpd/work.jsonl"
       if [ "$fleet" = true ]; then
@@ -202,6 +202,8 @@ in
             ($byagent[$h + "/" + $a] // null) as $ho
             | if $ac.state == "blocked" and ($ap == null or $ap.state != "blocked") then
                 {kind:"blocked", host:$h, agent_id:$a, handoff_id:($ho.handoff_id // null), line:("blocked " + n($h) + "/" + n($a) + " " + ref(if $ho != null then $ho else $ac end) + " " + n($ac.harness // "?") + " seq " + n($ac.seq) + (if $ho != null then " handoff " + n($ho.handoff_id) else "" end) + " needs the owner")}
+              elif $ac.unavailable != null and ($ap == null or ($ap.unavailable // null) == null) then
+                {kind:"unavailable", host:$h, agent_id:$a, handoff_id:($ho.handoff_id // null), line:("unavailable " + n($h) + "/" + n($a) + " " + n($ac.harness // "?") + " " + n($ac.unavailable) + (if $ho != null then " handoff " + n($ho.handoff_id) + " " + ref($ho) else "" end) + " needs the owner: switch its model or reroute its work")}
               elif $ap == null then
                 (if $quiet then empty else {kind:"new", host:$h, agent_id:$a, handoff_id:null, line:("new " + n($h) + "/" + n($a) + " " + ref($ac) + " " + n($ac.harness // "?") + " " + n($ac.state // "unknown") + " seq " + n($ac.seq))} end)
               elif $ho != null and $ap.session_id != null and $ac.session_id != null and $ap.session_id != $ac.session_id then

@@ -64,6 +64,18 @@ in
       # herdr_at <timeout_s> <machine-label-or-empty> <herdr args...>: the local server, or herdr's own forwarding to a saved machine
       herdr_at() { local tmo="$1" m="$2"; shift 2
         if [ -z "$m" ]; then timeout -k 1 "$tmo" ${cfg.herdrCommand} "$@"; else timeout -k 1 "$tmo" ${cfg.herdrCommand} --machine "$m" "$@"; fi; }
+      # usage_limit_line <machine-or-empty> <agent_id>: the harness's usage-limit line ("You've reached your Fable limit. …",
+      # "You've hit your weekly limit · resets …") among the agent's last 30 visible lines, or nothing. It must start its
+      # line (after box-drawing or bullet characters, which are trimmed), so a prompt or document quoting the phrase does not match; a read
+      # that fails is nothing, never a limit
+      usage_limit_line() { { herdr_at ${toString cfg.timeoutSeconds} "$1" agent read "$2" --lines 30 --source visible --format text 2>/dev/null 9>&- || true; } \
+        | grep -aE '^[^[:alpha:]]*You(.{1,3}ve| have) (reached|hit) your [[:alnum:] .-]{0,30}limit' | tail -n 1 | sed -E 's/^[^[:alpha:]]*//' | head -c 300 | tr -d '\000-\037' || true; }
+      # implementer_of <audit-file> <host/agent_id> <#N> [handoff_id to skip]: the handoff_id of a delivered handoff without
+      # merge to that pane for that task_ref, or nothing; the pane that implemented an item never merges it (the reviewer does)
+      implementer_of() { [ -s "$1" ] || return 0
+        jq -rs --arg p "$2" --arg r "$3" --arg skip "''${4:-}" 'map(select(type == "object")) as $all | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $o
+          | [$all[] | select(.phase == "attempt" and (.host + "/" + .agent_id) == $p and .task_ref == $r and .handoff_id != $skip
+              and (($o[.audit_id | tostring].outcome // "") == "delivered") and ((.allowed_actions // []) | index("merge") | not)) | .handoff_id] | first // empty' "$1" 2>/dev/null || true; }
       # machines_json: {machines:[enabled saved machines], error:null|{kind,message}}; a failing herdr is data, never fatal
       machines_json() { local raw rc=0; raw=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.herdrCommand} machine list --json 2>/dev/null) || rc=$?
         if [ "$rc" -ne 0 ]; then jq -cn --arg m "herdr machine list: $(rc_kind $rc) (exit $rc)" '{machines:[], error:{kind:"herdr_error", message:$m}}'; return 0; fi

@@ -159,7 +159,7 @@ in
           (if (.portfolio.skipped_active|length) > 0 then "- active but not expanded (cap \(.portfolio.active|length)): \(.portfolio.skipped_active | join(", "))" else empty end),
           (if .portfolio.search_error != null then "- issue search unavailable: \(.portfolio.search_error.kind) — \(.portfolio.search_error.message); repos pushed before the page may hold authorized items" else empty end),
           "", "Full JSON: \($f)", "", "## Agents",
-          (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 and .correlation.by != "none" then " | " + (.reasons | join("; ")) else "" end)") end),
+          (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state)\(if .unavailable != null then " | UNAVAILABLE (\(.unavailable.reason))" else "" end) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 and .correlation.by != "none" then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
         ' <<<"$brief" > "$dir/latest.md.tmp" || { rm -f "$dir/latest.md.tmp"; fail 2 internal "coord:brief Markdown render failed" '{"task":"coord:brief"}'; }
         mv "$dir/latest.md.tmp" "$dir/latest.md" && cat "$dir/latest.md"
@@ -195,6 +195,10 @@ in
             and (length == (unique | length)) and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1))
             then sort_by([(if . == "merge" then 0 elif . == "close" then 1 elif . == "label" then 2 elif . == "comment" then 3 else 4 end), .]) else empty end' <<<"$actions")
         [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
+        if jq -e 'index("merge")' <<<"$actions" >/dev/null; then
+          impl=$(implementer_of "${cfg.stateDir}/audit.jsonl" "$host/$agent" "$ref")
+          [ -z "$impl" ] || fail 3 author_merge "$host/$agent implemented $ref (handoff $impl); the implementer never merges its own change. Give merge to the independent reviewer" "$ctx"
+        fi
         actions_line=$(jq -r 'join(", ")' <<<"$actions")
         at=$(now_iso)
         text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s\nReply in this pane when done, naming the evidence above.\n' \

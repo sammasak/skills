@@ -83,6 +83,11 @@
         grep -q '## Needs you' "$TMP/run.log" && grep -q 'acer-swift/wA:p2' "$TMP/run.log" && grep -q 'Hosts: this one + 1 saved herdr machine' "$TMP/run.log" && ok || bad "Markdown brief names the blocked agent and the machines"
         # herdr_state and work_verdict are distinct keys; the done agent's herdr_state stays done
         [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .herdr_state')" = done ] && ok || bad "herdr_state kept apart from work_verdict"
+        # a worker at its usage limit: listed under Needs you with the switch instruction, marked in the agent list
+        FAKE_HERDR_READ_wT_p1="$FX/herdr/read-fable-limit.txt" runb
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | "\(.needs_owner) \(.unavailable.reason)"')" = "true usage_limit" ] && ok || bad "usage limit: the item needs the owner ($(jqr '.items[] | select(.agent_id=="wT:p1")'))"
+        sed -n '/^## Needs you/,/^## /p' "$TMP/state/brief/latest.md" | grep -F 'wT:p1' | grep -F "You've reached your Fable limit" | grep -q '(/model)' \
+          && grep -q 'wT:p1 .*| herdr=done | UNAVAILABLE (usage_limit)' "$TMP/state/brief/latest.md" && ok || bad "usage limit: Needs you names it with the switch, the agent line marks it ($(cat "$TMP/state/brief/latest.md"))"
         # gh failing: the brief still succeeds, verdicts become unknown with the reason
         FAKE_GH_EXIT=1 runb
         [ "$CODE" -eq 0 ] && [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unknown ] && ok || bad "gh down: brief succeeds with unknown verdicts ($CODE)"
@@ -148,6 +153,11 @@
         [ "$(hq "$H" '"\(.workers.total) \(.workers.idle) \(.workers.busy) \(.free.workers) \(.free.heavy_jobs) \(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "2 1 1 1 0 false false" ] && ok || bad "control plane: 2 workers (1 idle, 1 busy), a worker slot but spawning off ($(hq "$H" '{workers:(.workers|del(.list)),free,spawn_ok}' | jq -c .))"
         [ "$(hq worker-a '"\(.workers.total) \(.workers.busy) \(.free.workers) \(.free.heavy_jobs) \(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "1 1 2 1 true true" ] && ok || bad "worker-a: 1 busy of 3, 1 heavy slot left ($(hq worker-a '{free,spawn_ok}'))"
         [ "$(hq down-b '"\(.reachable) \(.spawn_ok.light) \(.reasons[0])"')" = "false false host did not answer" ] && ok || bad "unreachable host has no capacity"
+        # the idle worker at its usage limit is not idle: no idle worker to hand work to, the reason names it
+        FAKE_HERDR_READ_wF_p1="$FX/herdr/read-fable-limit.txt" run coord:capacity
+        [ "$(hq "$H" '"\(.workers.total) \(.workers.idle) \(.workers.busy) \(.workers.unavailable) \(.workers.unknown) \(.fits.idle_worker | length)"')" = "2 0 1 1 0 0" ] \
+          && hq "$H" '.reasons | join(";")' | grep -q 'unavailable (usage limit): wF:p1' && [ "$(hq "$H" '.workers.list[] | select(.agent_id == "wF:p1") | .unavailable.reason')" = usage_limit ] && ok || bad "usage limit: not counted idle ($(hq "$H" '{workers:(.workers|del(.list)),fits,reasons}' | jq -c .))"
+        run coord:capacity   # the cases below read the unlimited fleet
         # (2) kinds as data: tier and model per kind, and which fit where
         [ "$(jqr '.kinds | to_entries | map("\(.key)=\(.value.tier)/\(.value.model)/\(.value.heavy)") | join(" ")')" = "implementation=sonnet/claude-sonnet-5-5/true mechanical=haiku/claude-haiku-5-5/false planning=opus/claude-opus-5-5/false review=opus/claude-opus-5-5/true" ] && ok || bad "kinds and tiers ($(jqr .kinds))"
         [ "$(hq worker-a '.fits.spawn | join(",")')" = "implementation,mechanical,planning,review" ] && [ "$(hq "$H" '.fits.spawn | length')" = 0 ] && [ "$(hq "$H" '.fits.idle_worker | join(",")')" = "mechanical,planning" ] && ok || bad "fits: everything spawns on worker-a, the control plane's idle worker takes light kinds only ($(hq "$H" .fits | jq -c .) $(hq worker-a .fits | jq -c .))"
@@ -968,6 +978,16 @@
         run; [ "$(iw '.work.approved_issues | length')" = 0 ] && [ "$(iw '.work.open_prs | index("sammasak/skills#80") != null')" = true ] && ok || bad "an open PR naming the item keeps its handoff open: not re-assignable, the PR is the work ($LINES $(iw .work))"
         skills_prs < /dev/null
         unset STATE
+        # (18) a worker at its usage limit is no idle worker with work: it leaves the fleet (the other idle one still wakes),
+        #      is reported once as unavailable, and a fleet of only limited workers never wakes as idle
+        export STATE="$TMP/state-limit"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$TMP/local-full.json" "$LOCAL"
+        FAKE_HERDR_READ_wT_p1="$FX/herdr/read-fable-limit.txt" run
+        [ "$(iw '"\(.fleet_idle) \(.agents)"')" = "true 1" ] && grep -Eq '^\s*unavailable [^ ]+/wT:p1 [a-z]+ usage_limit.* needs the owner' "$TMP/run.log" && ok || bad "usage limit: one worker left in the fleet, the limited one reported ($(iw .) $(grep unavailable "$TMP/run.log"))"
+        FAKE_HERDR_READ_wT_p1="$FX/herdr/read-fable-limit.txt" run
+        ! grep -Eq '^\s*unavailable ' "$TMP/run.log" && ok || bad "usage limit: reported once"
+        FAKE_HERDR_READ_wT_p1="$FX/herdr/read-fable-limit.txt" FAKE_HERDR_READ_wF_p1="$FX/herdr/read-weekly-limit.txt" run
+        [ "$(iw '"\(.fleet_idle) \(.fired)"')" = "false false" ] && [ -z "$(idle_line)" ] && ok || bad "usage limit: only limited workers is no idle fleet ($(iw .))"
+        unset STATE
         # (14) read-only and model-free: list calls only, no prompt, no gh write
         ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|search issues --owner [^ ]+ --label [^ ]+ --state open |pr list -R [^ ]+ --state (open|merged)|issue list -R [^ ]+ --state open)')" = 0 ] && ok || bad "only reads ($(grep '^gh ' "$FAKE_LOG" | grep -vE '^gh (api graphql|pr list|issue list)' | sort -u | head -3))"
         summary
@@ -1056,8 +1076,9 @@
         [ "$(jq -r '[.items[] | select(.herdr_state=="done") | .work_verdict] | sort | unique | join(",")' "$B")" = "unverified,verified" ] && [ "$(jq -r '[.items[] | has("herdr_state") and has("work_verdict")] | all' "$B")" = true ] && ok || bad "herdr_state and work_verdict are separate fields"
         # evidence_ref is set only on verified items, and only ever to a merged PR URL
         [ "$(jq -r '[.items[] | select(.work_verdict != "verified") | .evidence_ref] | all(. == null)' "$B")" = true ] && [ "$(jq -r '[.items[] | select(.work_verdict == "verified") | .evidence_ref] | all(test("^https://github.com/.+/pull/[0-9]+$"))' "$B")" = true ] && ok || bad "evidence_ref only from merged PRs"
-        # what the worker says in its pane is never consulted: no agent read during status/brief, only list + gh
-        ! grep -q 'agent read' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/skills --state all --limit' "$FAKE_LOG" && ! grep -q -- '--search' "$FAKE_LOG" && ok || bad "verdicts come from gh, never from pane text ($(grep -c . "$FAKE_LOG") calls)"
+        # what the worker says in its pane is never consulted for a verdict: the one read is the inventory's usage-limit check
+        # (last 30 visible lines, availability only), everything else is list + gh
+        ! grep 'agent read' "$FAKE_LOG" | grep -vq -- ' --lines 30 --source visible --format text$' && grep -q '^gh pr list -R sammasak/skills --state all --limit' "$FAKE_LOG" && ! grep -q -- '--search' "$FAKE_LOG" && ok || bad "verdicts come from gh, never from pane text ($(grep -c . "$FAKE_LOG") calls)"
         # none of the completion claims needs the owner; nothing is "done" in the Markdown either
         [ "$(jq -r '[.items[] | .needs_owner] | any' "$B")" = false ] && grep -q 'wF:p1 claude #16 | herdr=done | work=unverified' "$TMP/run.log" && ok || bad "Markdown keeps herdr=done beside work=unverified"
         summary

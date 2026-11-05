@@ -45,7 +45,8 @@
           "agent list") if [ -s "''${FAKE_HERDR_STARTED:-/nonexistent}" ]; then jq --slurpfile s "$FAKE_HERDR_STARTED" '.result.agents += $s' "''${FAKE_HERDR_LIST:?}"; else cat "''${FAKE_HERDR_LIST:?}"; fi ;;
           "agent read") # like herdr 0.9.5: <TARGET> comes first; an option or `--` in its place is "unknown option"
             case "$3" in -*|"") echo "unknown option: ''${3:-<none>}" >&2; exit 2 ;; esac
-            cat "''${FAKE_HERDR_READ:?}" ;;
+            # FAKE_HERDR_READ_<agent id, non-alphanumerics as _> is that agent's pane, else FAKE_HERDR_READ
+            rv="FAKE_HERDR_READ_''${3//[^A-Za-z0-9]/_}"; cat "''${!rv:-''${FAKE_HERDR_READ:?}}" ;;
           "agent get") [ "''${FAKE_HERDR_MISSING:-}" = "$3" ] && { echo '{"error":{"code":"agent_not_found","message":"no such agent"}}' >&2; exit 1; }
             [ -n "''${FAKE_HERDR_GET_RAW:-}" ] && { printf '%s\n' "$FAKE_HERDR_GET_RAW"; exit 0; }
             agent_info get "$3" "$(state)" "''${FAKE_HERDR_SEQ:-7}" ;;
