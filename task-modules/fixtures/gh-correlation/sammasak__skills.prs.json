@@ -1,9 +1,219 @@
-[{"number": 56, "title": "slice six", "body": "Refs #33", "state": "MERGED", "mergedAt": "2026-11-03T13:00:00Z", "createdAt": "2026-11-03T10:00:00Z", "url": "https://github.com/sammasak/skills/pull/56", "headRefName": "feat/slice-six", "headRefOid": "6666666666666666666666666666666666666666", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [{"body": "Review at `6666666` (acer-swift wR:p1, not the author): **7/10**", "url": "https://github.com/sammasak/skills/pull/56#issuecomment-561"}], "reviews": [], "commits": [{"oid": "6666666666666666666666666666666666666666", "committedDate": "2026-11-03T12:30:00Z"}]},
- {"number": 55, "title": "slice five", "body": "Refs #32", "state": "MERGED", "mergedAt": "2026-11-03T13:00:00Z", "createdAt": "2026-11-03T10:00:00Z", "url": "https://github.com/sammasak/skills/pull/55", "headRefName": "feat/slice-five", "headRefOid": "5555555555555555555555555555555555555555", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [], "reviews": [], "commits": [{"oid": "5555555555555555555555555555555555555555", "committedDate": "2026-11-03T12:30:00Z"}]},
- {"number": 54, "title": "review fixups for #29", "body": "Refs #29", "state": "MERGED", "mergedAt": "2026-11-03T15:10:00Z", "createdAt": "2026-11-03T14:40:00Z", "url": "https://github.com/sammasak/skills/pull/54", "headRefName": "fix/29-review", "headRefOid": "dddd4444dddd4444dddd4444dddd4444dddd4444", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [{"body": "Re-review at `dddd444`: **9/10**, landing.\n\n-- acer-swift wB:p1 (automated; not the owner)", "url": "https://github.com/sammasak/skills/pull/54#issuecomment-541"}], "reviews": []},
- {"number": 53, "title": "slice three", "body": "Refs #29", "state": "OPEN", "mergedAt": null, "createdAt": "2026-11-03T14:30:00Z", "url": "https://github.com/sammasak/skills/pull/53", "headRefName": "feat/slice-three", "headRefOid": "cccc3333cccc3333cccc3333cccc3333cccc3333", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [{"body": "Review of #53 at `0ddba11` (acer-swift wR:p1, not the author): **9/10**", "url": "https://github.com/sammasak/skills/pull/53#issuecomment-531"}, {"body": "LGTM, 9/10 at `cccc333`", "url": "https://github.com/sammasak/skills/pull/53#issuecomment-532"}], "reviews": [], "commits": [{"oid": "cccc3333cccc3333cccc3333cccc3333cccc3333", "committedDate": "2026-11-03T15:30:00Z"}]},
- {"number": 52, "title": "slice two (Refs #28)", "body": "second child of the epic", "state": "MERGED", "mergedAt": "2026-11-03T13:30:00Z", "createdAt": "2026-11-03T12:30:00Z", "url": "https://github.com/sammasak/skills/pull/52", "headRefName": "feat/slice-two", "headRefOid": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [{"body": "Response to the review (wR:p1, 8/10): fixed.\n\n-- acer-swift wA:p1 (automated; not the owner)", "url": "https://github.com/sammasak/skills/pull/52#issuecomment-521"}, {"body": "## Re-review at `bbbb222` (acer-swift wR:p1, not the author): **9/10**", "url": "https://github.com/sammasak/skills/pull/52#issuecomment-522"}, {"body": "Live acceptance: the brief on lenovo lists it.\n\n-- lenovo wN:p1", "url": "https://github.com/sammasak/skills/pull/52#issuecomment-523"}], "reviews": []},
- {"number": 51, "title": "slice one", "body": "Implements part of the coordinator.\n\nRefs #28", "state": "MERGED", "mergedAt": "2026-11-03T11:30:00Z", "createdAt": "2026-11-03T10:30:00Z", "url": "https://github.com/sammasak/skills/pull/51", "headRefName": "feat/slice-one", "headRefOid": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [], "reviews": [{"body": "Independent review (acer-swift wR:p1, not the author). Grade: 9/10.", "state": "COMMENTED", "commit": {"oid": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"}}]},
- {"number": 50, "title": "before any handoff", "body": "Refs #28", "state": "MERGED", "mergedAt": "2026-11-03T09:10:00Z", "createdAt": "2026-11-03T09:00:00Z", "url": "https://github.com/sammasak/skills/pull/50", "headRefName": "feat/early", "headRefOid": "eeee5555eeee5555eeee5555eeee5555eeee5555", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [], "reviews": []},
- {"number": 49, "title": "another repo's ref", "body": "Refs sammasak/nixos-config#28", "state": "MERGED", "mergedAt": "2026-11-03T11:10:00Z", "createdAt": "2026-11-03T11:00:00Z", "url": "https://github.com/sammasak/skills/pull/49", "headRefName": "feat/other", "headRefOid": "ffff6666ffff6666ffff6666ffff6666ffff6666", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [], "reviews": []},
- {"number": 48, "title": "abandoned attempt", "body": "Refs #28", "state": "CLOSED", "mergedAt": null, "createdAt": "2026-11-03T10:45:00Z", "url": "https://github.com/sammasak/skills/pull/48", "headRefName": "feat/abandoned", "headRefOid": "9999aaaa9999aaaa9999aaaa9999aaaa9999aaaa", "closingIssuesReferences": [], "statusCheckRollup": [], "comments": [], "reviews": []}]
+[
+  {
+    "number": 56,
+    "title": "slice six",
+    "body": "Refs #33",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T13:00:00Z",
+    "createdAt": "2026-11-03T10:00:00Z",
+    "url": "https://github.com/sammasak/skills/pull/56",
+    "headRefName": "feat/slice-six",
+    "headRefOid": "6666666666666666666666666666666666666666",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [
+      {
+        "body": "Review at `6666666` (acer-swift wR:p1, not the author): **7/10**",
+        "url": "https://github.com/sammasak/skills/pull/56#issuecomment-561"
+      }
+    ],
+    "reviews": [],
+    "commits": [
+      {
+        "oid": "6666666666666666666666666666666666666666",
+        "committedDate": "2026-11-03T12:30:00Z"
+      }
+    ]
+  },
+  {
+    "number": 55,
+    "title": "slice five",
+    "body": "Refs #32",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T13:00:00Z",
+    "createdAt": "2026-11-03T10:00:00Z",
+    "url": "https://github.com/sammasak/skills/pull/55",
+    "headRefName": "feat/slice-five",
+    "headRefOid": "5555555555555555555555555555555555555555",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [],
+    "reviews": [],
+    "commits": [
+      {
+        "oid": "5555555555555555555555555555555555555555",
+        "committedDate": "2026-11-03T12:30:00Z"
+      }
+    ]
+  },
+  {
+    "number": 54,
+    "title": "review fixups for #29",
+    "body": "Refs #29",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T15:10:00Z",
+    "createdAt": "2026-11-03T14:40:00Z",
+    "url": "https://github.com/sammasak/skills/pull/54",
+    "headRefName": "fix/29-review",
+    "headRefOid": "dddd4444dddd4444dddd4444dddd4444dddd4444",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [
+      {
+        "body": "Re-review at `dddd444`: **9/10**, landing.\n\n-- acer-swift wB:p1 (automated; not the owner)",
+        "url": "https://github.com/sammasak/skills/pull/54#issuecomment-541"
+      }
+    ],
+    "reviews": []
+  },
+  {
+    "number": 53,
+    "title": "slice three",
+    "body": "Refs #29",
+    "state": "OPEN",
+    "mergedAt": null,
+    "createdAt": "2026-11-03T14:30:00Z",
+    "url": "https://github.com/sammasak/skills/pull/53",
+    "headRefName": "feat/slice-three",
+    "headRefOid": "cccc3333cccc3333cccc3333cccc3333cccc3333",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [
+      {
+        "body": "Review of #53 at `0ddba11` (acer-swift wR:p1, not the author): **9/10**",
+        "url": "https://github.com/sammasak/skills/pull/53#issuecomment-531"
+      },
+      {
+        "body": "LGTM, 9/10 at `cccc333`",
+        "url": "https://github.com/sammasak/skills/pull/53#issuecomment-532"
+      }
+    ],
+    "reviews": [],
+    "commits": [
+      {
+        "oid": "cccc3333cccc3333cccc3333cccc3333cccc3333",
+        "committedDate": "2026-11-03T15:30:00Z"
+      }
+    ]
+  },
+  {
+    "number": 52,
+    "title": "slice two (Refs #28)",
+    "body": "second child of the epic",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T13:30:00Z",
+    "createdAt": "2026-11-03T12:30:00Z",
+    "url": "https://github.com/sammasak/skills/pull/52",
+    "headRefName": "feat/slice-two",
+    "headRefOid": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [
+      {
+        "body": "Response to the review (wR:p1, 8/10): fixed.\n\n-- acer-swift wA:p1 (automated; not the owner)",
+        "url": "https://github.com/sammasak/skills/pull/52#issuecomment-521"
+      },
+      {
+        "body": "## Re-review at `bbbb222` (acer-swift wR:p1, not the author): **9/10**",
+        "url": "https://github.com/sammasak/skills/pull/52#issuecomment-522"
+      },
+      {
+        "body": "Live acceptance: the brief on lenovo lists it.\n\n-- lenovo wN:p1",
+        "url": "https://github.com/sammasak/skills/pull/52#issuecomment-523"
+      }
+    ],
+    "reviews": []
+  },
+  {
+    "number": 51,
+    "title": "slice one",
+    "body": "Implements part of the coordinator.\n\nRefs #28",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T11:30:00Z",
+    "createdAt": "2026-11-03T10:30:00Z",
+    "url": "https://github.com/sammasak/skills/pull/51",
+    "headRefName": "feat/slice-one",
+    "headRefOid": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [],
+    "reviews": [
+      {
+        "body": "Independent review (acer-swift wR:p1, not the author). Grade: 9/10.",
+        "state": "COMMENTED",
+        "commit": {
+          "oid": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+        }
+      }
+    ]
+  },
+  {
+    "number": 50,
+    "title": "before any handoff",
+    "body": "Refs #28",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T09:10:00Z",
+    "createdAt": "2026-11-03T09:00:00Z",
+    "url": "https://github.com/sammasak/skills/pull/50",
+    "headRefName": "feat/early",
+    "headRefOid": "eeee5555eeee5555eeee5555eeee5555eeee5555",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [],
+    "reviews": []
+  },
+  {
+    "number": 49,
+    "title": "another repo's ref",
+    "body": "Refs sammasak/nixos-config#28",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T11:10:00Z",
+    "createdAt": "2026-11-03T11:00:00Z",
+    "url": "https://github.com/sammasak/skills/pull/49",
+    "headRefName": "feat/other",
+    "headRefOid": "ffff6666ffff6666ffff6666ffff6666ffff6666",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [],
+    "reviews": []
+  },
+  {
+    "number": 48,
+    "title": "abandoned attempt",
+    "body": "Refs #28",
+    "state": "CLOSED",
+    "mergedAt": null,
+    "createdAt": "2026-11-03T10:45:00Z",
+    "url": "https://github.com/sammasak/skills/pull/48",
+    "headRefName": "feat/abandoned",
+    "headRefOid": "9999aaaa9999aaaa9999aaaa9999aaaa9999aaaa",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [],
+    "reviews": []
+  },
+  {
+    "number": 57,
+    "title": "fix #34 thing",
+    "body": "Fixes #34",
+    "state": "MERGED",
+    "mergedAt": "2026-11-03T17:00:00Z",
+    "createdAt": "2026-11-03T16:30:00Z",
+    "url": "https://github.com/sammasak/skills/pull/57",
+    "headRefName": "fix/34-thing",
+    "headRefOid": "7777777777777777777777777777777777777777",
+    "closingIssuesReferences": [],
+    "statusCheckRollup": [],
+    "comments": [
+      {
+        "body": "Review request for **wR (acer-swift wR:p1)**: independent review of head `7777777`, merge at 9 or more. I (wD:p1) implemented it and will not merge it.\n\n-- acer-swift wD:p1",
+        "url": "https://github.com/sammasak/skills/pull/57#issuecomment-571"
+      },
+      {
+        "body": "Independent review at `7777777` (7777777777777777777777777777777777777777): **9/10**, merging (merge commit). Reviewer acer-swift wR:p1; author wD:p1.\n\n**Against #34:** done.",
+        "url": "https://github.com/sammasak/skills/pull/57#issuecomment-572"
+      }
+    ],
+    "reviews": []
+  }
+]

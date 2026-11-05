@@ -7,12 +7,20 @@ def refs($n): ((.closingIssuesReferences // []) | any(.number == $n))
   or (((.title // "") + "\n" + (.body // "")) | test("(^|[^A-Za-z0-9_./#-])#\($n)([^0-9]|$)"))
   or ((.headRefName // "") | test("(^|[/_-])\($n)([/_-]|$)"));
 def grade: [capture("(?<![0-9.])(?<g>10|[0-9])/10(?![0-9])").g] | first | if . == null then null else tonumber end;
-# reviews are signed "(<host> <agent>, …" or "-- <host> <agent>" (one GitHub account for every agent)
-def signer: [capture("(\\(|-- )(?<h>[A-Za-z0-9][A-Za-z0-9.-]*) (?<a>[A-Za-z0-9_]+:[A-Za-z0-9_]+)") | "\(.h)/\(.a)"] | first;
-# a note's own grade: the first on a line that names no pane but its signer's; "Response to the review (wR:p1, 8/10)"
+# reviews are signed "-- <host> <agent>" (the last sign-off wins over any pane the note mentions before it),
+# "Reviewer <host> <agent>" / "Reviewed by <host> <agent>", or "(<host> <agent>, …" (one GitHub account for every agent)
+def host_agent: "(?<h>[A-Za-z0-9][A-Za-z0-9.-]*) (?<a>[A-Za-z0-9_]+:[A-Za-z0-9_]+)";
+def signer: (([capture("-- " + host_agent; "g")] | last)
+  // ([capture("(?i)review(er:?|ed by) " + host_agent; "g")] | first)
+  // ([capture("\\(" + host_agent; "g")] | first))
+  | if . == null then null else "\(.h)/\(.a)" end;
+# a note's own grade: the first on a line that names no pane but its signer's, or that declares the signer the reviewer
+# on that same line ("…: 9/10, merging. Reviewer acer-swift wF:p1; author wW:p1"); "Response to the review (wR:p1, 8/10)"
 # signed by the author quotes wR:p1's grade, it is not the author's
 def own_grade($by): (($by // "") | split("/") | last) as $a
-  | [split("\n")[] | select([scan("(?<![A-Za-z0-9_])[A-Za-z][A-Za-z0-9_]*:p[0-9]+(?![A-Za-z0-9_])")] | all(. == $a)) | grade | select(. != null)] | first;
+  | [split("\n")[] | select(([scan("(?<![A-Za-z0-9_])[A-Za-z][A-Za-z0-9_]*:p[0-9]+(?![A-Za-z0-9_])")] | all(. == $a))
+                            or ($a != "" and test("(?i)review(er:?|ed by) ([A-Za-z0-9][A-Za-z0-9.-]* )?" + $a + "(?![A-Za-z0-9_])")))
+     | grade | select(. != null)] | first;
 def notes: . as $p
   | [((.comments // [])[] | {body:(.body // ""), url:(.url // $p.url), oid:null}),
      ((.reviews // [])[] | {body:(.body // ""), url:$p.url, oid:(.commit.oid? // null)})]

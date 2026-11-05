@@ -280,6 +280,7 @@
               ($t | .pane_id = "wG:p1" | .agent_status = "idle" | .agent_session.value = "new" | .terminal_title_stripped = "sammasak/skills #30 thing"),
               ($t | .pane_id = "wT:p2" | .agent_status = "done" | .agent_session.value = "sT" | .terminal_title_stripped = "sammasak/skills #28 epic"),
               ($t | .pane_id = "wC:p1" | .agent_status = "idle" | .agent_session.value = "sC" | .terminal_title_stripped = "fix-up"),
+              ($t | .pane_id = "wD:p1" | .agent_status = "done" | .agent_session.value = "sD" | .terminal_title_stripped = "sammasak/skills #34"),
               ($t | .pane_id = "wR:p1" | .agent_status = "idle" | .agent_session.value = "sR" | .terminal_title_stripped = "review")]' \
           "$FX/herdr/local-two-agents.json" > "$TMP/list.json"
         export FAKE_HERDR_LIST="$TMP/list.json"
@@ -297,13 +298,14 @@
         handoff h00000000007 wB:p1 sB "#29" 2026-11-03T15:00:00Z     # a fix-up round: PR 53 (opened under 003) gets a commit at 15:30
         handoff h00000000008 wC:p1 sC "#32" 2026-11-03T12:00:00Z     # fix-up on PR 55 (commit 12:30), merged with no grade at all
         handoff h00000000009 wR:p1 sR "#33" 2026-11-03T12:00:00Z     # review of PR 56: wR:p1 graded it 7/10, the author pushed at 12:30
+        handoff h00000000010 wD:p1 sD "#34" 2026-11-03T16:00:00Z     # PR 57: merged, its 9/10 signed "Reviewer acer-swift wR:p1; author wD:p1"
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         B="$TMP/state/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
         q() { jq -r "$1" "$B"; }
         h() { jq -r --arg i "$1" ".handoffs[] | select(.handoff_id == \$i) | $2" "$B"; }
         it() { jq -r --arg a "$1" ".items[] | select(.agent_id == \$a) | $2" "$B"; }
-        [ "$CODE" -eq 0 ] && [ "$(q '.handoffs | length')" = 9 ] && ok || bad "brief over nine handoffs: $CODE $(grep -E 'error|jq:' "$TMP/run.log" | head -3)"
+        [ "$CODE" -eq 0 ] && [ "$(q '.handoffs | length')" = 10 ] && ok || bad "brief over ten handoffs: $CODE $(grep -E 'error|jq:' "$TMP/run.log" | head -3)"
         # (1) the wrong title loses to the handoff on the pane's session
         [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.title_ref) \(.work_verdict) \(.evidence_ref)"')" = "handoff h00000000002 #28 #99 verified https://github.com/sammasak/skills/pull/52" ] && ok || bad "wrong title: correlated by handoff ($(it wA:p1 '{correlation,task_ref,title_ref,work_verdict,evidence_ref}'))"
         it wA:p1 '.reasons | join(";")' | grep -q 'title names #99; correlated by handoff h00000000002 to #28' && ok || bad "wrong title is named in the reasons"
@@ -322,6 +324,10 @@
         [ "$(h h00000000008 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stages.merged[0]) \(.stages.reviewed) \(.evidence_ref) \(.reasons[0])"')" = "55 unverified https://github.com/sammasak/skills/pull/55 null null PR #55 merged without an independent 9/10 on its head" ] && ok || bad "merged without a review is unverified ($(h h00000000008 '{prs:[.prs[].number], work_verdict, stages, reasons}'))"
         # a handoff never owns a PR its own agent graded, at any grade: the reviewer's window holds the author's commit
         [ "$(h h00000000009 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stale) \(.session_state)"')" = " unknown false same" ] && ok || bad "a PR the handoff's agent graded 7/10 is a review it did ($(h h00000000009 '{prs:[.prs[].number], work_verdict, stale, reasons}'))"
+        # the reviewers' form: the grade line itself names the reviewer and the author ("Reviewer acer-swift wR:p1; author
+        # wD:p1"), no sign-off; the author's review request, which names the reviewer in parentheses, is signed "-- " by the author
+        [ "$(h h00000000010 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stages.reviewed[0].by) \(.stages.reviewed[0].grade) \(.evidence_ref)"')" = "57 verified acer-swift/wR:p1 9 https://github.com/sammasak/skills/pull/57" ] && ok || bad "a 9/10 signed 'Reviewer <host> <agent>' on the grade line is the reviewer's ($(h h00000000010 '{prs:[.prs[].number], work_verdict, stages, reasons}'))"
+        [ "$(it wD:p1 '"\(.correlation.by) \(.work_verdict)"')" = "handoff verified" ] && ok || bad "the author's pane is verified by that review ($(it wD:p1 '{correlation,work_verdict,reasons}'))"
         [ "$(it wB:p1 '"\(.correlation.by) \(.task_ref) \(.work_verdict)"')" = "handoff #29 unverified" ] && ok || bad "a pane with no ref in its title is correlated by its handoff"
         # (4) stale handoffs: the pane restarted, or is gone; neither is verified and the restarted pane falls back to its title
         [ "$(h h00000000004 '"\(.stale) \(.session_state) \(.work_verdict)"')" = "true session_changed unknown" ] && [ "$(it wG:p1 '.correlation.by')" = title ] && ok || bad "restarted pane: stale handoff, item by title ($(h h00000000004 '{stale,session_state}') $(it wG:p1 .correlation))"
@@ -335,8 +341,8 @@
         ! grep -qE '^\s*- h0000000000[124] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && ok || bad "open handoffs one line each with stages; verified and closed ones not repeated ($(grep -A12 '## Handoffs' <<<"$md"))"
         # (6b) open vs closed (skills#28: a stale or settled handoff kept its item out of reach): open while a PR of it is open
         #      or its agent works on it; closed ones carry the reason, are counted in the header and listed per item in one line
-        [ "$(q '[.handoffs | sort_by(.handoff_id)[] | "\(.handoff_id[-1:])=\(if .open then "open" else .closed_reason end)"] | join(" ")')" = "1=verified 2=verified 3=open 4=stale 5=stale 6=not delivered 7=open 8=merged without an independent review 9=settled without an open PR" ] && ok || bad "open/closed_reason per handoff ($(q '[.handoffs[] | {id:.handoff_id, open, closed_reason}]'))"
-        grep -q '## Handoffs (from the audit log): 9 total, 2 verified, 2 open, 0 unknown, 5 closed$' <<<"$md" && grep -q -- '- closed, nobody on it (the item can be handed out again; a merged one without an independent review needs that review): .*sammasak/skills#30 (h00000000004 stale)' <<<"$md" && grep -q 'sammasak/skills#33 (h00000000009 settled without an open PR)' <<<"$md" && ok || bad "closed handoffs: counted and summarised per item ($(grep -A12 '## Handoffs' <<<"$md"))"
+        [ "$(q '[.handoffs | sort_by(.handoff_id)[] | "\(.handoff_id[-1:])=\(if .open then "open" else .closed_reason end)"] | join(" ")')" = "1=verified 2=verified 3=open 4=stale 5=stale 6=not delivered 7=open 8=merged without an independent review 9=settled without an open PR 0=verified" ] && ok || bad "open/closed_reason per handoff ($(q '[.handoffs[] | {id:.handoff_id, open, closed_reason}]'))"
+        grep -q '## Handoffs (from the audit log): 10 total, 3 verified, 2 open, 0 unknown, 5 closed$' <<<"$md" && grep -q -- '- closed, nobody on it (the item can be handed out again; a merged one without an independent review needs that review): .*sammasak/skills#30 (h00000000004 stale)' <<<"$md" && grep -q 'sammasak/skills#33 (h00000000009 settled without an open PR)' <<<"$md" && ok || bad "closed handoffs: counted and summarised per item ($(grep -A12 '## Handoffs' <<<"$md"))"
         # the portfolio says which approved items are held and which can be handed out again
         [ "$(q '.portfolio.active[0].approved | map("\(.number):\(.reassignable):\([.open_handoffs[].handoff_id] | join("+")):\(.last_handoff.handoff_id)") | join(" ")')" = "28:true::h00000000002 29:false:h00000000003+h00000000007:h00000000007" ] && ok || bad "approved items: open handoffs hold, closed ones leave them re-assignable ($(q '.portfolio.active[0].approved'))"
         grep -q '#28 .* \[re-assignable: handoff h00000000002 → '"$H"'/wA:p1 verified\]' <<<"$md" && grep -q '#29 .* \[held by handoff h00000000003 → '"$H"'/wB:p1, h00000000007 → '"$H"'/wB:p1\]' <<<"$md" && ok || bad "portfolio Markdown marks held and re-assignable items ($(grep 'sammasak/skills:' <<<"$md"))"
@@ -367,16 +373,16 @@
         for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
         devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
-        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 9 q000000000010" ] && grep -q '59 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
+        [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 10 q000000000010" ] && grep -q '60 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
         # an agent whose handoff fell out of the evaluated window says so, rather than being judged by its (wrong) title
         [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.work_verdict) \(.evidence_ref)"')" = "omitted h00000000002 #28 unknown null" ] && it wA:p1 '.reasons[0]' | grep -q 'older than the 50 newest evaluated' && ok || bad "omitted handoff reported as omitted ($(it wA:p1 '{correlation,task_ref,work_verdict,reasons}'))"
         # (8) evidence that is missing holds the item (review of #65): an agent working on it is open; an agent herdr cannot
         #     classify, a host that did not answer and a repo whose GitHub evidence failed are unknown, never closed, so no
         #     worker out of sight gets a duplicate; an open PR naming an approved issue holds it without any handoff
         mkdir -p "$TMP/gh-hold" "$TMP/state-hold"; cp "$TMP"/gh-corr/*.json "$TMP/gh-hold/"
-        jq '. + [34,35,36,37,38,39,40 | {number:., title:"item \(.)", state:"OPEN", labels:[{name:"approved"}], url:"https://github.com/sammasak/skills/issues/\(.)", author:{login:"sammasak"}}]' "$TMP/gh-corr/sammasak__skills.issues.json" > "$TMP/gh-hold/sammasak__skills.issues.json"
-        jq '. + [{number:77, title:"fix #37", body:"", state:"OPEN", mergedAt:null, createdAt:"2026-11-03T16:00:00Z", url:"https://github.com/sammasak/skills/pull/77", headRefName:"feat/x", headRefOid:"7777777777777777777777777777777777777777", isDraft:false, closingIssuesReferences:[], statusCheckRollup:[], comments:[], reviews:[], commits:[]}]
-              + [{number:78, title:"unrelated title", closing:[38], branch:"feat/y"}, {number:79, title:"another title", closing:[], branch:"fix/39-hold"}
+        jq '. + [44,45,46,47,48,49,40 | {number:., title:"item \(.)", state:"OPEN", labels:[{name:"approved"}], url:"https://github.com/sammasak/skills/issues/\(.)", author:{login:"sammasak"}}]' "$TMP/gh-corr/sammasak__skills.issues.json" > "$TMP/gh-hold/sammasak__skills.issues.json"
+        jq '. + [{number:77, title:"fix #47", body:"", state:"OPEN", mergedAt:null, createdAt:"2026-11-03T16:00:00Z", url:"https://github.com/sammasak/skills/pull/77", headRefName:"feat/x", headRefOid:"7777777777777777777777777777777777777777", isDraft:false, closingIssuesReferences:[], statusCheckRollup:[], comments:[], reviews:[], commits:[]}]
+              + [{number:78, title:"unrelated title", closing:[48], branch:"feat/y"}, {number:79, title:"another title", closing:[], branch:"fix/49-hold"}
                  | {number, title, body:"", state:"OPEN", mergedAt:null, createdAt:"2026-11-03T16:00:00Z", url:"https://github.com/sammasak/skills/pull/\(.number)", headRefName:.branch,
                     headRefOid:"7878787878787878787878787878787878787878", isDraft:false, closingIssuesReferences:(.closing | map({number:.})), statusCheckRollup:[], comments:[], reviews:[], commits:[]}]' "$TMP/gh-corr/sammasak__skills.prs.json" > "$TMP/gh-hold/sammasak__skills.prs.json"
         jq '.result.agents += [(.result.agents[0] | .pane_id = "wW:p9" | .agent_status = "working" | .agent_session.value = "sW" | .terminal_title_stripped = "busy"),
@@ -384,9 +390,9 @@
                                (.result.agents[0] | .pane_id = "wE:p9" | .agent_status = "idle" | .agent_session.value = "sE" | .terminal_title_stripped = "quiet")]' "$TMP/list.json" > "$TMP/list-hold.json"
         printf 'not json\n' > "$TMP/gh-hold/sammasak__missing.prs.json"; echo '[]' > "$TMP/gh-hold/sammasak__missing.issues.json"   # its GitHub evidence fails
         A0=$A; A="$TMP/state-hold/audit.jsonl"
-        handoff h0000000000a wW:p9 sW "#34" 2026-11-03T12:00:00Z
-        handoff h0000000000b wU:p9 sU "#35" 2026-11-03T12:00:00Z
-        handoff h0000000000c wL:p1 sL "#36" 2026-11-03T12:00:00Z; sed -i "s/\"handoff_id\":\"h0000000000c\",\"task_ref\":\"#36\",\"phase\":\"attempt\",\"host\":\"$H\"/\"handoff_id\":\"h0000000000c\",\"task_ref\":\"#36\",\"phase\":\"attempt\",\"host\":\"lenovo-gone\"/" "$A"
+        handoff h0000000000a wW:p9 sW "#44" 2026-11-03T12:00:00Z
+        handoff h0000000000b wU:p9 sU "#45" 2026-11-03T12:00:00Z
+        handoff h0000000000c wL:p1 sL "#46" 2026-11-03T12:00:00Z; sed -i "s/\"handoff_id\":\"h0000000000c\",\"task_ref\":\"#46\",\"phase\":\"attempt\",\"host\":\"$H\"/\"handoff_id\":\"h0000000000c\",\"task_ref\":\"#46\",\"phase\":\"attempt\",\"host\":\"lenovo-gone\"/" "$A"
         handoff h0000000000d wB:p1 sB "#1" 2026-11-03T16:00:00Z; sed -i 's#skills/issues/1"#missing/issues/1"#' "$A"
         # an attempt with no outcome line to an idle pane on an answering host: the prompt may have arrived (herdr:message
         # refuses to resend it), so the item stays held, never re-assignable
@@ -397,11 +403,11 @@
           --option coordinator.stateDir:string "$TMP/state-hold" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         B="$TMP/state-hold/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
         [ "$CODE" -eq 0 ] && [ "$(q '[.handoffs | sort_by(.handoff_id)[] | "\(.handoff_id[-1:])=\(.hold):\(.closed_reason // .unknown_reason // "")"] | join("|")')" = "a=open:|b=unknown:agent state unknown is not idle or done|c=unknown:host lenovo-gone did not answer|d=unknown:GitHub evidence for sammasak/missing unavailable or cut at the PR limit|e=unknown:delivery unknown (interrupted): inspect the pane, never resend" ] && ok || bad "hold: working is open; unclassified state, unanswered host and failed GitHub evidence are unknown ($CODE $(q '[.handoffs[] | {handoff_id, hold, closed_reason, unknown_reason, session_state}]'))"
-        [ "$(q '[.portfolio.active[0].approved[] | select(.number >= 34) | "\(.number):\(.reassignable):\(.open_prs | join("+"))"] | join(" ")')" = "34:false: 35:false: 36:false: 37:false:77 38:false:78 39:false:79 40:false:" ] && ok || bad "an open or unknown handoff, or an open PR without one (named in its title, by a closing reference or in its branch), holds the item ($(q '.portfolio.active[0].approved'))"
+        [ "$(q '[.portfolio.active[0].approved[] | select(.number >= 40) | "\(.number):\(.reassignable):\(.open_prs | join("+"))"] | join(" ")')" = "44:false: 45:false: 46:false: 47:false:77 48:false:78 49:false:79 40:false:" ] && ok || bad "an open or unknown handoff, or an open PR without one (named in its title, by a closing reference or in its branch), holds the item ($(q '.portfolio.active[0].approved'))"
         md=$(sed -n '/# Fleet brief/,/^\s*Full JSON:/p' "$TMP/run.log")
         grep -q '## Handoffs (from the audit log): 5 total, 0 verified, 1 open, 4 unknown, 0 closed$' <<<"$md" && grep -q 'h0000000000c → lenovo-gone/wL:p1 .*HOLD UNKNOWN: host lenovo-gone did not answer' <<<"$md" \
           && grep -q 'h0000000000e → '"$H"'/wE:p9 .*HOLD UNKNOWN: delivery unknown (interrupted)' <<<"$md" && grep -q '#40 item 40 \[held by handoff h0000000000e → '"$H"'/wE:p9 (unknown: delivery unknown (interrupted)' <<<"$md" \
-          && grep -q '#37 item 37 \[held by open PR #77\]' <<<"$md" && grep -q '#35 item 35 \[held by handoff h0000000000b → '"$H"'/wU:p9 (unknown: agent state unknown is not idle or done)\]' <<<"$md" && ok || bad "Markdown: unknown handoffs listed as holding, PR-held items marked ($(grep -A8 '## Handoffs' <<<"$md"; grep 'sammasak/skills:' <<<"$md"))"
+          && grep -q '#47 item 47 \[held by open PR #77\]' <<<"$md" && grep -q '#45 item 45 \[held by handoff h0000000000b → '"$H"'/wU:p9 (unknown: agent state unknown is not idle or done)\]' <<<"$md" && ok || bad "Markdown: unknown handoffs listed as holding, PR-held items marked ($(grep -A8 '## Handoffs' <<<"$md"; grep 'sammasak/skills:' <<<"$md"))"
         summary
       '';
     };
