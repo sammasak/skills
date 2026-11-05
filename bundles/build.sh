@@ -6,31 +6,37 @@
 # Every failure ends stderr with one JSON line; the class fixes the exit code. Nothing is written
 # unless the whole bundle is.
 #
-#   build.sh --src DIR --rev SHA --role NAME --harness claude-code|codex|pi --skill NAME... --out DIR
+#   build.sh --src DIR --rev SHA --role NAME --harness claude-code|codex|pi --skill NAME... [--tasks DIR] [--runtime PATH] --out DIR
+# --runtime PATH (default.nix passes its store bin dirs): the PATH the entrypoints run with, so a sandbox needs no tools of its own.
+# --tasks DIR (bundles/default.nix builds it from task-modules/): one executable per task and index.json
+# ({name: {after}}); the role's declared read and run tasks, with what they run after, ship as tasks/<name>.
 set -euo pipefail
 fail() { # <class> <message>
   local code
-  case $1 in usage) code=2 ;; role) code=3 ;; skill) code=4 ;; harness) code=5 ;; *) code=1 ;; esac
+  case $1 in usage) code=2 ;; role) code=3 ;; skill) code=4 ;; harness) code=5 ;; task) code=6 ;; *) code=1 ;; esac
   jq -nc --arg c "$1" --arg m "$2" '{error: {class: $c, message: $m}}' >&2
   exit "$code"
 }
-USAGE='build.sh --src DIR --rev SHA --role NAME --harness claude-code|codex|pi --skill NAME... --out DIR'
-src='' rev='' role='' harness='' out='' skills=()
+USAGE='build.sh --src DIR --rev SHA --role NAME --harness claude-code|codex|pi --skill NAME... [--tasks DIR] [--runtime PATH] --out DIR'
+src='' rev='' role='' harness='' out='' tasks_src='' runtime='' skills=()
 while [ $# -gt 0 ]; do
   case $1 in
-    --src | --rev | --role | --harness | --out | --skill) [ $# -ge 2 ] || fail usage "usage: $USAGE" ;;&
+    --src | --rev | --role | --harness | --out | --skill | --tasks | --runtime) [ $# -ge 2 ] || fail usage "usage: $USAGE" ;;&
     --src) src=$2; shift 2 ;;
     --rev) rev=$2; shift 2 ;;
     --role) role=$2; shift 2 ;;
     --harness) harness=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
     --skill) skills+=("$2"); shift 2 ;;
+    --tasks) tasks_src=$2; shift 2 ;;
+    --runtime) runtime=$2; shift 2 ;;
     *) fail usage "usage: $USAGE" ;;
   esac
 done
 [ -n "$src" ] && [ -n "$rev" ] && [ -n "$role" ] && [ -n "$harness" ] && [ -n "$out" ] || fail usage "usage: $USAGE"
 [[ $rev =~ ^[0-9a-f]{40}$ ]] || fail usage "rev must be the 40-hex revision of the skills source, got '$rev'"
 [ -d "$src/skills" ] && [ -d "$src/agents" ] || fail usage "$src is not a skills tree (no skills/ and agents/)"
+[ -z "$runtime" ] || [[ $runtime =~ ^/nix/store/[^:]+(:/nix/store/[^:]+)*$ ]] || fail usage "--runtime must be store bin directories joined by ':'"
 [ -e "$out" ] && fail usage "$out exists; a bundle is built into a fresh directory"
 case $harness in claude-code | codex | pi) ;; *) fail usage "harness must be claude-code, codex or pi, got '$harness'" ;; esac
 
@@ -89,6 +95,30 @@ while IFS= read -r s; do
   skills_json=$(jq -c --arg n "$s" --arg sum "$(tree_sha "$stage/skills/$s")" '.[$n] = {path: ("skills/" + $n), sha256: $sum}' <<<"$skills_json")
 done <<<"$selected"
 declared=$(jq -c '.skills // [] | sort' <<<"$front")
+
+# the tasks: the role's declared read and run tasks (act tasks stay with the host's audited wrappers), each with the
+# tasks it runs after, as the evaluated task-module scripts; a declared task the modules do not define fails the build
+scripts_json='{}'
+if [ -n "$tasks_src" ]; then
+  [ -f "$tasks_src/index.json" ] || fail usage "--tasks $tasks_src has no index.json"
+  want=$(jq -r '((.tasks.read // []) + (.tasks.run // []))[]' <<<"$front")
+  closure=$(jq -r --argjson want "$(jq -Rsc 'split("\n") | map(select(length > 0))' <<<"$want")" '
+    . as $idx | def deps($n): [$n] + ([($idx[$n].after // [])[] | deps(.)] | add // []);
+    [$want[] | deps(.)] | flatten | unique | .[]' "$tasks_src/index.json")
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    [ -x "$tasks_src/$n" ] && jq -e --arg n "$n" 'has($n)' "$tasks_src/index.json" >/dev/null \
+      || fail task "role $role declares task $n, which task-modules/ and agents/$role/ do not define"
+  done <<<"$want"
+  mkdir -p "$stage/tasks"
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    cp "$tasks_src/$n" "$stage/tasks/$n"; chmod 755 "$stage/tasks/$n"
+    scripts_json=$(jq -c --arg n "$n" --arg sum "$(sha256sum <"$stage/tasks/$n" | cut -c1-64)" --argjson after "$(jq -c --arg n "$n" '.[$n].after' "$tasks_src/index.json")" \
+      --argjson declared "$(grep -qxF "$n" <<<"$want" && echo true || echo false)" \
+      '.[$n] = {path: ("tasks/" + $n), sha256: $sum, after: $after, declared: $declared}' <<<"$scripts_json")
+  done <<<"$closure"
+fi
 bundled=$(printf '%s\n' "$selected" | jq -Rsc 'split("\n") | map(select(length > 0))')
 
 # the harness layout: claude-code reads .claude/agents/<role>.md and .claude/skills/<name>/SKILL.md;
@@ -113,16 +143,16 @@ esac
 
 body=$(jq -nc --arg rev "$rev" --arg role "$role" --arg harness "$harness" --arg adapter "$adapter" \
   --arg role_sum "$(sha256sum <"$stage/roles/$role/ROLE.md" | cut -c1-64)" --arg adapter_sum "$(sha256sum <"$stage/$adapter" | cut -c1-64)" \
-  --argjson front "$front" --argjson skills "$skills_json" --argjson declared "$declared" --argjson bundled "$bundled" --argjson policy "$policy" '
+  --argjson front "$front" --argjson skills "$skills_json" --argjson declared "$declared" --argjson bundled "$bundled" --argjson policy "$policy" --argjson scripts "$scripts_json" '
   {schemaVersion: 1, kind: "agent-skill-bundle",
    source: {rev: $rev},
    role: {name: $role, version: ($front.version // null), contract: ("roles/" + $role + "/ROLE.md"), sha256: $role_sum,
           declaredSkills: $declared, declaredSkillsAbsent: ($declared - $bundled)},
    harness: {name: $harness, adapter: $adapter, sha256: $adapter_sum},
    skills: $skills,
-   tasks: {read: ($front.tasks.read // []), run: ($front.tasks.run // []), act: ($front.tasks.act // [])},
+   tasks: {read: ($front.tasks.read // []), run: ($front.tasks.run // []), act: ($front.tasks.act // []), scripts: $scripts},
    authorization: {forbidden: ($front.forbidden // []), act: ($front.tasks.act // []), adapter: $policy},
-   entrypoints: {check: "bin/bundle-check"}}')
+   entrypoints: ({check: "bin/bundle-check"} + (if ($scripts | length) > 0 then {run: "bin/bundle-run"} else {} end))}')
 jq -S --arg d "$(jq -cS . <<<"$body" | sha256sum | cut -c1-64)" '. + {digests: {bundle: $d}}' <<<"$body" >"$stage/bundle.json"
 
 # the entrypoint: no network, no credentials; verifies the bundle against its manifest
@@ -146,6 +176,13 @@ tree_sha() {
 for s in $(jq -r '.skills | keys[]' "$m"); do
   [ "$(tree_sha "$here/$(jq -r --arg s "$s" '.skills[$s].path' "$m")")" = "$(jq -r --arg s "$s" '.skills[$s].sha256' "$m")" ] || fail "skill $s does not match bundle.json"
 done
+for n in $(jq -r '.tasks.scripts // {} | keys[]' "$m"); do
+  [ "$(sha256sum <"$here/$(jq -r --arg n "$n" '.tasks.scripts[$n].path' "$m")" | cut -c1-64)" = "$(jq -r --arg n "$n" '.tasks.scripts[$n].sha256' "$m")" ] || fail "task $n does not match bundle.json"
+done
+if [ -d "$here/tasks" ] || [ "$(jq '.tasks.scripts // {} | length' "$m")" -gt 0 ]; then
+  [ "$(find "$here/tasks" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')" = "$(jq -r '.tasks.scripts | keys | join(" ") + (if length > 0 then " " else "" end)' "$m")" ] \
+    || fail "tasks/ holds other entries than bundle.json names"
+fi
 # exactly the manifest's skills and role, nothing added beside them
 [ "$(find "$here/skills" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' ')" = "$(jq -r '.skills | keys | join(" ") + (if length > 0 then " " else "" end)' "$m")" ] \
   || fail "skills/ holds other entries than bundle.json names"
@@ -158,5 +195,39 @@ fi
 jq -r '"\(.role.name): read \(.tasks.read | join(",") | if . == "" then "-" else . end); run \(.tasks.run | join(",") | if . == "" then "-" else . end); act \(.tasks.act | join(",") | if . == "" then "-" else . end)"' "$m"
 CHECK
 chmod 755 "$stage/bin/bundle-check"
+pin_runtime() { [ -z "$runtime" ] || sed -i "2i export PATH=$runtime\${PATH:+:\$PATH}" "$1"; }
+pin_runtime "$stage/bin/bundle-check"
+if [ "$(jq '.tasks.scripts | length' "$stage/bundle.json")" -gt 0 ]; then
+cat >"$stage/bin/bundle-run" <<'RUN'
+#!/usr/bin/env bash
+# bundle-run <task> [input-json]: run one task this bundle ships, after the tasks it depends on, the way devenv
+# would (DEVENV_TASK_INPUT, DEVENV_TASK_OUTPUT_FILE, the outputs of its `after` tasks in DEVENV_TASKS_OUTPUTS);
+# prints the task's output record and exits with its exit code. Only shipped tasks run; nothing is fetched.
+set -uo pipefail
+here=$(cd "$(dirname "$0")/.." && pwd)
+m=$here/bundle.json
+[ $# -ge 1 ] || { echo 'usage: bundle-run <task> [input-json]' >&2; exit 3; }
+jq -e --arg n "$1" '.tasks.scripts | has($n)' "$m" >/dev/null \
+  || { jq -nc --arg n "$1" --arg k "$(jq -r '.tasks.scripts | keys | join(", ")' "$m")" '{error: {class: "task", message: ("this bundle ships no task \($n) (it ships: \($k))")}}' >&2; exit 3; }
+"$here/bin/bundle-check" >/dev/null || exit 1
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+outputs='{}'
+run_one() { # <task> <input-json> -> its exit code; records its output in $outputs
+  local n=$1 rc=0 dep
+  for dep in $(jq -r --arg n "$n" '.tasks.scripts[$n].after[]' "$m"); do
+    jq -e --arg d "$dep" 'has($d)' <<<"$outputs" >/dev/null || run_one "$dep" '{}' >/dev/null || true
+  done
+  DEVENV_TASK_INPUT="$2" DEVENV_TASK_OUTPUT_FILE="$work/$n.out" DEVENV_TASKS_OUTPUTS="$outputs" \
+    "$here/$(jq -r --arg n "$n" '.tasks.scripts[$n].path' "$m")" > "$work/$n.log" 2>&1 || rc=$?
+  outputs=$(jq -c --arg n "$n" --slurpfile o <(cat "$work/$n.out" 2>/dev/null || echo null) '.[$n] = ($o[0] // null)' <<<"$outputs")
+  return "$rc"
+}
+rc=0; run_one "$1" "${2:-{\}}" || rc=$?
+cat "$work/$1.out" 2>/dev/null || tail -n 5 "$work/$1.log" >&2
+exit "$rc"
+RUN
+chmod 755 "$stage/bin/bundle-run"
+pin_runtime "$stage/bin/bundle-run"
+fi
 mv -T "$stage" "$out" || fail usage "$out appeared while the bundle was built"
 trap - EXIT

@@ -78,9 +78,21 @@ unknown, misspelled, duplicate or empty skill name, an unknown role or a role wi
 the harness fails with one JSON error line (classes `skill`, `role`, `harness`, `usage`).
 `bin/bundle-check` catches an edited, added or relinked file and a manifest that no longer
 matches its own digest; it is not a signature (anyone who can write the bundle can rewrite both),
-so the trust anchor stays the bundle's read-only store path or a pinned `digests.bundle`. Running
-the bundled role's tasks under a real harness inside a sandbox is not covered here (skills#63 item 3,
-follow-up). `bash tests/test-bundles.sh` (`skills:test:bundles`).
+so the trust anchor stays the bundle's read-only store path or a pinned `digests.bundle`.
+
+Built from Nix, a bundle also carries the role's declared read and run tasks as `tasks/<name>`:
+`bundles/default.nix` evaluates `task-modules/` and `agents/<role>/*.nix`, the modules devenv
+imports, so each script is that task's code with its `coordinator.*` options applied (an optional
+`taskConfig` module sets them), never a copy. `act` tasks stay with the host's audited wrappers.
+`tasks.scripts` in `bundle.json` records each one's sha256 and what it runs after;
+`bin/bundle-run <task> [input-json]` runs it after its dependencies the way devenv passes inputs
+and outputs. Both entrypoints pin their store `PATH`, so they run in an empty environment. A declared
+task the modules do not define fails the build (class `task`). `bash tests/test-bundles.sh`
+(`skills:test:bundles`); `skills:test:bundle-sandbox` builds the quality bundle and runs it in a
+bubblewrap sandbox: new user, network, mount and pid namespaces, read-only store, private HOME, no
+credentials. There it checks that the claude-code adapter's skills and the role's tasks resolve to
+the bundled ones, then runs `quality:report` and `quality:gate` against a fixture checkout through
+the fake consumer devenv. A Claude Code session itself is not started there: it needs a credential.
 
 ## License
 

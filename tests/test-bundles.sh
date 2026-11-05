@@ -118,5 +118,22 @@ nixb=$(nix build --no-link --print-out-paths --impure --expr "
 expect "bundles/default.nix builds a bundle with the same skills and role digest as the script" "true" \
   "$([ -n "$nixb" ] && jq -n --slurpfile a "$B" --slurpfile b "$nixb/bundle.json" '$a[0].skills == $b[0].skills and $a[0].role == $b[0].role' || echo "false: $(tail -n 3 "$T/nix.err")")"
 
+# --tasks (skills#63 item 5): the role's declared read and run tasks ship from a task directory, with what they run after
+mkdir -p "$T/tasks"
+for n in quality:report gh:work git:recent quality:gate helper:dep; do printf '#!/bin/sh\necho %s\n' "$n" > "$T/tasks/$n"; chmod 755 "$T/tasks/$n"; done
+printf '{"quality:report":{"after":["helper:dep"]},"gh:work":{"after":[]},"git:recent":{"after":[]},"quality:gate":{"after":[]},"helper:dep":{"after":[]},"unused:task":{"after":[]}}' > "$T/tasks/index.json"
+build "$T/bt" "${pilot[@]}" --tasks "$T/tasks"
+expect "tasks: declared read and run tasks ship with their dependencies, nothing else" "0 gh:work,git:recent,helper:dep,quality:gate,quality:report helper:dep" \
+  "$rc $(jq -r '.tasks.scripts | keys | join(",")' "$T/bt/bundle.json" 2>/dev/null) $(jq -r '[.tasks.scripts | to_entries[] | select(.value.declared | not) | .key] | join(",")' "$T/bt/bundle.json" 2>/dev/null)"
+expect "tasks: a bundle with tasks gets the run entrypoint and its check covers them" "0 bin/bundle-run" "$("$T/bt/bin/bundle-check" >/dev/null 2>&1; echo $?) $(jq -r .entrypoints.run "$T/bt/bundle.json")"
+cp -a "$T/bt" "$T/bt-tampered"; chmod -R u+w "$T/bt-tampered"; echo 'echo extra' >> "$T/bt-tampered/tasks/gh:work"
+expect "tasks: an edited task script fails the check" "1 integrity" "$(rc=0; "$T/bt-tampered/bin/bundle-check" 2>"$T/err" >/dev/null || rc=$?; echo "$rc $(class "$T/err")")"
+expect "tasks: bundle-run refuses a task the bundle does not ship" "3 task" "$(rc=0; "$T/bt/bin/bundle-run" unused:task 2>"$T/err" >/dev/null || rc=$?; echo "$rc $(class "$T/err")")"
+rm "$T/tasks/git:recent"
+build "$T/bt2" "${pilot[@]}" --tasks "$T/tasks"
+expect "tasks: a declared task the modules do not define fails as class task" "6 task" "$rc $(class "$T/err")"
+build "$T/bt3" "${pilot[@]}" --runtime "relative/bin"
+expect "runtime: only store bin directories are accepted" "2 usage" "$rc $(class "$T/err")"
+
 echo
 if [ "$fails" -eq 0 ]; then echo "bundles: all checks passed"; else echo "bundles: $fails failure(s)"; exit 1; fi
