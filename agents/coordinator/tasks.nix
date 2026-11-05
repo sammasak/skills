@@ -114,7 +114,7 @@ in
         # each approved issue names its delivered handoffs: re-assignable only when every one is closed and no open PR names it;
         # an open or unknown handoff holds it (work:status's hold)
         active=$(jq -c --slurpfile W <(printf '%s\n' "$ws") 'map(.repo as $r | .approved |= map(.number as $n
-            | [$W[0].handoffs[]? | select(.delivered and .repo == $r and .task_ref == "#\($n)")] as $hs
+            | [$W[0].handoffs[]? | select((.delivered or .hold == "unknown") and .repo == $r and .task_ref == "#\($n)")] as $hs
             | . + {open_handoffs:[$hs[] | select(.hold != "closed") | {handoff_id, agent:(.host + "/" + .agent_id), hold, unknown_reason}],
                    last_handoff:($hs | last | if . == null then null else {handoff_id, agent:(.host + "/" + .agent_id), hold, closed_reason} end),
                    reassignable:(all($hs[]; .hold == "closed") and ((.open_prs // []) | length) == 0)}))' <<<"$active") \

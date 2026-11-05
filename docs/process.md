@@ -69,7 +69,8 @@ issue.
    while its agent works on it or a PR of it is open and unmerged, `closed` when the evidence says nobody is
    (`closed_reason`: stale, superseded, settled without an open PR, merged without an independent review, verified), and
    `unknown` when that evidence is missing (`unknown_reason`: a host that did not answer, an agent state Herdr cannot
-   classify, GitHub evidence unavailable). An approved item is `reassignable` only when all its handoffs are closed and
+   classify, GitHub evidence unavailable, a send whose delivery is unknown: no outcome line or a stalled prompt, which
+   `herdr:message` refuses to resend). An approved item is `reassignable` only when all its handoffs are closed and
    no open PR names it: hand it out again, naming the earlier handoff in the scope (a merged one without a review needs
    that review, not a new implementation); an unknown hold keeps it until the evidence returns. Then pick an agent that is `idle` or `done` (never
    `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) on a host with capacity (lenovo: one heavy job,

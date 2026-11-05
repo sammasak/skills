@@ -56,7 +56,12 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
    # needed to say so is missing (an unanswered host, an agent state herdr cannot classify, no or truncated GitHub
    # evidence). Only closed frees the item; unknown holds it, so a worker out of sight never gets a duplicate
    | (($d != null and $d.error == null and (($d.prs | length) < $d.limit or ($oldest != null and $oldest <= $h.sent_at)))) as $gh_ok
-   | (if ($h.delivered | not) then {s:"closed", r:"not delivered"}
+   | (if ($h.delivered | not) then
+        # a refused send reached nobody; one whose delivery is unknown (no outcome line, a stalled prompt) may have, and
+        # herdr:message itself refuses to resend it: it holds its item until the pane is inspected, unless a later handoff
+        # to the same pane superseded it
+        (if $h.until == null and ((["unknown_delivery", "agent_prompt_stalled", "interrupted"] | index($h.outcome // "")) != null)
+         then {s:"unknown", r:"delivery unknown (\($h.outcome)): inspect the pane, never resend"} else {s:"closed", r:"not delivered"} end)
       elif $verdict.v == "verified" then {s:"closed", r:"verified"}
       elif any($live_prs[]; .state == "OPEN") then {s:"open", r:null}
       elif $h.until == null and $sess == "same" and ((["working", "blocked"] | index($now.observed_state // "")) != null) then {s:"open", r:null}
