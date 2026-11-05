@@ -98,9 +98,11 @@ in
             w=$(gh_work_json "$repo")
             active=$(jq -c -L ${./.} --argjson w "$w" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson may ${lib.boolToString cfg.mayApprove} --arg o ${lib.escapeShellArg cfg.ghOwner} --argjson r "$(jq -c --arg r "$repo" '[.repos[] | select(.repo == $r)] | first' <<<"$repos")" \
               'include "evidence"; . + [$r + {error:$w.error, truncated:($w.truncated // false),
-                          # open_prs: the open PRs naming the issue; one holds the item whether or not a handoff owns it
+                          # open_prs: the open PRs naming the issue; one holds the item whether or not a handoff owns it. gh:work keeps the
+                          # closes, branch and title of each PR (no body, to stay small), mapped back to the fields refs() reads
                           approved:([$w.issues[]? | select(any((.labels // [])[]; . as $l | ($labels | index($l)) != null)) | .number as $n
-                                     | {number, title, url, labels, open_prs:[$w.prs[]? | select(.state == "OPEN" and refs($n)) | .number]}]),
+                                     | {number, title, url, labels, open_prs:[$w.prs[]? | select(.state == "OPEN")
+                                         | select({title, closingIssuesReferences:((.closes // []) | map({number:.})), headRefName:(.branch // "")} | refs($n)) | .number]}]),
                           # under the delegation (coordinator.mayApprove): what gh:label may approve (open, the owner wrote it, no authorizing
                           # label, no hold; the task checks author and state again at approval time)
                           approvable:(if $may then [$w.issues[]? | select((.state // "OPEN") == "OPEN") | select((.author // "") == $o) | select(any((.labels // [])[]; . as $l | ($labels | index($l)) != null or (. == "needs-live" or . == "blocked" or . == "needs-decision" or . == "needs-triage")) | not) | {number, title, url, labels}] else [] end),

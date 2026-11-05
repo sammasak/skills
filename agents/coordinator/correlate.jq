@@ -60,6 +60,7 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
       elif $verdict.v == "verified" then {s:"closed", r:"verified"}
       elif any($live_prs[]; .state == "OPEN") then {s:"open", r:null}
       elif $h.until == null and $sess == "same" and ((["working", "blocked"] | index($now.observed_state // "")) != null) then {s:"open", r:null}
+      elif $h.repo == null then {s:"closed", r:"names no repo"}
       elif $sess == "unobserved" then {s:"unknown", r:"host \($h.host) did not answer"}
       elif ($gh_ok | not) then {s:"unknown", r:"GitHub evidence for \($h.repo // "no repo") unavailable or cut at the PR limit"}
       elif $st.merged != null then {s:"closed", r:"merged without an independent review"}
