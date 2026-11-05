@@ -252,7 +252,11 @@
         devenv() { command devenv "$1" "$2" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" "''${@:3}"; }
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh-correlation" FAKE_HERDR_MACHINES='[]'
+        # #29 approved too, so the portfolio shows an approved item held by an open handoff beside #28, whose handoffs are closed
+        mkdir -p "$TMP/gh-corr"; cp "$FX"/gh-correlation/*.json "$TMP/gh-corr/"
+        jq '(.[] | select(.number == 29) | .labels) += [{"name":"approved"}]' "$FX/gh-correlation/sammasak__skills.issues.json" > "$TMP/gh-corr/sammasak__skills.issues.json"
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$TMP/gh-corr" FAKE_HERDR_MACHINES='[]'
+        export FAKE_GH_REPOS='[{"name":"skills","pushedAt":"2026-11-03T10:18:03Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":1},"issues":{"totalCount":2},"issue_labels":[["approved"],["approved"]]}]'
         PASS=0; FAIL=0
         ok() { PASS=$((PASS+1)); }
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
@@ -318,9 +322,16 @@
         # (6) the brief is compact: one line for the verified children of the epic, one per open handoff, no JSON
         md=$(sed -n '/# Fleet brief/,/^\s*Full JSON:/p' "$TMP/run.log")
         grep -q -- '- verified sammasak/skills#28 (still open): merged #51 #52$' <<<"$md" && ok || bad "verified children summarised per repo#ref ($(grep -A9 '## Handoffs' <<<"$md"))"
-        ! grep -qE 'h0000000000[12] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && grep -q 'h00000000004 → .*STALE' <<<"$md" && ok || bad "open handoffs one line each with stages, verified ones not repeated"
+        ! grep -qE '^\s*- h0000000000[124] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && ok || bad "open handoffs one line each with stages; verified and closed ones not repeated ($(grep -A12 '## Handoffs' <<<"$md"))"
+        # (6b) open vs closed (skills#28: a stale or settled handoff kept its item out of reach): open while a PR of it is open
+        #      or its agent works on it; closed ones carry the reason, are counted in the header and listed per item in one line
+        [ "$(q '[.handoffs | sort_by(.handoff_id)[] | "\(.handoff_id[-1:])=\(if .open then "open" else .closed_reason end)"] | join(" ")')" = "1=verified 2=verified 3=open 4=stale 5=stale 6=not delivered 7=open 8=merged 9=settled without an open PR" ] && ok || bad "open/closed_reason per handoff ($(q '[.handoffs[] | {id:.handoff_id, open, closed_reason}]'))"
+        grep -q '## Handoffs (from the audit log): 9 total, 2 verified, 2 open, 5 closed$' <<<"$md" && grep -q -- '- closed, nobody on it (the item can be handed out again): .*sammasak/skills#30 (h00000000004 stale)' <<<"$md" && grep -q 'sammasak/skills#33 (h00000000009 settled without an open PR)' <<<"$md" && ok || bad "closed handoffs: counted and summarised per item ($(grep -A12 '## Handoffs' <<<"$md"))"
+        # the portfolio says which approved items are held and which can be handed out again
+        [ "$(q '.portfolio.active[0].approved | map("\(.number):\(.reassignable):\([.open_handoffs[].handoff_id] | join("+")):\(.last_handoff.handoff_id)") | join(" ")')" = "28:true::h00000000002 29:false:h00000000003+h00000000007:h00000000007" ] && ok || bad "approved items: open handoffs hold, closed ones leave them re-assignable ($(q '.portfolio.active[0].approved'))"
+        grep -q '#28 .* \[re-assignable: handoff h00000000002 → '"$H"'/wA:p1 verified\]' <<<"$md" && grep -q '#29 .* \[open handoff h00000000003 → '"$H"'/wB:p1, h00000000007 → '"$H"'/wB:p1\]' <<<"$md" && ok || bad "portfolio Markdown marks held and re-assignable items ($(grep 'sammasak/skills:' <<<"$md"))"
         ! grep -q '{"' <<<"$md" && ok || bad "no raw JSON in the Markdown brief"
-        ! grep -q -- '--search' "$FAKE_LOG" && [ "$(grep -c '^gh pr list -R sammasak/skills' "$FAKE_LOG")" = 1 ] && ok || bad "one PR list per repo, no search ($(grep '^gh pr' "$FAKE_LOG"))"
+        ! grep -q -- '--search' "$FAKE_LOG" && [ "$(grep -c '^gh pr list -R sammasak/skills --state all' "$FAKE_LOG")" = 1 ] && ok || bad "one PR list per repo, no search ($(grep '^gh pr' "$FAKE_LOG"))"
         # the default read is latest.md (the runbook sends devenv's stdout JSON to /dev/null): the same Markdown, at most half
         # of what --show-output prints
         M="$TMP/state/brief/latest.md"
@@ -597,7 +608,7 @@
       '';
     };
     "skills:test:tasks:coord-idle" = {
-      description = "coord:changed F1: an idle fleet (every worker idle/done, every host answering; the Coordinator's own panes are not workers) with work left (open PR without an independent 9/10 on its head, approved issue without a handoff, unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
+      description = "coord:changed F1: an idle fleet (every worker idle/done, every host answering; the Coordinator's own panes are not workers) with work left (open PR without an independent 9/10 on its head, approved issue without an open handoff (none, or its agent settled with no open PR), unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -654,7 +665,7 @@
             pr sammasak/skills 64 OPEN "$H64" "$T2" null "fix #31 thing" '[]' "[\"9/10 at \`6464646\` -- $H wF:p1\"]"
             cat; } | write sammasak__skills.prs.json; }
         skills_prs < /dev/null
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '["approved"]'; } | write sammasak__skills.issues.json
         pr sammasak/nixos-config 119 OPEN "$H119" "$T2" null "coordinator-read" '[]' '["9/10 at `0ddba11` (an older head) -- acer-swift wR:p1"]' | write sammasak__nixos-config.prs.json
         : | write sammasak__nixos-config.issues.json
         mkdir -p "$TMP/state"; AUDIT="$TMP/state/audit.jsonl"
@@ -663,7 +674,7 @@
             "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$4\",\"outcome\":\"delivered\"}" >> "$AUDIT"; }
         handoff h00000000001 wT:p1 "#30" "$T0" 30   # verified by the merged #62 (closes #30, opened after the send)
         handoff h00000000002 wF:p1 "#31" "$T0" 31   # #64 names it but is open: unverified
-        WORK1='3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64), 2 approved issue(s) without a handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
+        WORK1='3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64), 2 approved issue(s) without an open handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
 
         # (0) no worker known (an empty audit log, nothing configured): idle agents are not an idle fleet, no GitHub list is fetched
         STATE="$TMP/state0" run
@@ -715,16 +726,16 @@
         jq --arg b "$H119" '(.[] | select(.number == 119) | .comments) = [{body:("9/10 at `" + $b[0:7] + "` -- acer-swift wR:p1"), url:"u"}]' "$GH/sammasak__nixos-config.prs.json" > "$GH/t.json" && mv "$GH/t.json" "$GH/sammasak__nixos-config.prs.json"
         pr sammasak/skills 66 MERGED 6666666666666666666666666666666666666666 "$T2" "$T3" "closes #31" '[31]' '[]' >> "$GH/extra.jsonl"
         jq -s '(.[0] + .[1:]) | unique_by(.number)' "$GH/sammasak__skills.prs.json" "$GH/extra.jsonl" > "$GH/t.json" && mv "$GH/t.json" "$GH/sammasak__skills.prs.json"
-        { issue sammasak/skills 28 '[]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '[]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '[]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '[]'; } | write sammasak__skills.issues.json
         run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true true false" ] && [ "$(iw '[.work[] | length] | add')" = 0 ] && ok || bad "idle fleet, no work left: no wake ($LINES $(iw .))"
         # (8) gh failures never wake and never guess: the list calls failing, then gh:repos itself; the condition is skipped and
         #     said so in latest.json, the fingerprint stays, and the wake comes once gh answers again
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; } | write sammasak__skills.issues.json
         FPX=$(fp)
         FAKE_GH_LIST_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'gh pr list' && [ "$(fp)" = "$FPX" ] && ok || bad "gh list failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.evaluated) \(.fired)"')" = "false false" ] && iw .skipped | grep -q 'gh:repos' && ok || bad "gh:repos failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_SEARCH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'issue search failed (gh_error' && [ "$(fp)" = "$FPX" ] && ok || bad "issue search failure: the page alone cannot say no work is left; skipped, logged, no wake ($LINES $(iw .))"
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 1 approved issue(s) without a handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 1 approved issue(s) without an open handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
         FP8=$(fp)
         # (9) a blocked worker is not idle: its own line, no idle line; back to idle with the same work: silent
         set_agent wF:p1 '.agent_status = "blocked" | .state_change_seq += 1'
@@ -745,7 +756,7 @@
         run; [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents)"')" = "false 0" ] && ok || bad "no agents: not idle ($LINES $(iw .))"
         cp "$TMP/local-full.json" "$LOCAL"; run
         # (12) the plain read shows the line without storing the fingerprint; the timer's form then fires it
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 34 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 34 '["approved"]'; } | write sammasak__skills.issues.json
         run --plain; [ "$CODE" -eq 0 ] && [ "$(nlines)" = 1 ] && grep -q 'sammasak/skills#34' <<<"$LINES" && [ "$(fp)" = "$FP8" ] && ok || bad "plain read reports, stores nothing ($LINES fp=$(fp))"
         run; [ "$(nlines)" = 1 ] && grep -q 'sammasak/skills#34' <<<"$LINES" && [ "$(fp)" != "$FP8" ] && ok || bad "the consuming run fires it ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "then silence ($LINES)"
@@ -773,11 +784,11 @@
           printf '%s\n' "{\"audit_id\":\"xh5\",\"handoff_id\":\"h00000000005\",\"task_ref\":\"#28\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"wZ:p1\",\"at\":\"$T3\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"approved\"}}" \
             "{\"audit_id\":\"xh5\",\"handoff_id\":\"h00000000005\",\"phase\":\"outcome\",\"at\":\"$T3\",\"outcome\":\"delivered\"}" >> "$STATE/audit.jsonl"; }
         BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000'
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; } | write sammasak__skills.issues.json
         coord_state state-coord-bug; run
         [ "$CODE" -eq 0 ] && [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers)"')" = "false 3 0" ] && ok || bad "(the bug, no config) a Coordinator pane that was a handoff target counts as a busy worker: no wake ($LINES $(iw .))"
         coord_state state-coord-cfg; run --option coordinator.panes:string "$H/wZ:p1"
-        [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: ' <<<"$LINES" && grep -q 'approved issue(s) without a handoff (sammasak/skills#28' <<<"$LINES" && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers) \(.fired)"')" = "true 2 1 true" ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "coordinator.panes: the Coordinator pane is not a worker, its handoff is not a handoff, three idle workers with work left wake ($LINES $(iw .))"
+        [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: ' <<<"$LINES" && grep -q 'approved issue(s) without an open handoff (sammasak/skills#28' <<<"$LINES" && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers) \(.fired)"')" = "true 2 1 true" ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "coordinator.panes: the Coordinator pane is not a worker, its handoff is not a handoff, three idle workers with work left wake ($LINES $(iw .))"
         coord_state state-coord-from
         printf '%s\n' "{\"audit_id\":\"xh6\",\"handoff_id\":\"h00000000006\",\"task_ref\":\"#30\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"wT:p1\",\"from\":\"$H/wZ:p1\",\"at\":\"$T3\"}" "{\"audit_id\":\"xh6\",\"handoff_id\":\"h00000000006\",\"phase\":\"outcome\",\"at\":\"$T3\",\"outcome\":\"delivered\"}" >> "$STATE/audit.jsonl"
         run; [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done' <<<"$LINES" && [ "$(iw .non_workers)" = 1 ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "a pane that sent a handoff (audit from) is a Coordinator pane without config ($LINES $(iw .))"
@@ -790,11 +801,22 @@
         run; [ "$(nlines)" = 1 ] && grep -q '^idle ' <<<"$LINES" && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 1 ] && ok || bad "cap: baseline idle wake ($LINES)"
         jq '.result.agents += [(.result.agents[0] | .pane_id = "wQ:p1" | .agent_session.value = "qqqq" | .agent_status = "idle" | .state_change_seq = 1 | .terminal_title_stripped = "q")]' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
         run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true per_hour_cap" ] && grep -q "coord:changed: wake deferred (per_hour_cap) until $(jqr .wake.next_allowed_at); 1 change(s) pending" "$TMP/run.log" && ok || bad "cap: a deferred new-agent line says so on stderr with the reason and next_allowed_at ($LINES $(jqr .wake) $(grep deferred "$TMP/run.log"))"
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 35 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 35 '["approved"]'; } | write sammasak__skills.issues.json
         run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true per_hour_cap" ] && [ "$(jqr '[.wake.pending[].kind] | join(",")')" = "new,idle" ] && grep -q 'coord:changed: wake deferred (per_hour_cap) until' "$TMP/run.log" && ok || bad "cap: an idle-with-work wake held by the hourly cap is not silent: the notice names the reason, the idle line waits under wake.pending ($LINES $(jqr .wake))"
         BUDGET='--option coordinator.wakeMinGapSeconds:int 300 --option coordinator.wakeMaxPerHour:int 1'
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 35 '["approved"]'; issue sammasak/skills 36 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 35 '["approved"]'; issue sammasak/skills 36 '["approved"]'; } | write sammasak__skills.issues.json
         run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true min_gap" ] && grep -q 'coord:changed: wake deferred (min_gap) until' "$TMP/run.log" && ok || bad "cap: the min gap still holds an idle-fired wake, and says so ($LINES $(jqr .wake))"
+        # (17) a past handoff does not hold an approved item (skills#28, 06:19Z: nixos-config#109, devenv-platform#92 and skills#28
+        #      were skipped as "already handed off" behind stale handoffs): #40's handoff went to wF:p1, which settled with no
+        #      PR, so #40 is work again; once a PR names #40 and is open, the handoff is open and holds the item
+        export STATE="$TMP/state-reassign"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$TMP/local-full.json" "$LOCAL"
+        AUDIT0=$AUDIT; AUDIT="$STATE/audit.jsonl"; handoff h00000000040 wF:p1 "#40" "$T2" 40; AUDIT=$AUDIT0
+        { issue sammasak/skills 40 '["approved"]'; } | write sammasak__skills.issues.json
+        skills_prs < /dev/null
+        run; grep -q 'approved issue(s) without an open handoff (sammasak/skills#40)' <<<"$LINES" && [ "$(iw '.work.approved_issues | join(",")')" = sammasak/skills#40 ] && ok || bad "a settled handoff with no PR leaves the approved item re-assignable ($LINES $(iw .work))"
+        pr sammasak/skills 80 OPEN 8080808080808080808080808080808080808080 "$T3" null "fix #40" '[]' '[]' | skills_prs
+        run; [ "$(iw '.work.approved_issues | length')" = 0 ] && [ "$(iw '.work.open_prs | index("sammasak/skills#80") != null')" = true ] && ok || bad "an open PR naming the item keeps its handoff open: not re-assignable, the PR is the work ($LINES $(iw .work))"
+        skills_prs < /dev/null
         unset STATE
         # (14) read-only and model-free: list calls only, no prompt, no gh write
         ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|search issues --owner [^ ]+ --label [^ ]+ --state open |pr list -R [^ ]+ --state (open|merged)|issue list -R [^ ]+ --state open)')" = 0 ] && ok || bad "only reads ($(grep '^gh ' "$FAKE_LOG" | grep -vE '^gh (api graphql|pr list|issue list)' | sort -u | head -3))"
@@ -933,7 +955,8 @@
         [ "$(jq -r '.handoffs[0].authorized_by.issue_url' "$B")" = "https://github.com/sammasak/skills/issues/28" ] && [ "$(jq -r .audit_path "$B")" = "$A" ] && ok || bad "authorizing issue and audit path in the brief"
         # the same facts are in the audit log by itself (attempt + outcome lines share the audit id)
         [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "attempt") | .handoff_id' "$A")" = "$HID" ] && [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$A")" = delivered ] && ok || bad "audit log alone names handoff and outcome"
-        grep -q '## Handoffs (from the audit log)' "$TMP/run.log" && grep -q "$HID → $H/wF:p1 #28" "$TMP/run.log" && ok || bad "Markdown brief shows the handoff ($(grep -A3 "## Handoffs" "$TMP/run.log"))"
+        # (the listed pane runs another session than the send's, so the rebuilt handoff is closed as stale and named on that line)
+        grep -q '## Handoffs (from the audit log): 1 total, 0 verified, 0 open, 1 closed' "$TMP/run.log" && grep -q "sammasak/skills#28 ($HID stale)" "$TMP/run.log" && ok || bad "Markdown brief shows the handoff ($(grep -A3 "## Handoffs" "$TMP/run.log"))"
         # follow-up needs only the audit id: await works without the draft or any session memory
         export FAKE_HERDR_STATE_SEQ="working,idle"; rm -f "$FAKE_LOG.seq"
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"

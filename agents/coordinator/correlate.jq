@@ -50,7 +50,17 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
       elif $st.merged != null then {v:"unverified", r:[$live_prs[] | select(.stages.reviewed == null) | "PR #\(.number) merged without an independent 9/10 on its head"]}
       else {v:"unverified", r:[$live_prs[] | select(.stages.merged == null) | "PR #\(.number) open, not merged"]} end) as $verdict
    | ([$d.prs[]?.createdAt] | min) as $oldest
-   | $h + {prs:$prs, stages:$st, work_verdict:$verdict.v,
+   # open: someone is still on it, its newest-to-the-pane agent working or blocked on the same session, or a PR of it is
+   # open and unmerged; a handoff whose agent settled with no open PR, that went stale or whose PRs merged is closed, and
+   # its item can be handed out again (skills#28: past handoffs kept approved items out of reach)
+   | ($h.delivered and $verdict.v != "verified"
+      and (any($live_prs[]; .state == "OPEN")
+           or ($h.until == null and $sess == "same" and ((["working", "blocked"] | index($now.observed_state // "")) != null)))) as $open
+   | $h + {prs:$prs, stages:$st, work_verdict:$verdict.v, open:$open,
+       closed_reason:(if $open then null elif ($h.delivered | not) then "not delivered"
+                      elif $verdict.v == "verified" then "verified" elif $st.merged != null then "merged"
+                      elif $sess == "gone" or $sess == "session_changed" then "stale"
+                      elif $h.until != null then "superseded" else "settled without an open PR" end),
        evidence_ref:(if $verdict.v == "verified" then $st.merged[0] else null end),
        task_issue_open:(if $d != null and $d.error == null and $n != null then any($d.issues[]; .number == $n) else null end),
        session_state:$sess, herdr_state:($now.observed_state // null),

@@ -107,6 +107,14 @@ in
           # newest push first within each group, so the cap never drops authorized work for unlabelled issues
           done < <(jq -r '[.repos[] | select(.active)] | sort_by(if .open_prs > 0 or .approved_issues > 0 then 0 else 1 end) | .[] | .repo' <<<"$repos")
         fi
+        # each approved issue names its delivered handoffs: an open one holds the item, otherwise it is re-assignable
+        printf '%s\n' "$ws" > "$dir/.ws.json"
+        active=$(jq -c --slurpfile W "$dir/.ws.json" 'map(.repo as $r | .approved |= map(.number as $n
+            | [$W[0].handoffs[]? | select(.delivered and .repo == $r and .task_ref == "#\($n)")] as $hs
+            | . + {open_handoffs:[$hs[] | select(.open) | {handoff_id, agent:(.host + "/" + .agent_id)}],
+                   last_handoff:($hs | last | if . == null then null else {handoff_id, agent:(.host + "/" + .agent_id), closed_reason} end),
+                   reassignable:(all($hs[]; .open | not))}))' <<<"$active") || fail 2 internal "could not join approved issues with their handoffs" '{"task":"coord:brief"}'
+        rm -f "$dir/.ws.json"
         portfolio=$(jq -cn --arg o "${cfg.ghOwner}" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson may ${lib.boolToString cfg.mayApprove} --argjson t "$ptotal" --argjson l "$plisted" --argjson tr "$ptrunc" --argjson a "$active" --argjson s "$skipped" --argjson e "$portfolio_err" --argjson se "$search_err" \
           '{owner:$o, authorizing_labels:$labels, may_approve:$may, repos_total:$t, repos_listed:$l, truncated:$tr, active:$a, skipped_active:$s, error:$e, search_error:$se}')
         brief=$(jq -c --argjson p "$portfolio" --argjson g ${toString cfg.wakeMinGapSeconds} --argjson c ${toString cfg.wakeMaxPerHour} '. + {task:"coord:brief", portfolio:$p, wake_budget:{min_gap_seconds:$g, max_per_hour:$c}}' <<<"$ws")
@@ -123,20 +131,26 @@ in
           (([.items[] | select(.needs_owner)] | if length == 0 then ["- nothing"] else (.[0:10] | map("- \(.host)/\(.agent_id) (\(.harness)) \(.task_ref // "no ref"): herdr=\(.herdr_state) → \(.reasons | join("; "))")) + (if length > 10 then ["… \(length - 10) more needing you in the JSON"] else [] end) end)[]),
           # compact by default: verified handoffs as one line per repo#ref (an open epic does not hide them), then each open
           # or unverified handoff with its stages; everything else is in the JSON
-          (([.handoffs[] | select(.work_verdict == "verified")]) as $done | ([.handoffs[] | select(.work_verdict != "verified")]) as $open
+          # closed handoffs (settled without an open PR, stale, superseded, merged unreviewed) hold nothing: one line per item
+          (([.handoffs[] | select(.work_verdict == "verified")]) as $done | ([.handoffs[] | select(.open)]) as $open
+          | ([.handoffs[] | select(.work_verdict != "verified" and (.open | not))]) as $closed
           | def mark($k): "\($k) \(if .stages[$k] then "✓" else "–" end)";
-          "", "## Handoffs (from the audit log): \((.handoffs|length) + (.handoffs_omitted // 0)) total, \($done|length) verified, \($open|length) open" + (if (.handoffs_omitted // 0) > 0 then " (the oldest \(.handoffs_omitted) not evaluated)" else "" end),
+          "", "## Handoffs (from the audit log): \((.handoffs|length) + (.handoffs_omitted // 0)) total, \($done|length) verified, \($open|length) open, \($closed|length) closed" + (if (.handoffs_omitted // 0) > 0 then " (the oldest \(.handoffs_omitted) not evaluated)" else "" end),
           (if .handoffs_error != null then "- unreadable: \(.handoffs_error.kind) — \(.handoffs_error.message)" elif (.handoffs|length) == 0 then "- none" else
             ($done | group_by([.repo, .task_ref])[] | "- verified \(.[0].repo)\(.[0].task_ref)\(if .[0].task_issue_open then " (still open)" else "" end): merged "
                + ([.[].stages.merged[]? | capture("/pull/(?<n>[0-9]+)$").n | tonumber] | unique | map("#\(.)") | join(" "))),
             ($open[-20:][] | "- \(.handoff_id) → \(.host)/\(.agent_id) \(.task_ref // "-") \(.repo // "no repo") | sent \(.sent_at) | \(.outcome) | "
                + ([mark("implemented"), mark("reviewed"), mark("merged"), mark("live")] | join(" ")) + " | work=\(.work_verdict)"
                + (if .stale then " | STALE" else "" end) + (if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)),
-            (if ($open|length) > 20 then "… \(($open|length) - 20) more open handoffs in the JSON" else empty end) end)),
+            (if ($open|length) > 20 then "… \(($open|length) - 20) more open handoffs in the JSON" else empty end),
+            (if ($closed|length) > 0 then "- closed, nobody on it (the item can be handed out again): "
+               + ([$closed | group_by([.repo, .task_ref])[] | "\(.[0].repo // "no repo")\(.[0].task_ref // "-") (" + ([.[] | "\(.handoff_id) \(.closed_reason)"] | join(", ")) + ")"] | join("; ")) else empty end) end)),
           "", "## Portfolio (\(.portfolio.owner): \(.portfolio.repos_listed) of \(.portfolio.repos_total) repos by recent push\(if .portfolio.truncated then ", truncated at the cap" else "" end); authorizing labels: \(.portfolio.authorizing_labels | join(", ")))",
           (if .portfolio.error != null then "- unavailable (agents above are unaffected): \(.portfolio.error.kind) — \(.portfolio.error.message)"
            elif (.portfolio.active|length) == 0 then "- no repo with an open PR or an approved issue" + (if .portfolio.may_approve then " or an approvable one" else "" end)
-           else (.portfolio.active[] | "- \(.repo): \(.open_prs) open PR(s), \(.approved_issues) approved issue(s)" + (if (.approved|length) > 0 then " → " + ([.approved[] | "#\(.number) \(.title)"] | join("; ")) else "" end) + (if .error != null then " (gh:work: \(.error.kind))" else "" end) + (if (.approvable|length) > 0 then " | approvable: " + ([.approvable[:8][] | "#\(.number) \(.title)"] | join("; ")) + (if (.approvable|length) > 8 then "; +\((.approvable|length) - 8) more" else "" end) else "" end)) end),
+           else (.portfolio.active[] | "- \(.repo): \(.open_prs) open PR(s), \(.approved_issues) approved issue(s)" + (if (.approved|length) > 0 then " → " + ([.approved[] | "#\(.number) \(.title)"
+               + (if (.open_handoffs|length) > 0 then " [open handoff " + ([.open_handoffs[] | "\(.handoff_id) → \(.agent)"] | join(", ")) + "]"
+                  elif .last_handoff != null then " [re-assignable: handoff \(.last_handoff.handoff_id) → \(.last_handoff.agent) \(.last_handoff.closed_reason)]" else "" end)] | join("; ")) else "" end) + (if .error != null then " (gh:work: \(.error.kind))" else "" end) + (if (.approvable|length) > 0 then " | approvable: " + ([.approvable[:8][] | "#\(.number) \(.title)"] | join("; ")) + (if (.approvable|length) > 8 then "; +\((.approvable|length) - 8) more" else "" end) else "" end)) end),
           (if (.portfolio.skipped_active|length) > 0 then "- active but not expanded (cap \(.portfolio.active|length)): \(.portfolio.skipped_active | join(", "))" else empty end),
           (if .portfolio.search_error != null then "- issue search unavailable: \(.portfolio.search_error.kind) — \(.portfolio.search_error.message); repos pushed before the page may hold authorized items" else empty end),
           "", "Full JSON: \($f)", "", "## Agents",

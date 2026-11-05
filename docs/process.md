@@ -65,7 +65,10 @@ issue.
    order with `gh:label approved`, one issue per call, and in the report
    list what you approved and what still needs the owner (`needs-live`,
    `blocked`, `needs-triage`).
-3. **Delegate** P1 items, one handoff per item, while a free worker remains: pick an agent that is `idle` or `done` (never
+3. **Delegate** P1 items, one open handoff per item, while a free worker remains. A handoff is open only while its
+   agent works on it or a PR of it is open and unmerged; `coord:brief` marks every other one closed (`closed_reason`:
+   stale, superseded, settled without an open PR, merged, verified) and its approved item `re-assignable`, so a past
+   handoff never keeps an item out of reach: hand it out again, naming the earlier handoff in the scope. Then pick an agent that is `idle` or `done` (never
    `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) on a host with capacity (lenovo: one heavy job,
    control plane only; acer-swift: two, one while a full gate runs). Draft
    with `coord:handoff`, `allowed_actions` limited to what the label grants

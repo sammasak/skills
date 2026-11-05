@@ -153,7 +153,7 @@ END autonomy
 11. Work the queue as `docs/process.md` describes, repeating until the
    Autonomy stop condition holds: discover (`coord:brief` with its portfolio,
    then `gh:work` for any further repository a handoff names), prioritize (blocked or owner-needing handoffs first, then
-   authorized items without a handoff, then delivered handoffs to follow
+   authorized items without an open handoff (`open` on each handoff, `reassignable` on each approved item in the brief: a stale, superseded, merged or settled-without-a-PR handoff holds nothing), then delivered handoffs to follow
    up), delegate every eligible item that has a free worker (or a host
    where `coord:capacity` allows a spawn, item 13) through steps 7–8, follow up delivered ones (`herdr:await` by `audit_id`,
    `work:status`), report. The brief's
@@ -166,7 +166,7 @@ END autonomy
    `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`, and
    `idle`: every worker idle or done (the panes handoffs went to, never
    your own) while an open PR without an independent
-   9/10 on its head, an authorized issue without a handoff or an unverified
+   9/10 on its head, an authorized issue without an open handoff or an unverified
    handoff is left, printed once per fleet+work fingerprint). Only
    the timer's form, `--input-json '{"consume":true}'`, moves the snapshot
    on, so a change shows once there; your own plain call reads without
