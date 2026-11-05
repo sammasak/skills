@@ -242,7 +242,7 @@ in
            else empty end),
           (if $w.fired then {kind:"idle", line:("idle " + n($w.agents) + " worker(s) idle/done on " + n($w.hosts) + " host(s); work left: "
              + ([(if ($w.work.open_prs | length) > 0 then n($w.work.open_prs | length) + " open PR(s) without a 9/10 review (" + refs3($w.work.open_prs) + ")" else empty end),
-                 (if ($w.work.approved_issues | length) > 0 then n($w.work.approved_issues | length) + " approved issue(s) without a handoff (" + refs3($w.work.approved_issues) + ")" else empty end),
+                 (if ($w.work.approved_issues | length) > 0 then n($w.work.approved_issues | length) + " approved issue(s) without an open handoff (" + refs3($w.work.approved_issues) + ")" else empty end),
                  (if ($w.work.unverified_handoffs | length) > 0 then n($w.work.unverified_handoffs | length) + " unverified handoff(s) (" + refs3($w.work.unverified_handoffs) + ")" else empty end)] | join(", ")))}
            else empty end)
         ]' "$tmpd/cur.json" > "$tmpd/changes.json" || fail 2 malformed "snapshot diff failed" "$ctx"

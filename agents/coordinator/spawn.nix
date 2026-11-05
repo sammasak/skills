@@ -12,6 +12,8 @@ let
     capacity_json() { # <next-json-or-null> -> the coord:capacity record on stdout
       local tmpd; tmpd=$(mktemp -d)
       printf '%s\n' "$inv" > "$tmpd/inv.json"
+      # the lock lanes per host (host:locks, upstream); absent when the observation did not run
+      printf '%s\n' "''${locks:-null}" > "$tmpd/locks.json"
       if [ -s "${cfg.stateDir}/audit.jsonl" ]; then jq -sc 'map(select(type == "object"))' "${cfg.stateDir}/audit.jsonl" > "$tmpd/audit.json" 2>/dev/null || echo '[]' > "$tmpd/audit.json"; else echo '[]' > "$tmpd/audit.json"; fi
       # context size of each idle local Claude session: the last assistant turn's input + cache tokens in its own JSONL
       # (remote session stores are not readable from here: their size stays null)
@@ -24,7 +26,7 @@ let
            | if . == null then empty else {($k): ((.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0))} end' >> "$tmpd/usage.jsonl" 2>/dev/null || true
       done < <(jq -r --arg h "$(local_host)" '.hosts[]? | select(.host == $h and .machine == null) | .agents[]? | select(.harness == "claude" and .session_id != null and .cwd != null) | [.agent_id, .session_id, .cwd] | @tsv' <<<"$inv")
       jq -sc 'add // {}' "$tmpd/usage.jsonl" > "$tmpd/usage.json"
-      jq -nc --slurpfile inv "$tmpd/inv.json" --slurpfile audit "$tmpd/audit.json" --slurpfile usage "$tmpd/usage.json" \
+      jq -nc --slurpfile inv "$tmpd/inv.json" --slurpfile audit "$tmpd/audit.json" --slurpfile usage "$tmpd/usage.json" --slurpfile locks "$tmpd/locks.json" \
         --argjson cap ${lib.escapeShellArg cfg.capacity} --argjson kinds ${lib.escapeShellArg (builtins.toJSON cfg.kinds)} \
         --argjson next "$1" --argjson threshold ${toString cfg.hygieneContextTokens} --arg at "$(now_iso)" --argjson now "$(now_epoch)" -f ${./capacity.jq}
       local rc=$?; rm -rf "$tmpd"; return $rc; }
@@ -65,12 +67,12 @@ in
 
   config.tasks."coord:capacity" = {
     description = "Read-only worker pool: per host the workers (idle/busy/unknown), heavy-job slots and worker slots left, whether a light or heavy spawn is allowed, which assignment kinds fit a spawn or an idle worker, and a /clear or /compact hint per idle worker (optional input next={repo,task_ref}); never fails itself.";
-    after = [ "herdr:inventory@completed" ];
+    after = [ "herdr:inventory@completed" "host:locks@completed" ];
     input = { next = null; };
     exec = ''
       ${cfg.prelude}
       ${capacity}
-      inv=$(upstream "herdr:inventory")
+      inv=$(upstream "herdr:inventory"); locks=$(upstream "host:locks")
       [ "$inv" != null ] || fail 2 missing "herdr:inventory produced no output" '{"task":"coord:capacity"}'
       next=$(jq -c 'if (.next | type) == "object" then .next | {repo:(.repo // null), task_ref:(.task_ref // null)} else null end' <<<"''${DEVENV_TASK_INPUT:-{\}}" 2>/dev/null) || next=null
       out=$(capacity_json "''${next:-null}") || fail 2 internal "coord:capacity computation failed" '{"task":"coord:capacity"}'
@@ -80,7 +82,7 @@ in
 
   config.tasks."coord:spawn" = {
     description = "ACT: start one Claude Code worker in a new Herdr workspace on a host (machine, or this one), for an owner-labelled item (authorized_by), with the model of its kind; refused (and audited) when the label is missing or the host's capacity does not allow it; never on a host whose spawn is off.";
-    after = [ "herdr:inventory@completed" ];
+    after = [ "herdr:inventory@completed" "host:locks@completed" ];
     input = { machine = null; kind = null; task_ref = null; cwd = null; authorized_by = null; };
     exec = ''
       ${cfg.prelude}
@@ -98,7 +100,7 @@ in
       # an absolute path only: herdr takes --cwd literally (no ~ expansion), on whichever host runs the pane
       [[ "$cwd" =~ ^/[A-Za-z0-9_./-]*$ ]] && [[ "$cwd" != *..* ]] || fail 3 invalid_input "cwd must be an absolute path with safe characters" "$ctx"
       [ -n "$auth" ] || fail 3 invalid_input "authorized_by is required: {\"issue_url\":\"https://github.com/OWNER/REPO/issues/N\",\"label\":\"<label the owner applied>\"}" "$ctx"
-      inv=$(upstream "herdr:inventory")
+      inv=$(upstream "herdr:inventory"); locks=$(upstream "host:locks")
       [ "$inv" != null ] || fail 2 missing "herdr:inventory produced no output" "$ctx"
       audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
       # the GitHub gate runs before the lock (as in herdr:message); its verdict is audited below either way. A spawn is

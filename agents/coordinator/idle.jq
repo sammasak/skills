@@ -20,9 +20,12 @@ $inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev | $w
      def impl($r): . as $pr | [$hs[] | select(.repo == $r) | (.task_ref | num) as $n | select($n != null and ($pr | refs($n)) and ($pr.createdAt // "") >= (.sent_at // "")) | .host + "/" + .agent_id];
      {open_prs:[$work | to_entries[] | .key as $r | .value.prs[] | select(.state == "OPEN") | . as $pr | ($pr | impl($r)) as $i
                  | select(any($pr | passes[]; .by as $b | ($i | index($b)) == null) | not) | $r + "#" + (.number | tostring)],
-      approved_issues:[$work | to_entries[] | .key as $r | .value.issues[] | .number as $num
+      # an approved issue is held only by an open handoff; every worker is idle here, so that is one with an open PR naming
+      # the issue: a handoff whose agent settled with no open PR leaves the item to hand out again (skills#28)
+      approved_issues:[$work | to_entries[] | .key as $r | .value.prs as $prs | .value.issues[] | .number as $num
                  | select(any((.labels // [])[]; (.name // "") as $l | ($labels | index($l)) != null))
-                 | select(any($hs[]; .repo == $r and (.task_ref | num) == $num) | not) | $r + "#" + ($num | tostring)],
+                 | select(any($hs[]; .repo == $r and (.task_ref | num) == $num) and any($prs[]; .state == "OPEN" and refs($num)) | not)
+                 | $r + "#" + ($num | tostring)],
       # verified = any merged PR naming the issue, opened after the send (no per-pane window as in work:status: on a shared
       # epic one agent's merged PR clears the others' handoffs, which can only under-wake, never wake wrongly)
       unverified_handoffs:[$hs[] | . as $h | (.task_ref | num) as $n
