@@ -138,6 +138,20 @@
         f="''${FAKE_GH_DIR:?}/''${repo//\//__}.$kind.json"
         if [ -r "$f" ]; then case "$kind:$state" in prs:open) jq --argjson n "$limit" 'map(select(.state == "OPEN")) | .[:$n]' "$f" ;; prs:merged) jq --argjson n "$limit" 'map(select(.state == "MERGED")) | .[:$n]' "$f" ;; *) jq --argjson n "$limit" '.[:$n]' "$f" ;; esac; else echo "[]"; fi
       '')
+      (pkgs.writeShellScriptBin "ssh" ''
+        # Fake ssh for host:locks: logs the call; a `*down*` target fails like an unreachable host (exit 255);
+        # otherwise prints FAKE_SSH_OUT_<target> (a file) or FAKE_SSH_OUT; stdin (the observer script) is ignored.
+        echo "ssh $*" >> "''${FAKE_LOG:-/dev/null}"
+        target=""; for a in "$@"; do case "$a" in -*|sh|-s|BatchMode=yes|ConnectTimeout=5) ;; *) [ -z "$target" ] && target="$a" ;; esac; done
+        case "$target" in *down*) echo "ssh: connect to host $target port 22: Connection refused" >&2; exit 255 ;; esac
+        v="FAKE_SSH_OUT_$(printf '%s' "$target" | tr -c 'A-Za-z0-9_' '_')"; f="''${!v:-''${FAKE_SSH_OUT:-}}"
+        [ -n "$f" ] && cat "$f"; exit 0
+      '')
+      (pkgs.writeShellScriptBin "host-locks" ''
+        # Fake local locks observer for host:locks: prints FAKE_LOCKS_OUT (a TSV file), or nothing.
+        echo "host-locks $*" >> "''${FAKE_LOG:-/dev/null}"
+        [ -n "''${FAKE_LOCKS_OUT:-}" ] && cat "$FAKE_LOCKS_OUT"; exit 0
+      '')
       (pkgs.writeShellScriptBin "devenv" ''
         # Fake devenv for quality tests: answers the three calls quality:report/quality:gate make inside a checkout.
         # FAKE_SDLC_DIR holds machine.json and status.txt; FAKE_GATE_EXIT forces `tasks run sdlc:<stage>`'s exit.

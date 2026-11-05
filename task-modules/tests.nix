@@ -3,6 +3,56 @@
 { config, lib, ... }:
 {
   tasks = {
+    "skills:test:tasks:host-locks" = {
+      description = "host:locks over the fake observer and fake ssh: this host's lanes (holder, waiters oldest first, ages, queue depth), a busy saved machine over its target, an unreachable one, an unsafe target never passed to ssh, a failing observer as data";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log"
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
+        run() { # [args]
+          devenv tasks run host:locks --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" \
+            --option coordinator.locksCommand:string "''${LOCKS_CMD:-$FAKES/host-locks}" --option coordinator.timeoutSeconds:int 2 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F '"task":"host:locks"' | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        hq() { jq -r --arg h "$1" ".hosts[] | select(.host == \$h) | $2" <<<"$OUT"; }
+        lane() { hq "$1" ".lanes[] | select(.lane == \"$2\") | $3"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+        H=$(hostname -s 2>/dev/null || hostname)
+
+        # 1. this host only, nothing held: one reachable host with no lanes, never partial
+        export FAKE_HERDR_MACHINES='[]' FAKE_LOCKS_OUT="$FX/locks/idle.tsv"
+        run
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.hosts | length')" = 1 ] && [ "$(jqr .partial)" = false ] && ok || bad "idle local: exit $CODE ($(tail -3 "$TMP/run.log"))"
+        [ "$(hq "$H" '"\(.reachable) \(.machine) \(.lanes | length)"')" = "true null 0" ] && ok || bad "idle local: reachable, no lanes ($(hq "$H" .))"
+        grep -q '^host-locks' "$FAKE_LOG" && ! grep -q '^ssh' "$FAKE_LOG" && ok || bad "local observation runs the observer, never ssh"
+        # 2. this host busy: the heavy lane's holder and two waiters (oldest first), the light lane's holder, ages and ISO since
+        export FAKE_LOCKS_OUT="$FX/locks/busy.tsv"
+        run
+        [ "$(lane "$H" heavy-work '"\(.queue_depth) \(.holder.pid) \(.holder.age_s) \(.waiters | length) \(.waiters[0].pid) \(.waiters[1].pid)"')" = "3 3368030 2300 2 3368490 3378976" ] && ok || bad "busy heavy lane ($(lane "$H" heavy-work .))"
+        [ "$(lane "$H" heavy-work .holder.what)" = "devenv tasks run platform:verify" ] && ok || bad "the flock prefix is stripped from what ($(lane "$H" heavy-work .holder.what))"
+        [ "$(lane "$H" heavy-work .lock)" = "/tmp/$H-heavy-work.lock" ] && lane "$H" heavy-work .holder.since | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' && ok || bad "lock path and ISO since"
+        [ "$(lane "$H" light-work '"\(.queue_depth) \(.waiters | length) \(.holder.age_s)"')" = "1 0 30" ] && ok || bad "light lane: one holder, no waiters ($(lane "$H" light-work .))"
+        # 3. saved machines: worker-a (busy) over its ssh target, down-b unreachable, an unsafe target refused and never passed to ssh
+        : > "$FAKE_LOG"; export FAKE_LOCKS_OUT="$FX/locks/idle.tsv" FAKE_SSH_OUT_lukas_worker_a="$FX/locks/busy.tsv"
+        export FAKE_HERDR_MACHINES='[{"id":"a","label":"worker-a","target":"lukas@worker-a","enabled":true},{"id":"b","label":"down-b","target":"down-b","enabled":true},{"id":"c","label":"bad","target":"x;rm -rf /","enabled":true}]'
+        run
+        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.hosts_total) \(.answered_hosts) \(.partial)"')" = "4 2 true" ] && ok || bad "machines: counts ($(jqr '"\(.hosts_total) \(.answered_hosts) \(.partial)"'))"
+        [ "$(lane worker-a heavy-work .queue_depth)" = 3 ] && [ "$(hq worker-a '"\(.reachable) \(.machine)"')" = "true worker-a" ] && ok || bad "worker-a observed over ssh ($(hq worker-a .))"
+        [ "$(hq down-b '"\(.reachable) \(.error.kind)"')" = "false command_failed" ] && [ "$(hq down-b '.lanes | length')" = 0 ] && ok || bad "down-b: unreachable as data ($(hq down-b .))"
+        [ "$(hq bad .error.kind)" = invalid_label ] && ! grep -q 'rm -rf' "$FAKE_LOG" && ok || bad "unsafe target never reaches ssh"
+        grep -q '^ssh -o BatchMode=yes -o ConnectTimeout=5 lukas@worker-a sh -s' "$FAKE_LOG" && ok || bad "ssh is called with the target and the observer on stdin ($(grep ssh "$FAKE_LOG"))"
+        # 4. a failing local observer is data, never a failed task
+        export FAKE_HERDR_MACHINES='[]'; LOCKS_CMD=false run
+        [ "$CODE" -eq 0 ] && [ "$(hq "$H" '"\(.reachable) \(.error.kind)"')" = "false command_failed" ] && ok || bad "observer failure: exit $CODE, reachable false ($(hq "$H" .))"
+        summary
+      '';
+    };
     "skills:test:tasks:herdr-inventory" = {
       description = "herdr:inventory over the fake herdr: this host plus saved machines through --machine";
       exec = ''
@@ -20,7 +70,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -82,7 +132,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -134,7 +184,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -263,7 +313,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -472,7 +522,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -559,7 +609,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }

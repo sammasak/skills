@@ -51,6 +51,17 @@ issue.
    repository an outstanding handoff names. When `gh:repos` or `gh:work` says
    `truncated: true`, say so in the report and work the visible items;
    raising `coordinator.ghLimit` is the owner's call.
+   Gates on a worker host run in two lock lanes (skills#28): `flock
+   /tmp/$(hostname)-heavy-work.lock` for anything that builds or compiles
+   (`nixos:qa`, `platform:verify`, `sdlc:done`, `rust:ci`, `cargo`, `nix build`)
+   and `flock -w 900 /tmp/$(hostname)-light-work.lock` for eval-only and
+   script gates (`skills:test*`, `nix eval`, `nix flake check` without builds,
+   jq/bash suites), so a short gate never queues behind a long one. `coord:capacity`
+   shows each lane (`lock_queue`) and refuses a heavy spawn while the heavy lane
+   holds `heavy_jobs` or more jobs. A green gate on a clean head is recorded once
+   (`gate:record:<gate>`, devenv-platform); a reviewer or merger runs
+   `gate:verify --input gate=<gate>` for the exact head and reruns targeted
+   probes, never the whole gate a second time.
 2. **Prioritize**, highest first:
    - P0: a delivered handoff whose agent is `blocked` or `needs_owner`
      (report it first, with the exact decision).
@@ -65,16 +76,25 @@ issue.
    order with `gh:label approved`, one issue per call, and in the report
    list what you approved and what still needs the owner (`needs-live`,
    `blocked`, `needs-triage`).
-3. **Delegate** P1 items, one handoff per item, while a free worker remains: pick an agent that is `idle` or `done` (never
+3. **Delegate** P1 items, one open handoff per item, while a free worker remains. Each handoff has a `hold`: `open`
+   while its agent works on it or a PR of it is open and unmerged, `closed` when the evidence says nobody is
+   (`closed_reason`: stale, superseded, settled without an open PR, merged without an independent review, verified), and
+   `unknown` when that evidence is missing (`unknown_reason`: a host that did not answer, an agent state Herdr cannot
+   classify, GitHub evidence unavailable, a send whose delivery is unknown: no outcome line or a stalled prompt, which
+   `herdr:message` refuses to resend). An approved item is `reassignable` only when all its handoffs are closed and
+   no open PR names it: hand it out again, naming the earlier handoff in the scope (a merged one without a review needs
+   that review, not a new implementation); an unknown hold keeps it until the evidence returns. Then pick an agent that is `idle` or `done` (never
    `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) on a host with capacity (lenovo: one heavy job,
    control plane only; acer-swift: two, one while a full gate runs). Draft
    with `coord:handoff`, `allowed_actions` limited to what the label grants
    (reading, committing, opening a PR and `comment` for ordinary work; `merge`,
    `close`, `deploy:<host>` only when the owner's label or comment says so).
    Send with `herdr:message` and `authorized_by = {issue_url, label}`. A
-   refusal (`authorization_missing`, `duplicate`, `agent_busy`, ...) ends that
-   item for this tick, not the tick; report the `error.kind` verbatim and go to
-   the next item.
+   refusal (`authorization_missing`, `duplicate`, ...) ends that item for this
+   tick, not the tick; report the `error.kind` verbatim and go to the next item.
+   `agent_busy` is parked, not lost: the audit log keeps the refused send, so
+   first draft the item for another free worker; with none free, move on, and
+   `coord:changed` prints a `retry` line once a worker is free.
 4. **Follow up** every P2 item once: `herdr:await` by `audit_id` with a finite
    timeout, then `work:status`. `unknown_delivery` or
    `agent_prompt_stalled`: `herdr:inspect`, report, never resend.

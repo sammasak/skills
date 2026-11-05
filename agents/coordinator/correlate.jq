@@ -50,7 +50,31 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
       elif $st.merged != null then {v:"unverified", r:[$live_prs[] | select(.stages.reviewed == null) | "PR #\(.number) merged without an independent 9/10 on its head"]}
       else {v:"unverified", r:[$live_prs[] | select(.stages.merged == null) | "PR #\(.number) open, not merged"]} end) as $verdict
    | ([$d.prs[]?.createdAt] | min) as $oldest
-   | $h + {prs:$prs, stages:$st, work_verdict:$verdict.v,
+   # holding (skills#28: past handoffs kept approved items out of reach): open while someone is on it (a PR of it open and
+   # unmerged, or it is the newest handoff to its pane and that agent works or is blocked on the same session); closed when
+   # the evidence says nobody is (verified, merged, stale, superseded, settled with no PR); unknown when the evidence
+   # needed to say so is missing (an unanswered host, an agent state herdr cannot classify, no or truncated GitHub
+   # evidence). Only closed frees the item; unknown holds it, so a worker out of sight never gets a duplicate
+   | (($d != null and $d.error == null and (($d.prs | length) < $d.limit or ($oldest != null and $oldest <= $h.sent_at)))) as $gh_ok
+   | (if ($h.delivered | not) then
+        # a refused send reached nobody; one whose delivery is unknown (no outcome line, a stalled prompt) may have, and
+        # herdr:message itself refuses to resend it: it holds its item until the pane is inspected, unless a later handoff
+        # to the same pane superseded it
+        (if $h.until == null and ((["unknown_delivery", "agent_prompt_stalled", "interrupted"] | index($h.outcome // "")) != null)
+         then {s:"unknown", r:"delivery unknown (\($h.outcome)): inspect the pane, never resend"} else {s:"closed", r:"not delivered"} end)
+      elif $verdict.v == "verified" then {s:"closed", r:"verified"}
+      elif any($live_prs[]; .state == "OPEN") then {s:"open", r:null}
+      elif $h.until == null and $sess == "same" and ((["working", "blocked"] | index($now.observed_state // "")) != null) then {s:"open", r:null}
+      elif $h.repo == null then {s:"closed", r:"names no repo"}
+      elif $sess == "unobserved" then {s:"unknown", r:"host \($h.host) did not answer"}
+      elif ($gh_ok | not) then {s:"unknown", r:"GitHub evidence for \($h.repo // "no repo") unavailable or cut at the PR limit"}
+      elif $st.merged != null then {s:"closed", r:"merged without an independent review"}
+      elif $sess == "gone" or $sess == "session_changed" then {s:"closed", r:"stale"}
+      elif $h.until != null then {s:"closed", r:"superseded"}
+      elif $sess == "same" and ((["idle", "done"] | index($now.observed_state // "")) == null) then {s:"unknown", r:"agent state \($now.observed_state // "null") is not idle or done"}
+      else {s:"closed", r:"settled without an open PR"} end) as $hold
+   | $h + {prs:$prs, stages:$st, work_verdict:$verdict.v, hold:$hold.s, open:($hold.s == "open"),
+       closed_reason:(if $hold.s == "closed" then $hold.r else null end), unknown_reason:(if $hold.s == "unknown" then $hold.r else null end),
        evidence_ref:(if $verdict.v == "verified" then $st.merged[0] else null end),
        task_issue_open:(if $d != null and $d.error == null and $n != null then any($d.issues[]; .number == $n) else null end),
        session_state:$sess, herdr_state:($now.observed_state // null),

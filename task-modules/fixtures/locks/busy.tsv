@@ -1,0 +1,4 @@
+heavy-work	holder	3368030	2300	flock /tmp/worker-a-heavy-work.lock devenv tasks run platform:verify
+heavy-work	waiter	3368490	2290	flock /tmp/worker-a-heavy-work.lock devenv tasks run skills:test --show-output
+heavy-work	waiter	3378976	2120	flock /tmp/worker-a-heavy-work.lock devenv shell -q -- devenv tasks run nixos:qa
+light-work	holder	3400000	30	flock /tmp/worker-a-light-work.lock devenv tasks run skills:test:tasks:coord-capacity --show-output

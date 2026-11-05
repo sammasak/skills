@@ -153,7 +153,7 @@ END autonomy
 11. Work the queue as `docs/process.md` describes, repeating until the
    Autonomy stop condition holds: discover (`coord:brief` with its portfolio,
    then `gh:work` for any further repository a handoff names), prioritize (blocked or owner-needing handoffs first, then
-   authorized items without a handoff, then delivered handoffs to follow
+   authorized items without an open handoff (`hold` on each handoff, `reassignable` on each approved item in the brief: a closed handoff holds nothing, an `unknown` one holds the item until its evidence returns), then delivered handoffs to follow
    up), delegate every eligible item that has a free worker (or a host
    where `coord:capacity` allows a spawn, item 13) through steps 7–8, follow up delivered ones (`herdr:await` by `audit_id`,
    `work:status`), report. The brief's
@@ -163,10 +163,12 @@ END autonomy
    state (`state_change_seq`), `gh:repos` counts and the audit log's open
    handoffs against its last snapshot, prints nothing when nothing is
    actionable and one line per change otherwise (`blocked`, `settled`,
-   `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`, and
+   `gone`, `replaced`, `new`, `host`, `repo`, `audit`, `snapshot`, `retry`
+   (sends `herdr:message` refused `agent_busy` and parked in the audit log,
+   once a worker is free: draft the item for a free worker and send it), and
    `idle`: every worker idle or done (the panes handoffs went to, never
    your own) while an open PR without an independent
-   9/10 on its head, an authorized issue without a handoff or an unverified
+   9/10 on its head, an authorized issue without an open handoff or an unverified
    handoff is left, printed once per fleet+work fingerprint). Only
    the timer's form, `--input-json '{"consume":true}'`, moves the snapshot
    on, so a change shows once there; your own plain call reads without
@@ -175,7 +177,10 @@ END autonomy
    prints nothing, keeps the snapshot, and says why in `latest.json`
    (`wake.deferred`, `wake.reason`, `wake.next_allowed_at`; the held lines
    sit under `wake.pending`, `changes` stays empty), so a burst of
-   changes costs at most the capped sessions and surfaces together. A session that starts
+   changes costs at most the capped sessions and surfaces together. With
+   `interactiveQuietSeconds` set, a printing run is also deferred
+   (`interactive_coordinator`) while a Coordinator pane works or worked within
+   that many seconds, so the timer does not race the owner's session. A session that starts
    from a wake-up answers those lines (also in `<state>/changed/latest.json`)
    with fresh `coord:brief` output; it never treats them as current state.
    A snapshot it had to rebuild forgets which handoffs were already

@@ -19,7 +19,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -120,10 +120,12 @@
         export FAKE_HERDR_LIST="$TMP/local.json" FAKE_HERDR_LIST_worker_a="$TMP/worker-a.json" \
           FAKE_HERDR_MACHINES='[{"id":"a1","label":"worker-a","target":"worker-a","enabled":true},{"id":"b2","label":"down-b","target":"down-b","enabled":true}]'
         export FAKE_GH_LABELS='["approved"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"approved"},"actor":{"login":"sammasak"},"created_at":"2026-11-03T09:00:00Z"}]'
+        # lock lanes (host:locks): idle everywhere unless a case says otherwise
+        export FAKE_LOCKS_OUT="$FX/locks/idle.tsv" FAKE_SSH_OUT_worker_a="$FX/locks/idle.tsv"
         mkdir -p "$TMP/state" "$TMP/claude"; A="$TMP/state/audit.jsonl"
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.capacity:string "$CAP" \
             --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
@@ -157,6 +159,14 @@
         run coord:capacity --input-json '{"next":{"repo":"sammasak/skills","task_ref":"#42"}}'
         [ "$(w wF:p1)" = "200000 /compact" ] && ok || bad "same thread, large context: /compact, not /clear ($(w wF:p1))"
         [ "$(lines)" = 2 ] && ok || bad "coord:capacity writes nothing to the audit log"
+        [ "$(hq worker-a '.lock_queue | "\(.observed) \(.lanes | length)"')" = "true 0" ] && ok || bad "an idle host shows observed, empty lanes ($(hq worker-a .lock_queue))"
+        # (3b) the lock queue: worker-a's heavy lane holds a job and two waiters -> no heavy spawn there (light still fits), with the reason
+        export FAKE_SSH_OUT_worker_a="$FX/locks/busy.tsv"
+        run coord:capacity
+        [ "$(hq worker-a '"\(.spawn_ok.light) \(.spawn_ok.heavy) \(.lock_queue.lanes[] | select(.lane == "heavy-work") | .queue_depth)"')" = "true false 3" ] && ok || bad "busy heavy lane refuses a heavy spawn ($(hq worker-a '.spawn_ok, .lock_queue'))"
+        hq worker-a '.reasons[]' | grep -q '^heavy-work lane: 3 on the lock (devenv tasks run platform:verify for 38 min)' && ok || bad "the reason names the lane, the depth and the holder ($(hq worker-a .reasons))"
+        [ "$(hq worker-a '.fits.spawn | join(",")')" = "mechanical,planning" ] && ok || bad "only light kinds fit while the heavy lane is full ($(hq worker-a '.fits.spawn'))"
+        export FAKE_SSH_OUT_worker_a="$FX/locks/idle.tsv"
 
         # (4) accepted: a heavy implementation spawn on worker-a, with its kind's model, in a workspace of its own; audited.
         #     FAKE_HERDR_STARTED makes the fake list every agent it started, like a real server
@@ -179,7 +189,7 @@
         # (5b) two concurrent spawns for one free worker slot decide under the lock on a fresh agent list plus the spawns in
         #      flight: one starts, the other is refused; the audit lock is free while the winner waits in agent start
         : > "$FAKE_HERDR_STARTED"; jq '.result.agents += [(.result.agents[0] | .pane_id = "wB:p9" | .agent_status = "idle")]' "$FX/herdr/remote-ok.json" > "$TMP/worker-a.json"
-        sp() { FAKE_HERDR_START_SLEEP=8 FAKE_HERDR_WS="$2" devenv tasks run coord:spawn --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        sp() { FAKE_HERDR_START_SLEEP=8 FAKE_HERDR_WS="$2" devenv tasks run coord:spawn --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.capacity:string "$CAP" --show-output \
           --input-json "{\"machine\":\"worker-a\",\"kind\":\"mechanical\",\"task_ref\":\"#28\",\"cwd\":\"/home/lukas\",$AUTH}" > "$TMP/race-$1.log" 2>&1; }
         : > "$FAKE_LOG"; sp 1 wX & p1=$!; sp 2 wY & p2=$!
@@ -252,7 +262,11 @@
         devenv() { command devenv "$1" "$2" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" "''${@:3}"; }
         FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh-correlation" FAKE_HERDR_MACHINES='[]'
+        # #29 approved too, so the portfolio shows an approved item held by an open handoff beside #28, whose handoffs are closed
+        mkdir -p "$TMP/gh-corr"; cp "$FX"/gh-correlation/*.json "$TMP/gh-corr/"
+        jq '(.[] | select(.number == 29) | .labels) += [{"name":"approved"}]' "$FX/gh-correlation/sammasak__skills.issues.json" > "$TMP/gh-corr/sammasak__skills.issues.json"
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$TMP/gh-corr" FAKE_HERDR_MACHINES='[]'
+        export FAKE_GH_REPOS='[{"name":"skills","pushedAt":"2026-11-03T10:18:03Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":1},"issues":{"totalCount":2},"issue_labels":[["approved"],["approved"]]}]'
         PASS=0; FAIL=0
         ok() { PASS=$((PASS+1)); }
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
@@ -285,7 +299,7 @@
         handoff h00000000008 wC:p1 sC "#32" 2026-11-03T12:00:00Z     # fix-up on PR 55 (commit 12:30), merged with no grade at all
         handoff h00000000009 wR:p1 sR "#33" 2026-11-03T12:00:00Z     # review of PR 56: wR:p1 graded it 7/10, the author pushed at 12:30
         handoff h00000000010 wD:p1 sD "#34" 2026-11-03T16:00:00Z     # PR 57: merged, its 9/10 signed "Reviewer acer-swift wR:p1; author wD:p1"
-        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         B="$TMP/state/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
         q() { jq -r "$1" "$B"; }
@@ -324,16 +338,23 @@
         # (6) the brief is compact: one line for the verified children of the epic, one per open handoff, no JSON
         md=$(sed -n '/# Fleet brief/,/^\s*Full JSON:/p' "$TMP/run.log")
         grep -q -- '- verified sammasak/skills#28 (still open): merged #51 #52$' <<<"$md" && ok || bad "verified children summarised per repo#ref ($(grep -A9 '## Handoffs' <<<"$md"))"
-        ! grep -qE 'h0000000000[12] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && grep -q 'h00000000004 → .*STALE' <<<"$md" && ok || bad "open handoffs one line each with stages, verified ones not repeated"
+        ! grep -qE '^\s*- h0000000000[124] →' <<<"$md" && grep -q 'h00000000003 → .*implemented ✓ reviewed – merged – live – | work=unverified' <<<"$md" && ok || bad "open handoffs one line each with stages; verified and closed ones not repeated ($(grep -A12 '## Handoffs' <<<"$md"))"
+        # (6b) open vs closed (skills#28: a stale or settled handoff kept its item out of reach): open while a PR of it is open
+        #      or its agent works on it; closed ones carry the reason, are counted in the header and listed per item in one line
+        [ "$(q '[.handoffs | sort_by(.handoff_id)[] | "\(.handoff_id[-1:])=\(if .open then "open" else .closed_reason end)"] | join(" ")')" = "1=verified 2=verified 3=open 4=stale 5=stale 6=not delivered 7=open 8=merged without an independent review 9=settled without an open PR 0=verified" ] && ok || bad "open/closed_reason per handoff ($(q '[.handoffs[] | {id:.handoff_id, open, closed_reason}]'))"
+        grep -q '## Handoffs (from the audit log): 10 total, 3 verified, 2 open, 0 unknown, 5 closed$' <<<"$md" && grep -q -- '- closed, nobody on it (the item can be handed out again; a merged one without an independent review needs that review): .*sammasak/skills#30 (h00000000004 stale)' <<<"$md" && grep -q 'sammasak/skills#33 (h00000000009 settled without an open PR)' <<<"$md" && ok || bad "closed handoffs: counted and summarised per item ($(grep -A12 '## Handoffs' <<<"$md"))"
+        # the portfolio says which approved items are held and which can be handed out again
+        [ "$(q '.portfolio.active[0].approved | map("\(.number):\(.reassignable):\([.open_handoffs[].handoff_id] | join("+")):\(.last_handoff.handoff_id)") | join(" ")')" = "28:true::h00000000002 29:false:h00000000003+h00000000007:h00000000007" ] && ok || bad "approved items: open handoffs hold, closed ones leave them re-assignable ($(q '.portfolio.active[0].approved'))"
+        grep -q '#28 .* \[re-assignable: handoff h00000000002 → '"$H"'/wA:p1 verified\]' <<<"$md" && grep -q '#29 .* \[held by handoff h00000000003 → '"$H"'/wB:p1, h00000000007 → '"$H"'/wB:p1\]' <<<"$md" && ok || bad "portfolio Markdown marks held and re-assignable items ($(grep 'sammasak/skills:' <<<"$md"))"
         ! grep -q '{"' <<<"$md" && ok || bad "no raw JSON in the Markdown brief"
-        ! grep -q -- '--search' "$FAKE_LOG" && [ "$(grep -c '^gh pr list -R sammasak/skills' "$FAKE_LOG")" = 1 ] && ok || bad "one PR list per repo, no search ($(grep '^gh pr' "$FAKE_LOG"))"
+        ! grep -q -- '--search' "$FAKE_LOG" && [ "$(grep -c '^gh pr list -R sammasak/skills --state all' "$FAKE_LOG")" = 1 ] && ok || bad "one PR list per repo, no search ($(grep '^gh pr' "$FAKE_LOG"))"
         # the default read is latest.md (the runbook sends devenv's stdout JSON to /dev/null): the same Markdown, at most half
         # of what --show-output prints
         M="$TMP/state/brief/latest.md"
         [ -s "$M" ] && [ "$(sed -E 's/^\s+//' <<<"$md")" = "$(sed -n '/# Fleet brief/,/^Full JSON:/p' "$M")" ] && ! grep -q '{"' "$M" && ok || bad "latest.md is the printed Markdown, no JSON ($(head -c 300 "$M"))"
         [ $(( $(wc -c < "$M") * 2 )) -le "$(wc -c < "$TMP/run.log")" ] && ok || bad "latest.md is at most half the --show-output bytes ($(wc -c < "$M") vs $(wc -c < "$TMP/run.log"))"
         mv "$M" "$M.prev"
-        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 > /dev/null 2> "$TMP/quiet.err"; CODE=$?
         [ "$CODE" -eq 0 ] && grep -q '^# Fleet brief' "$M" && [ "$(wc -c < "$TMP/quiet.err")" -lt 1000 ] && ok || bad "default form (stdout to /dev/null) rewrites latest.md with little else ($CODE, stderr $(wc -c < "$TMP/quiet.err") bytes)"
         # a Markdown render that fails (here: a merged PR without a URL) fails the task and leaves no latest.md, never the
@@ -341,7 +362,7 @@
         mkdir -p "$TMP/gh-bad"; cp "$FX"/gh-correlation/*.json "$TMP/gh-bad/"
         jq 'map(if .number == 52 then .url = null else . end)' "$FX/gh-correlation/sammasak__skills.prs.json" > "$TMP/gh-bad/sammasak__skills.prs.json"
         printf 'STALE BRIEF FROM AN EARLIER RUN\n' > "$M"
-        FAKE_GH_DIR="$TMP/gh-bad" devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        FAKE_GH_DIR="$TMP/gh-bad" devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/bad.log" 2>&1; CODE=$?
         [ "$CODE" -ne 0 ] && [ ! -e "$M" ] && ! grep -q 'STALE BRIEF' "$TMP/bad.log" && grep -q 'Markdown render failed' "$TMP/bad.log" && ok || bad "render failure fails the brief, no stale latest.md ($CODE, $(ls "$TMP/state/brief"))"
         # the documented default form: ROLE.md spells it out (stdout to /dev/null, then Read latest.md), and no doc gates the
@@ -350,11 +371,43 @@
         ! grep -rqF --exclude=tests.nix 'coord:brief >/dev/null &&' agents skills docs && grep -qF 'coord:brief >/dev/null; cat' docs/operator-runbook.md && grep -qF 'coord:brief >/dev/null; cat' skills/herdr-operations/SKILL.md && ok || bad "the default read is not gated on exit 0 ($(grep -rnF --exclude=tests.nix 'coord:brief >/dev/null &&' agents skills docs))"
         # (7) only the newest 50 handoffs are carried (the record travels in devenv's environment); the rest are counted
         for i in $(seq -w 10 59); do handoff "q0000000000$i" wQ:p1 sQ "#28" "2026-11-04T00:00:$i"Z none; done
-        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+        devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
         [ "$CODE" -eq 0 ] && [ "$(q '"\(.handoffs | length) \(.handoffs_omitted) \(.handoffs[0].handoff_id)"')" = "50 10 q000000000010" ] && grep -q '60 total' "$TMP/run.log" && ok || bad "handoff cap ($CODE $(jq -c '{n:(.handoffs|length), handoffs_omitted, first:.handoffs[0].handoff_id}' "$B") $(grep -E '## Handoffs' "$TMP/run.log"))"
         # an agent whose handoff fell out of the evaluated window says so, rather than being judged by its (wrong) title
         [ "$(it wA:p1 '"\(.correlation.by) \(.correlation.handoff_id) \(.task_ref) \(.work_verdict) \(.evidence_ref)"')" = "omitted h00000000002 #28 unknown null" ] && it wA:p1 '.reasons[0]' | grep -q 'older than the 50 newest evaluated' && ok || bad "omitted handoff reported as omitted ($(it wA:p1 '{correlation,task_ref,work_verdict,reasons}'))"
+        # (8) evidence that is missing holds the item (review of #65): an agent working on it is open; an agent herdr cannot
+        #     classify, a host that did not answer and a repo whose GitHub evidence failed are unknown, never closed, so no
+        #     worker out of sight gets a duplicate; an open PR naming an approved issue holds it without any handoff
+        mkdir -p "$TMP/gh-hold" "$TMP/state-hold"; cp "$TMP"/gh-corr/*.json "$TMP/gh-hold/"
+        jq '. + [44,45,46,47,48,49,40 | {number:., title:"item \(.)", state:"OPEN", labels:[{name:"approved"}], url:"https://github.com/sammasak/skills/issues/\(.)", author:{login:"sammasak"}}]' "$TMP/gh-corr/sammasak__skills.issues.json" > "$TMP/gh-hold/sammasak__skills.issues.json"
+        jq '. + [{number:77, title:"fix #47", body:"", state:"OPEN", mergedAt:null, createdAt:"2026-11-03T16:00:00Z", url:"https://github.com/sammasak/skills/pull/77", headRefName:"feat/x", headRefOid:"7777777777777777777777777777777777777777", isDraft:false, closingIssuesReferences:[], statusCheckRollup:[], comments:[], reviews:[], commits:[]}]
+              + [{number:78, title:"unrelated title", closing:[48], branch:"feat/y"}, {number:79, title:"another title", closing:[], branch:"fix/49-hold"}
+                 | {number, title, body:"", state:"OPEN", mergedAt:null, createdAt:"2026-11-03T16:00:00Z", url:"https://github.com/sammasak/skills/pull/\(.number)", headRefName:.branch,
+                    headRefOid:"7878787878787878787878787878787878787878", isDraft:false, closingIssuesReferences:(.closing | map({number:.})), statusCheckRollup:[], comments:[], reviews:[], commits:[]}]' "$TMP/gh-corr/sammasak__skills.prs.json" > "$TMP/gh-hold/sammasak__skills.prs.json"
+        jq '.result.agents += [(.result.agents[0] | .pane_id = "wW:p9" | .agent_status = "working" | .agent_session.value = "sW" | .terminal_title_stripped = "busy"),
+                               (.result.agents[0] | .pane_id = "wU:p9" | .agent_status = "unknown" | .agent_session.value = "sU" | .terminal_title_stripped = "odd"),
+                               (.result.agents[0] | .pane_id = "wE:p9" | .agent_status = "idle" | .agent_session.value = "sE" | .terminal_title_stripped = "quiet")]' "$TMP/list.json" > "$TMP/list-hold.json"
+        printf 'not json\n' > "$TMP/gh-hold/sammasak__missing.prs.json"; echo '[]' > "$TMP/gh-hold/sammasak__missing.issues.json"   # its GitHub evidence fails
+        A0=$A; A="$TMP/state-hold/audit.jsonl"
+        handoff h0000000000a wW:p9 sW "#44" 2026-11-03T12:00:00Z
+        handoff h0000000000b wU:p9 sU "#45" 2026-11-03T12:00:00Z
+        handoff h0000000000c wL:p1 sL "#46" 2026-11-03T12:00:00Z; sed -i "s/\"handoff_id\":\"h0000000000c\",\"task_ref\":\"#46\",\"phase\":\"attempt\",\"host\":\"$H\"/\"handoff_id\":\"h0000000000c\",\"task_ref\":\"#46\",\"phase\":\"attempt\",\"host\":\"lenovo-gone\"/" "$A"
+        handoff h0000000000d wB:p1 sB "#1" 2026-11-03T16:00:00Z; sed -i 's#skills/issues/1"#missing/issues/1"#' "$A"
+        # an attempt with no outcome line to an idle pane on an answering host: the prompt may have arrived (herdr:message
+        # refuses to resend it), so the item stays held, never re-assignable
+        handoff h0000000000e wE:p9 sE "#40" 2026-11-03T12:00:00Z none
+        A=$A0
+        FAKE_GH_DIR="$TMP/gh-hold" FAKE_HERDR_LIST="$TMP/list-hold.json" FAKE_GH_REPOS='[{"name":"skills","pushedAt":"2026-11-03T10:18:03Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":2},"issues":{"totalCount":7},"issue_labels":[["approved"],["approved"],["approved"],["approved"],["approved"],["approved"],["approved"]]}]' \
+          devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state-hold" --option coordinator.timeoutSeconds:int 2 --show-output > "$TMP/run.log" 2>&1; CODE=$?
+        B="$TMP/state-hold/brief/latest.json"; [ -s "$B" ] || echo '{}' > "$B"
+        [ "$CODE" -eq 0 ] && [ "$(q '[.handoffs | sort_by(.handoff_id)[] | "\(.handoff_id[-1:])=\(.hold):\(.closed_reason // .unknown_reason // "")"] | join("|")')" = "a=open:|b=unknown:agent state unknown is not idle or done|c=unknown:host lenovo-gone did not answer|d=unknown:GitHub evidence for sammasak/missing unavailable or cut at the PR limit|e=unknown:delivery unknown (interrupted): inspect the pane, never resend" ] && ok || bad "hold: working is open; unclassified state, unanswered host and failed GitHub evidence are unknown ($CODE $(q '[.handoffs[] | {handoff_id, hold, closed_reason, unknown_reason, session_state}]'))"
+        [ "$(q '[.portfolio.active[0].approved[] | select(.number >= 40) | "\(.number):\(.reassignable):\(.open_prs | join("+"))"] | join(" ")')" = "44:false: 45:false: 46:false: 47:false:77 48:false:78 49:false:79 40:false:" ] && ok || bad "an open or unknown handoff, or an open PR without one (named in its title, by a closing reference or in its branch), holds the item ($(q '.portfolio.active[0].approved'))"
+        md=$(sed -n '/# Fleet brief/,/^\s*Full JSON:/p' "$TMP/run.log")
+        grep -q '## Handoffs (from the audit log): 5 total, 0 verified, 1 open, 4 unknown, 0 closed$' <<<"$md" && grep -q 'h0000000000c → lenovo-gone/wL:p1 .*HOLD UNKNOWN: host lenovo-gone did not answer' <<<"$md" \
+          && grep -q 'h0000000000e → '"$H"'/wE:p9 .*HOLD UNKNOWN: delivery unknown (interrupted)' <<<"$md" && grep -q '#40 item 40 \[held by handoff h0000000000e → '"$H"'/wE:p9 (unknown: delivery unknown (interrupted)' <<<"$md" \
+          && grep -q '#47 item 47 \[held by open PR #77\]' <<<"$md" && grep -q '#45 item 45 \[held by handoff h0000000000b → '"$H"'/wU:p9 (unknown: agent state unknown is not idle or done)\]' <<<"$md" && ok || bad "Markdown: unknown handoffs listed as holding, PR-held items marked ($(grep -A8 '## Handoffs' <<<"$md"; grep 'sammasak/skills:' <<<"$md"))"
         summary
       '';
     };
@@ -381,7 +434,7 @@
           # the interactive form, no input at all
           local in=(--input-json '{"consume":true}')
           if [ "''${1:-}" = --plain ]; then in=(); shift; elif [ "''${1:-}" = --input-json ]; then in=(--input-json "$(jq -cn --argjson u "$2" '{consume:true} + $u')"); shift 2; fi
-          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "''${STATE:-$TMP/state}" --option coordinator.timeoutSeconds:int 2 $BUDGET "''${in[@]}" --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           # the idle-fleet line (F1) is the coord-idle suite's business; these cases look at the other kinds only
           LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot) ' "$TMP/run.log" | sed -E 's/^\s+//')
@@ -602,8 +655,110 @@
         summary
       '';
     };
+    "skills:test:tasks:coord-retry" = {
+      description = "skills#28 06:19Z: two drafts for one item refused agent_busy are parked in the audit log, not dropped; coord:changed prints one retry line once a worker is free (once per refusal), a later delivered send for the item resolves both; a working interactive Coordinator pane defers the wake (interactiveQuietSeconds) and the line comes out after the quiet period";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
+        devenv() { command devenv "$1" "$2" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" "''${@:3}"; }
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh" FAKE_HERDR_MACHINES='[]' FAKE_HERDR_SESSION=s1 FAKE_HERDR_SEQ=5 FAKE_PROMPT_OUT="$TMP/prompt.txt"
+        export FAKE_GH_LABELS='["approved"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"approved"},"actor":{"login":"sammasak"},"created_at":"2026-11-04T09:00:00Z"}]'
+        export FAKE_GH_REPOS='[]'
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $* :: $(grep -E 'error|jq:' "$TMP/run.log" | tail -n 2 | tr '\n' ' ')"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+        H=$(hostname -s 2>/dev/null || hostname)
+        STATE="$TMP/state"; PANES="$H/wM:p1"; QUIET=0
+        opts() { echo --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.stateDir:string "$STATE" \
+          --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --option coordinator.panes:string "$PANES" \
+          --option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000 --option coordinator.interactiveQuietSeconds:int "$QUIET"; }
+        task() { # <task> <input-json> -> CODE, OUT
+          devenv tasks run "$1" $(opts) --input-json "$2" --show-output > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E '^\s*\{' "$TMP/run.log" | sed -E 's/^\s+//' | jq -c --arg t "$1" 'select(type == "object") | (.[$t] // select(.task == $t)) // empty' 2>/dev/null | tail -1); [ -n "$OUT" ] || OUT='{}'; }
+        changed() { task coord:changed '{"consume":true}'; LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot|idle|retry) ' "$TMP/run.log" | sed -E 's/^\s+//'); }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        # the fleet: wF:p1 and wT:p1 workers, wM:p1 the interactive Coordinator's pane (coordinator.panes)
+        LOCAL="$TMP/local.json"
+        jq '.result.agents += [(.result.agents[0] | .pane_id = "wM:p1" | .agent_session.value = "mmmm" | .agent_status = "working" | .terminal_title_stripped = "coordinator")]' "$FX/herdr/local-two-agents.json" > "$LOCAL"
+        export FAKE_HERDR_LIST="$LOCAL"
+        set_agent() { jq --arg p "$1" "(.result.agents[] | select(.pane_id == \$p)) |= ($2)" "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"; }
+        set_agent wF:p1 '.agent_status = "working"'; set_agent wT:p1 '.agent_status = "working"'
+        AUTH='{"issue_url":"https://github.com/sammasak/nixos-config/issues/42","label":"approved"}'
+        draft() { task coord:handoff "{\"agent_id\":\"$1\",\"task_ref\":\"$2\",\"scope\":\"$3\",\"expected_evidence\":\"a PR\",\"acceptance\":\"green\",\"allowed_actions\":[\"comment\"]}"; jqr .handoff_id; }
+        send() { task herdr:message "{\"handoff_id\":\"$1\",\"confirm\":\"$H/$2\",\"authorized_by\":''${3:-$AUTH}}"; }
+
+        # (1) the 06:19Z wake: two drafts for nixos-config#42, both refused agent_busy (the owner's session had just dispatched)
+        D1=$(draft wF:p1 "#42" "naked-pi research, part one"); D2=$(draft wT:p1 "#42" "naked-pi research, part two")
+        FAKE_HERDR_STATE=working send "$D1" wF:p1; c1=$CODE; k1=$(jqr .error.kind)
+        FAKE_HERDR_STATE=working send "$D2" wT:p1; c2=$CODE; k2=$(jqr .error.kind)
+        [ "$c1" -ne 0 ] && [ "$c2" -ne 0 ] && [ "$k1 $k2" = "agent_busy agent_busy" ] && jqr .error.message | grep -q 'another free worker' && ok || bad "both sends refused agent_busy, naming the way on ($c1 $k1 $c2 $k2 $(jqr .error.message))"
+        A="$STATE/audit.jsonl"
+        [ "$(jq -sc '[.[] | select(.phase == "parked") | "\(.handoff_id) \(.agent_id) \(.reason) \(.task_ref) \(.authorized_by.issue_url)"] | join("|")' "$A")" = "\"$D1 wF:p1 agent_busy #42 https://github.com/sammasak/nixos-config/issues/42|$D2 wT:p1 agent_busy #42 https://github.com/sammasak/nixos-config/issues/42\"" ] \
+          && [ "$(jq -s '[.[] | select(.phase == "attempt")] | length' "$A")" = 0 ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "each refusal is parked in the audit log, nothing was sent ($(cat "$A"))"
+        # (2) the wake session ends; the next ticks: no free worker, no retry line (baseline, then nothing)
+        changed; changed
+        [ "$CODE" -eq 0 ] && ! grep -q '^retry' <<<"$LINES" && [ "$(jqr '.parked | length')" = 2 ] && ok || bad "no free worker: parked, no retry line ($LINES $(jqr .parked))"
+        # (3) wF:p1 settles: one retry line for the item, naming both parked sends and the free worker (the interactive
+        #     Coordinator works throughout; with interactiveQuietSeconds 0, the default, it does not defer anything)
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq += 1'
+        changed
+        [ "$CODE" -eq 0 ] && [ "$(grep -c '^retry' <<<"$LINES")" = 1 ] && grep -q "^retry sammasak/nixos-config#42 2 send(s) refused agent_busy ($D1→$H/wF:p1, $D2→$H/wT:p1); free worker(s): $H/wF:p1$" <<<"$LINES" && ok || bad "a free worker: one retry line per item ($LINES)"
+        changed; [ -z "$(grep '^retry' <<<"$LINES")" ] && [ "$(jqr '.parked | length')" = 2 ] && ok || bad "reported once: silent after, still parked ($LINES)"
+        # (4) the later tick's session sends: wF:p1 is idle now, the parked draft goes through; the item is resolved for both drafts
+        FAKE_HERDR_STATE=idle send "$D1" wF:p1
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "the parked draft is sent on a later tick ($CODE $OUT)"
+        changed; [ "$(jqr '.parked | length')" = 0 ] && ! grep -q '^retry' <<<"$LINES" && [ "$(jq -r '.retried | length' "$STATE/changed/snapshot.json")" = 0 ] && ok || bad "a delivered send for the item resolves both parked drafts ($LINES $(jqr .parked))"
+        # (5) a new refusal is a new park: reported once a worker is free again
+        D3=$(draft wT:p1 "#43" "the next item"); FAKE_HERDR_STATE=working send "$D3" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/43","label":"approved"}'
+        changed; [ "$(grep -c '^retry' <<<"$LINES")" = 1 ] && grep -q "^retry sammasak/nixos-config#43 1 send(s) refused agent_busy ($D3→$H/wT:p1)" <<<"$LINES" && ok || bad "a later refusal is reported once ($LINES)"
+
+        # (5b) the double dispatch (review of #66): #45 was delivered to wF:p1 first; the wake then drafts #45 for wT:p1 and is
+        #      refused busy: parked, but resolved by the earlier delivery, so no retry line asks for a second assignment;
+        #      a resend of the delivered handoff to its busy target is refused, not parked
+        D5=$(draft wF:p1 "#45" "first owner"); FAKE_HERDR_STATE=idle send "$D5" wF:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/45","label":"approved"}'
+        sleep 1   # the refusal strictly after the delivery (the audit's times have one-second resolution)
+        D6=$(draft wT:p1 "#45" "second try"); FAKE_HERDR_STATE=working send "$D6" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/45","label":"approved"}'
+        FAKE_HERDR_STATE=working task herdr:message "{\"handoff_id\":\"$D5\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/nixos-config/issues/45\",\"label\":\"approved\"}}"
+        [ "$(jqr .error.kind)" = agent_busy ] && [ "$(jq -s --arg i "$D5" '[.[] | select(.phase == "parked" and .handoff_id == $i)] | length' "$A")" = 0 ] && ok || bad "a resend of a delivered handoff to a busy target is not parked ($(jqr .error))"
+        changed; ! grep -q '#45' <<<"$LINES" && [ "$(jqr '[.parked[] | select(.task_ref == "#45")] | length')" = 0 ] && ok || bad "an item delivered before the busy refusal is resolved: no retry line, not parked ($LINES $(jqr .parked))"
+        # (5c) a follow-up after the earlier delivery settled (re-review of #66): #46 delivered to wF:p1, which works and settles
+        #      (its handoff is closed); a new draft for #46 refused busy is a real lost send: the retry line comes
+        D7=$(draft wF:p1 "#46" "first round"); FAKE_HERDR_STATE=idle send "$D7" wF:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/46","label":"approved"}'
+        changed; set_agent wF:p1 '.agent_status = "working" | .state_change_seq += 1'; changed
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq += 1'; changed
+        grep -q "^settled $H/wF:p1 #46 handoff $D7" <<<"$LINES" && ok || bad "the first round settles ($LINES)"
+        sleep 1
+        D8=$(draft wT:p1 "#46" "fix-up round"); FAKE_HERDR_STATE=working send "$D8" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/46","label":"approved"}'
+        changed; grep -q "^retry sammasak/nixos-config#46 1 send(s) refused agent_busy ($D8→$H/wT:p1)" <<<"$LINES" && ok || bad "a follow-up refused busy after the first round settled gets its retry line ($LINES $(jqr .parked))"
+        # a corrupt interactive.json falls back to 0, never aborts the run
+        printf '{"last_working_epoch":"x; rm"}\n' > "$STATE/changed/interactive.json"; QUIET=600; changed; QUIET=0
+        [ "$CODE" -eq 0 ] && ok || bad "a non-numeric interactive.json does not abort coord:changed ($CODE)"; rm -f "$STATE/changed/interactive.json"
+
+        # (6) the race: an interactive Coordinator working defers the wake (interactiveQuietSeconds), the line waits under
+        #     wake.pending; idle again, the quiet period still holds; after it, the line comes out once
+        STATE="$TMP/state2"; QUIET=600; mkdir -p "$STATE"; grep -v '"#43"' "$A" > "$STATE/audit.jsonl"
+        D4=$(draft wT:p1 "#44" "raced"); FAKE_HERDR_STATE=working send "$D4" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/44","label":"approved"}'
+        changed
+        [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true interactive_coordinator" ] && [ "$(jqr '[.wake.pending[].kind] | index("retry") != null')" = true ] && grep -q 'wake deferred (interactive_coordinator)' "$TMP/run.log" && ok || bad "a working Coordinator pane defers the wake ($LINES $(jqr .wake))"
+        set_agent wM:p1 '.agent_status = "idle" | .state_change_seq += 1'
+        changed; [ -z "$LINES" ] && [ "$(jqr '.wake.reason')" = interactive_coordinator ] && ok || bad "idle, but within the quiet period: still deferred ($LINES $(jqr .wake))"
+        printf '{"last_working_epoch":%s}\n' "$(( $(date +%s) - 601 ))" > "$STATE/changed/interactive.json"
+        changed; grep -q "^retry sammasak/nixos-config#44 1 send(s) refused agent_busy ($D4→$H/wT:p1)" <<<"$LINES" && [ "$(jqr '.wake.deferred')" = false ] && ok || bad "after the quiet period the held line comes out ($LINES $(jqr .wake))"
+        # a plain read is never deferred, never spends anything and never moves the quiet clock (review of #66)
+        set_agent wM:p1 '.agent_status = "working" | .state_change_seq += 1'
+        rm -f "$STATE/changed/interactive.json"
+        task coord:changed '{}'; [ "$CODE" -eq 0 ] && [ "$(jqr '.wake.deferred')" = false ] && [ ! -e "$STATE/changed/interactive.json" ] && ok || bad "a plain read is not deferred and writes no interactive.json ($(jqr .wake) $(ls "$STATE/changed"))"
+        changed; [ -e "$STATE/changed/interactive.json" ] && ok || bad "the consuming run records the working Coordinator pane"
+        summary
+      '';
+    };
+
     "skills:test:tasks:coord-idle" = {
-      description = "coord:changed F1: an idle fleet (every worker idle/done, every host answering; the Coordinator's own panes are not workers) with work left (open PR without an independent 9/10 on its head, approved issue without a handoff, unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
+      description = "coord:changed F1: an idle fleet (every worker idle/done, every host answering; the Coordinator's own panes are not workers) with work left (open PR without an independent 9/10 on its head, approved issue without an open handoff (none, or its agent settled with no open PR), unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -623,7 +778,7 @@
         BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000'
         run() { # [--plain] -> CODE, LINES (printed change lines), OUT (latest.json or, for --plain, the task record)
           local in=(--input-json '{"consume":true}'); [ "''${1:-}" = --plain ] && { in=(); shift; }
-          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run coord:changed --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "''${STATE:-$TMP/state}" --option coordinator.timeoutSeconds:int 2 $BUDGET "''${in[@]}" --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot|idle) ' "$TMP/run.log" | sed -E 's/^\s+//')
           OUT=$(grep -E '^\s*\{' "$TMP/run.log" | sed -E 's/^\s+//' | jq -c 'select(type == "object") | (.["coord:changed"] // select(.task == "coord:changed")) // empty' 2>/dev/null | tail -1); [ -n "$OUT" ] || OUT='{}'
@@ -660,7 +815,7 @@
             pr sammasak/skills 64 OPEN "$H64" "$T2" null "fix #31 thing" '[]' "[\"9/10 at \`6464646\` -- $H wF:p1\"]"
             cat; } | write sammasak__skills.prs.json; }
         skills_prs < /dev/null
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '["approved"]'; } | write sammasak__skills.issues.json
         pr sammasak/nixos-config 119 OPEN "$H119" "$T2" null "coordinator-read" '[]' '["9/10 at `0ddba11` (an older head) -- acer-swift wR:p1"]' | write sammasak__nixos-config.prs.json
         : | write sammasak__nixos-config.issues.json
         mkdir -p "$TMP/state"; AUDIT="$TMP/state/audit.jsonl"
@@ -669,7 +824,7 @@
             "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$4\",\"outcome\":\"delivered\"}" >> "$AUDIT"; }
         handoff h00000000001 wT:p1 "#30" "$T0" 30   # verified by the merged #62 (closes #30, opened after the send)
         handoff h00000000002 wF:p1 "#31" "$T0" 31   # #64 names it but is open: unverified
-        WORK1='3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64), 2 approved issue(s) without a handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
+        WORK1='3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64), 2 approved issue(s) without an open handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
 
         # (0) no worker known (an empty audit log, nothing configured): idle agents are not an idle fleet, no GitHub list is fetched
         STATE="$TMP/state0" run
@@ -721,16 +876,16 @@
         jq --arg b "$H119" '(.[] | select(.number == 119) | .comments) = [{body:("9/10 at `" + $b[0:7] + "` -- acer-swift wR:p1"), url:"u"}]' "$GH/sammasak__nixos-config.prs.json" > "$GH/t.json" && mv "$GH/t.json" "$GH/sammasak__nixos-config.prs.json"
         pr sammasak/skills 66 MERGED 6666666666666666666666666666666666666666 "$T2" "$T3" "closes #31" '[31]' '[]' >> "$GH/extra.jsonl"
         jq -s '(.[0] + .[1:]) | unique_by(.number)' "$GH/sammasak__skills.prs.json" "$GH/extra.jsonl" > "$GH/t.json" && mv "$GH/t.json" "$GH/sammasak__skills.prs.json"
-        { issue sammasak/skills 28 '[]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '[]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '[]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 31 '[]'; issue sammasak/skills 33 '[]'; } | write sammasak__skills.issues.json
         run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true true false" ] && [ "$(iw '[.work[] | length] | add')" = 0 ] && ok || bad "idle fleet, no work left: no wake ($LINES $(iw .))"
         # (8) gh failures never wake and never guess: the list calls failing, then gh:repos itself; the condition is skipped and
         #     said so in latest.json, the fingerprint stays, and the wake comes once gh answers again
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; } | write sammasak__skills.issues.json
         FPX=$(fp)
         FAKE_GH_LIST_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'gh pr list' && [ "$(fp)" = "$FPX" ] && ok || bad "gh list failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.evaluated) \(.fired)"')" = "false false" ] && iw .skipped | grep -q 'gh:repos' && ok || bad "gh:repos failure: skipped, logged, no wake ($LINES $(iw .))"
         FAKE_GH_SEARCH_EXIT=1 run; [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired)"')" = "true false false" ] && iw .skipped | grep -q 'issue search failed (gh_error' && [ "$(fp)" = "$FPX" ] && ok || bad "issue search failure: the page alone cannot say no work is left; skipped, logged, no wake ($LINES $(iw .))"
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 1 approved issue(s) without a handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 1 approved issue(s) without an open handoff (sammasak/skills#28)$' <<<"$LINES" && ok || bad "gh back: the wake fires once ($LINES)"
         FP8=$(fp)
         # (9) a blocked worker is not idle: its own line, no idle line; back to idle with the same work: silent
         set_agent wF:p1 '.agent_status = "blocked" | .state_change_seq += 1'
@@ -751,7 +906,7 @@
         run; [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents)"')" = "false 0" ] && ok || bad "no agents: not idle ($LINES $(iw .))"
         cp "$TMP/local-full.json" "$LOCAL"; run
         # (12) the plain read shows the line without storing the fingerprint; the timer's form then fires it
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 34 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 34 '["approved"]'; } | write sammasak__skills.issues.json
         run --plain; [ "$CODE" -eq 0 ] && [ "$(nlines)" = 1 ] && grep -q 'sammasak/skills#34' <<<"$LINES" && [ "$(fp)" = "$FP8" ] && ok || bad "plain read reports, stores nothing ($LINES fp=$(fp))"
         run; [ "$(nlines)" = 1 ] && grep -q 'sammasak/skills#34' <<<"$LINES" && [ "$(fp)" != "$FP8" ] && ok || bad "the consuming run fires it ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "then silence ($LINES)"
@@ -779,11 +934,11 @@
           printf '%s\n' "{\"audit_id\":\"xh5\",\"handoff_id\":\"h00000000005\",\"task_ref\":\"#28\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"wZ:p1\",\"at\":\"$T3\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"approved\"}}" \
             "{\"audit_id\":\"xh5\",\"handoff_id\":\"h00000000005\",\"phase\":\"outcome\",\"at\":\"$T3\",\"outcome\":\"delivered\"}" >> "$STATE/audit.jsonl"; }
         BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000'
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; } | write sammasak__skills.issues.json
         coord_state state-coord-bug; run
         [ "$CODE" -eq 0 ] && [ -z "$(idle_line)" ] && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers)"')" = "false 3 0" ] && ok || bad "(the bug, no config) a Coordinator pane that was a handoff target counts as a busy worker: no wake ($LINES $(iw .))"
         coord_state state-coord-cfg; run --option coordinator.panes:string "$H/wZ:p1"
-        [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: ' <<<"$LINES" && grep -q 'approved issue(s) without a handoff (sammasak/skills#28' <<<"$LINES" && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers) \(.fired)"')" = "true 2 1 true" ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "coordinator.panes: the Coordinator pane is not a worker, its handoff is not a handoff, three idle workers with work left wake ($LINES $(iw .))"
+        [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: ' <<<"$LINES" && grep -q 'approved issue(s) without an open handoff (sammasak/skills#28' <<<"$LINES" && [ "$(iw '"\(.fleet_idle) \(.agents) \(.non_workers) \(.fired)"')" = "true 2 1 true" ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "coordinator.panes: the Coordinator pane is not a worker, its handoff is not a handoff, three idle workers with work left wake ($LINES $(iw .))"
         coord_state state-coord-from
         printf '%s\n' "{\"audit_id\":\"xh6\",\"handoff_id\":\"h00000000006\",\"task_ref\":\"#30\",\"phase\":\"attempt\",\"host\":\"$H\",\"machine\":null,\"agent_id\":\"wT:p1\",\"from\":\"$H/wZ:p1\",\"at\":\"$T3\"}" "{\"audit_id\":\"xh6\",\"handoff_id\":\"h00000000006\",\"phase\":\"outcome\",\"at\":\"$T3\",\"outcome\":\"delivered\"}" >> "$STATE/audit.jsonl"
         run; [ "$CODE" -eq 0 ] && grep -q '^idle 2 worker(s) idle/done' <<<"$LINES" && [ "$(iw .non_workers)" = 1 ] && [ "$(jq -r --arg p "$H/wZ:p1" '.coordinator_panes | index($p) != null' <<<"$OUT")" = true ] && ok || bad "a pane that sent a handoff (audit from) is a Coordinator pane without config ($LINES $(iw .))"
@@ -796,11 +951,22 @@
         run; [ "$(nlines)" = 1 ] && grep -q '^idle ' <<<"$LINES" && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 1 ] && ok || bad "cap: baseline idle wake ($LINES)"
         jq '.result.agents += [(.result.agents[0] | .pane_id = "wQ:p1" | .agent_session.value = "qqqq" | .agent_status = "idle" | .state_change_seq = 1 | .terminal_title_stripped = "q")]' "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"
         run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true per_hour_cap" ] && grep -q "coord:changed: wake deferred (per_hour_cap) until $(jqr .wake.next_allowed_at); 1 change(s) pending" "$TMP/run.log" && ok || bad "cap: a deferred new-agent line says so on stderr with the reason and next_allowed_at ($LINES $(jqr .wake) $(grep deferred "$TMP/run.log"))"
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 35 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 35 '["approved"]'; } | write sammasak__skills.issues.json
         run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true per_hour_cap" ] && [ "$(jqr '[.wake.pending[].kind] | join(",")')" = "new,idle" ] && grep -q 'coord:changed: wake deferred (per_hour_cap) until' "$TMP/run.log" && ok || bad "cap: an idle-with-work wake held by the hourly cap is not silent: the notice names the reason, the idle line waits under wake.pending ($LINES $(jqr .wake))"
         BUDGET='--option coordinator.wakeMinGapSeconds:int 300 --option coordinator.wakeMaxPerHour:int 1'
-        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '["approved"]'; issue sammasak/skills 35 '["approved"]'; issue sammasak/skills 36 '["approved"]'; } | write sammasak__skills.issues.json
+        { issue sammasak/skills 28 '["approved"]'; issue sammasak/skills 30 '[]'; issue sammasak/skills 35 '["approved"]'; issue sammasak/skills 36 '["approved"]'; } | write sammasak__skills.issues.json
         run; [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true min_gap" ] && grep -q 'coord:changed: wake deferred (min_gap) until' "$TMP/run.log" && ok || bad "cap: the min gap still holds an idle-fired wake, and says so ($LINES $(jqr .wake))"
+        # (17) a past handoff does not hold an approved item (skills#28, 06:19Z: nixos-config#109, devenv-platform#92 and skills#28
+        #      were skipped as "already handed off" behind stale handoffs): #40's handoff went to wF:p1, which settled with no
+        #      PR, so #40 is work again; once a PR names #40 and is open, the handoff is open and holds the item
+        export STATE="$TMP/state-reassign"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$TMP/local-full.json" "$LOCAL"
+        AUDIT0=$AUDIT; AUDIT="$STATE/audit.jsonl"; handoff h00000000040 wF:p1 "#40" "$T2" 40; AUDIT=$AUDIT0
+        { issue sammasak/skills 40 '["approved"]'; } | write sammasak__skills.issues.json
+        skills_prs < /dev/null
+        run; grep -q 'approved issue(s) without an open handoff (sammasak/skills#40)' <<<"$LINES" && [ "$(iw '.work.approved_issues | join(",")')" = sammasak/skills#40 ] && ok || bad "a settled handoff with no PR leaves the approved item re-assignable ($LINES $(iw .work))"
+        pr sammasak/skills 80 OPEN 8080808080808080808080808080808080808080 "$T3" null "fix #40" '[]' '[]' | skills_prs
+        run; [ "$(iw '.work.approved_issues | length')" = 0 ] && [ "$(iw '.work.open_prs | index("sammasak/skills#80") != null')" = true ] && ok || bad "an open PR naming the item keeps its handoff open: not re-assignable, the PR is the work ($LINES $(iw .work))"
+        skills_prs < /dev/null
         unset STATE
         # (14) read-only and model-free: list calls only, no prompt, no gh write
         ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|search issues --owner [^ ]+ --label [^ ]+ --state open |pr list -R [^ ]+ --state (open|merged)|issue list -R [^ ]+ --state open)')" = 0 ] && ok || bad "only reads ($(grep '^gh ' "$FAKE_LOG" | grep -vE '^gh (api graphql|pr list|issue list)' | sort -u | head -3))"
@@ -824,7 +990,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -914,7 +1080,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }
@@ -939,7 +1105,8 @@
         [ "$(jq -r '.handoffs[0].authorized_by.issue_url' "$B")" = "https://github.com/sammasak/skills/issues/28" ] && [ "$(jq -r .audit_path "$B")" = "$A" ] && ok || bad "authorizing issue and audit path in the brief"
         # the same facts are in the audit log by itself (attempt + outcome lines share the audit id)
         [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "attempt") | .handoff_id' "$A")" = "$HID" ] && [ "$(jq -r --arg a "$AID" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$A")" = delivered ] && ok || bad "audit log alone names handoff and outcome"
-        grep -q '## Handoffs (from the audit log)' "$TMP/run.log" && grep -q "$HID → $H/wF:p1 #28" "$TMP/run.log" && ok || bad "Markdown brief shows the handoff ($(grep -A3 "## Handoffs" "$TMP/run.log"))"
+        # (the listed pane runs another session than the send's, so the rebuilt handoff is closed as stale and named on that line)
+        grep -q '## Handoffs (from the audit log): 1 total, 0 verified, 0 open, 0 unknown, 1 closed' "$TMP/run.log" && grep -q "sammasak/skills#28 ($HID stale)" "$TMP/run.log" && ok || bad "Markdown brief shows the handoff ($(grep -A3 "## Handoffs" "$TMP/run.log"))"
         # follow-up needs only the audit id: await works without the draft or any session memory
         export FAKE_HERDR_STATE_SEQ="working,idle"; rm -f "$FAKE_LOG.seq"
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"
@@ -978,7 +1145,7 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         run() { # <task> [args]
           local task="$1"; shift
-          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
             --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
           OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         }

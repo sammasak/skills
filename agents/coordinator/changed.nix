@@ -23,6 +23,14 @@ in
     default = 6;
     description = "Maximum printing (wake) runs of coord:changed in any sliding hour.";
   };
+  # The interactive Coordinator and the timer race (skills#28, 06:19Z): a wake session started while the owner's session
+  # was dispatching, and both drafted for the same workers. While a Coordinator pane works, or worked within this many
+  # seconds, a printing run is deferred like the budget defers it (reason interactive_coordinator). 0 turns it off.
+  options.coordinator.interactiveQuietSeconds = lib.mkOption {
+    type = lib.types.ints.unsigned;
+    default = 0;
+    description = "Defer a printing (wake) run of coord:changed while a Coordinator pane is working or worked within this many seconds; 0 disables it.";
+  };
   options.coordinator.openHandoffDays = lib.mkOption {
     type = lib.types.ints.positive;
     default = 7;
@@ -90,14 +98,20 @@ in
       # (a mistake this check now refuses) is not an open handoff: it must not keep the fleet busy or count as work (skills#28)
       coordinator_panes "$audit" > "$tmpd/panes.json"
       jq -c --slurpfile P "$tmpd/panes.json" 'with_entries(select((.value.host + "/" + .value.agent_id) as $p | ($P[0] | index($p)) == null))' "$tmpd/open.json" > "$tmpd/open.tmp" && mv "$tmpd/open.tmp" "$tmpd/open.json"
-      # workers: every pane a handoff was attempted to (any age, any outcome) plus coordinator.workers, minus the Coordinator's
+      # workers: every pane a handoff was attempted or parked to (any age, any outcome) plus coordinator.workers, minus the Coordinator's
       # panes; the inventory decides which of them exist right now
       printf '%s\n' ${lib.escapeShellArg (builtins.toJSON cfg.workers)} > "$tmpd/workers.json"
       if [ -s "$audit" ]; then
-        jq -sc --slurpfile W "$tmpd/workers.json" '[.[] | select(type == "object" and .phase == "attempt" and (.host | type) == "string" and (.agent_id | type) == "string") | .host + "/" + .agent_id] + $W[0] | unique' "$audit" > "$tmpd/workers.tmp" 2>/dev/null \
+        jq -sc --slurpfile W "$tmpd/workers.json" '[.[] | select(type == "object" and (.phase == "attempt" or .phase == "parked") and (.host | type) == "string" and (.agent_id | type) == "string") | .host + "/" + .agent_id] + $W[0] | unique' "$audit" > "$tmpd/workers.tmp" 2>/dev/null \
           && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
       fi
       jq -c --slurpfile P "$tmpd/panes.json" '. - $P[0]' "$tmpd/workers.json" > "$tmpd/workers.tmp" && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
+      jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "idle" or .observed_state == "done")
+          | $h + "/" + .agent_id | select(. as $i | $W[0] | index($i))] | sort' "$tmpd/inv.json" > "$tmpd/free.json"
+      coord_working=$(jq -r --slurpfile P "$tmpd/panes.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "working")
+          | $h + "/" + .agent_id | select(. as $i | $P[0] | index($i))] | length > 0' "$tmpd/inv.json")
+      # the quiet clock moves only on the timer's consuming run: a plain read observes, it never writes state
+      [ "$coord_working" != true ] || [ "$consume" != true ] || printf '{"last_working_epoch":%s}\n' "$(now_epoch)" > "$dir/interactive.json"
 
       # the previous snapshot: absent means baseline; unreadable means the baseline is rebuilt and the owner is told
       baseline=false; reset=false; printf '{}\n' > "$tmpd/prev.json"
@@ -106,6 +120,24 @@ in
           printf '{}\n' > "$tmpd/prev.json"; baseline=true; reset=true
         fi
       else baseline=true; fi
+      # parked sends (herdr:message refused agent_busy, skills#28 06:19Z): still parked while no attempt of that handoff followed
+      # the refusal, no handoff for the same item was delivered after it, and no earlier delivered one for the item is still
+      # open (open_handoffs minus the closed ones: a worker busy on the very item must not buy a second assignment, a
+      # settled one leaves a follow-up to retry); not older than openHandoffDays
+      printf '[]\n' > "$tmpd/parked.json"
+      if [ "$audit_state" = ok ]; then
+        jq -sc --argjson cut "$(( $(now_epoch) - ${toString cfg.openHandoffDays} * 86400 ))" --slurpfile O "$tmpd/open.json" --slurpfile P "$tmpd/prev.json" '
+            def repo: ((.authorized_by.issue_url // "") | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first) // null;
+            map(select(type == "object")) as $all | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $byid
+            | [$all[] | select(.phase == "attempt") | . + {repo:repo, delivered:(($byid[.audit_id | tostring].outcome // "") == "delivered")}] as $att
+            | [$all[] | select(.phase == "parked" and (.handoff_id | type) == "string" and (.host | type) == "string" and (.agent_id | type) == "string" and (.at | type) == "string")
+               | select((.at | try fromdateiso8601 catch 0) >= $cut) | . + {repo:repo} | . as $k
+               | ([$O[0] | keys[]] - [($P[0].closed_handoffs // {}) | keys[]]) as $live
+               | select(any($att[]; (.handoff_id == $k.handoff_id and .at >= $k.at)
+                                       or (.delivered and .repo == $k.repo and .task_ref == $k.task_ref
+                                           and (.at >= $k.at or (.handoff_id as $i | $live | index($i)) != null))) | not)
+               | {audit_id, handoff_id, host, agent_id, task_ref, repo, at}]' "$audit" > "$tmpd/parked.json" 2>/dev/null || printf '[]\n' > "$tmpd/parked.json"
+      fi
 
       # the current snapshot: hosts keyed by machine label (this host under its own name), agents of an unreachable host and
       # repos without a source carried forward from the previous snapshot, so an outage hides nothing
@@ -156,8 +188,9 @@ in
         --slurpfile inv "$tmpd/inv.json" --slurpfile work "$tmpd/work.json" --slurpfile open "$tmpd/open.json" --slurpfile prev "$tmpd/prev.json" --slurpfile workers "$tmpd/workers.json" \
         -f ${./.}/idle.jq > "$tmpd/idle.json" || fail 2 malformed "idle-fleet check failed" "$ctx"
 
-      jq -c --argjson baseline "$baseline" --argjson reset "$reset" --arg snap "$snap" --arg audit "$audit" --slurpfile P "$tmpd/prev.json" --slurpfile W "$tmpd/idle.json" '
-        $P[0] as $p | $W[0] as $w | . as $c
+      jq -c --argjson baseline "$baseline" --argjson reset "$reset" --arg snap "$snap" --arg audit "$audit" --slurpfile P "$tmpd/prev.json" --slurpfile W "$tmpd/idle.json" \
+        --slurpfile K "$tmpd/parked.json" --slurpfile F "$tmpd/free.json" '
+        $P[0] as $p | $W[0] as $w | . as $c | $K[0] as $parked | $F[0] as $free
         | def safe: tostring | gsub("[^A-Za-z0-9_:.@/#-]"; "?") | .[0:80];
           def ref(a): ((a.task_ref // "-") | safe);
           def n(x): (x | safe);
@@ -200,22 +233,32 @@ in
                  else empty end)
            else empty end),
           (if ($c.audit_ok | not) and ($p.audit_ok != false) then {kind:"audit", line:("audit " + $audit + " unreadable (not JSON lines); herdr:message refuses to send until the owner inspects it")} else empty end),
+          # one retry line per item whose busy-refused sends are not reported yet, once a worker is free to take it
+          (if ($free | length) > 0 then
+             ($parked | map(select(.audit_id as $id | ($p.retried // {}) | has($id) | not)) | group_by([.repo, .task_ref])[]
+               | {kind:"retry", repo:.[0].repo, task_ref:.[0].task_ref, audit_ids:map(.audit_id),
+                  line:("retry " + n(.[0].repo // "no-repo") + ref(.[0]) + " " + n(length) + " send(s) refused agent_busy ("
+                    + (map(n(.handoff_id) + "→" + n(.host) + "/" + n(.agent_id)) | join(", ")) + "); free worker(s): " + refs3($free))})
+           else empty end),
           (if $w.fired then {kind:"idle", line:("idle " + n($w.agents) + " worker(s) idle/done on " + n($w.hosts) + " host(s); work left: "
              + ([(if ($w.work.open_prs | length) > 0 then n($w.work.open_prs | length) + " open PR(s) without a 9/10 review (" + refs3($w.work.open_prs) + ")" else empty end),
-                 (if ($w.work.approved_issues | length) > 0 then n($w.work.approved_issues | length) + " approved issue(s) without a handoff (" + refs3($w.work.approved_issues) + ")" else empty end),
+                 (if ($w.work.approved_issues | length) > 0 then n($w.work.approved_issues | length) + " approved issue(s) without an open handoff (" + refs3($w.work.approved_issues) + ")" else empty end),
                  (if ($w.work.unverified_handoffs | length) > 0 then n($w.work.unverified_handoffs | length) + " unverified handoff(s) (" + refs3($w.work.unverified_handoffs) + ")" else empty end)] | join(", ")))}
            else empty end)
         ]' "$tmpd/cur.json" > "$tmpd/changes.json" || fail 2 malformed "snapshot diff failed" "$ctx"
 
       # a reported handoff is closed from now on; a fired idle line is not repeated until the fleet or the work changes
-      jq -c --arg at "$at" --slurpfile C "$tmpd/changes.json" --slurpfile W "$tmpd/idle.json" '
+      jq -c --arg at "$at" --slurpfile C "$tmpd/changes.json" --slurpfile W "$tmpd/idle.json" --slurpfile P "$tmpd/prev.json" --slurpfile K "$tmpd/parked.json" '
         .closed_handoffs += ([$C[0][] | select(.kind == "settled" or .kind == "gone" or .kind == "replaced") | {key:.handoff_id, value:{kind, at:$at}}] | from_entries)
+        # a reported parked send stays reported while it is still parked; a resolved one drops out
+        | .retried = ((($P[0].retried // {}) + ([$C[0][] | select(.kind == "retry") | .audit_ids[] | {key:., value:$at}] | from_entries))
+                      | with_entries(select(.key as $k | any($K[0][]; .audit_id == $k))))
         | if $W[0].fired then .idle_wake = {fingerprint:$W[0].fingerprint, at:$at} else . end' "$tmpd/cur.json" > "$tmpd/next.json" || fail 2 malformed "snapshot update failed" "$ctx"
       jq -cn --arg at "$at" --argjson b "$baseline" --argjson r "$reset" --argjson ck "$consume" --arg rs "$repos_src" --arg as "$audit_state" --arg s "$snap" \
-         --slurpfile C "$tmpd/changes.json" --slurpfile I "$tmpd/inv.json" --slurpfile N "$tmpd/next.json" --slurpfile W "$tmpd/idle.json" --slurpfile P "$tmpd/panes.json" '
+         --slurpfile C "$tmpd/changes.json" --slurpfile I "$tmpd/inv.json" --slurpfile N "$tmpd/next.json" --slurpfile W "$tmpd/idle.json" --slurpfile P "$tmpd/panes.json" --slurpfile K "$tmpd/parked.json" '
         {schema_version:1, task:"coord:changed", observed_at:$at, baseline:$b, snapshot_reset:$r, consume:$ck, snapshot:$s, coordinator_panes:$P[0],
          sources:{herdr:{answered_hosts:($I[0].answered_hosts // 0), hosts_total:($I[0].hosts_total // 0)}, repos:$rs, audit:$as},
-         open_handoffs:(($N[0].open_handoffs | length) - ($N[0].closed_handoffs | length)), idle_wake:$W[0], changes:$C[0]}' > "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
+         open_handoffs:(($N[0].open_handoffs | length) - ($N[0].closed_handoffs | length)), parked:$K[0], idle_wake:$W[0], changes:$C[0]}' > "$tmpd/rec.json" || fail 2 malformed "record build failed" "$ctx"
       # the wake budget (wakes.json: epoch seconds of past printing runs, pruned to the window): a printing run within the
       # min gap of the last one, or beyond the hourly cap, is deferred: nothing printed, snapshot untouched, so its changes
       # stay pending and surface together on the first allowed run. A non-consuming read never spends or checks the budget.
@@ -225,7 +268,11 @@ in
       nchanges=$(jq 'length' "$tmpd/changes.json"); deferred=false; reason=null; next_at=null
       if [ "$consume" = true ] && [ "$nchanges" -gt 0 ]; then
         last=$(jq -r 'max // 0' <<<"$recent"); hour=$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")
-        if [ "$gap" -gt 0 ] && [ $((now - last)) -lt "$gap" ]; then deferred=true; reason='"min_gap"'; next_at=$((last + gap))
+        quiet=${toString cfg.interactiveQuietSeconds}; iw_last=$(jq -r '.last_working_epoch // 0' "$dir/interactive.json" 2>/dev/null) || iw_last=0; [[ "$iw_last" =~ ^[0-9]+$ ]] || iw_last=0
+        if [ "$quiet" -gt 0 ] && { [ "$coord_working" = true ] || [ $((now - iw_last)) -lt "$quiet" ]; }; then
+          base=$iw_last; [ "$coord_working" != true ] || base=$now
+          deferred=true; reason='"interactive_coordinator"'; next_at=$((base + quiet))
+        elif [ "$gap" -gt 0 ] && [ $((now - last)) -lt "$gap" ]; then deferred=true; reason='"min_gap"'; next_at=$((last + gap))
         elif [ "$hour" -ge "$cap" ]; then deferred=true; reason='"per_hour_cap"'; next_at=$(( $(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | min' <<<"$recent") + 3600 )); fi
       fi
       wake=$(jq -cn --argjson d "$deferred" --argjson r "$reason" --argjson n "$next_at" --argjson h "$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")" --argjson g "$gap" --argjson c "$cap" \
