@@ -123,7 +123,12 @@ in
         [ "$rc" -eq 0 ] || fail 2 "''${code:-$(rc_kind $rc)}" "herdr agent get failed for $host/$agent: ''${code:-$(rc_kind $rc)} (exit $rc)" "$ctx"
         state=$(jq -r '.result.agent.agent_status // empty' <<<"$st" 2>/dev/null || true); seq=$(jq -r '.result.agent.state_change_seq // empty' <<<"$st" 2>/dev/null || true); session=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
         case "$state" in idle|done) ;; blocked) fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx" ;;
-          working) fail 2 agent_busy "agent $host/$agent is mid-turn; a queued prompt would blur which turn answered it. Check herdr:inventory until it is idle, then send" "$ctx" ;;
+          # parked, not dropped (skills#28: the 06:19Z wake lost two drafts this way): a parked line in the audit log keeps the
+          # authorized send, and coord:changed prints a retry line once a worker is free; nothing else reads phase parked
+          working) jq -cn --arg a "$(printf '%s|%s|park' "$id" "$(now_iso)" | sha256sum | cut -c1-12)" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$(now_iso)" --argjson auth "$auth" \
+              '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"parked", reason:"agent_busy", host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, at:$at, authorized_by:$auth}' >> "$audit" \
+              || fail 2 audit_failed "agent $host/$agent is mid-turn, and the parked line could not be written" "$ctx"
+            fail 2 agent_busy "agent $host/$agent is mid-turn; a queued prompt would blur which turn answered it. Parked in the audit log: hand the item to another free worker now, or coord:changed prints a retry line once one is free" "$ctx" ;;
           *) fail 2 agent_state_unknown "herdr agent get returned no usable state for $host/$agent; not sending" "$ctx" ;; esac
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then

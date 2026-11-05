@@ -72,9 +72,11 @@ issue.
    (reading, committing, opening a PR and `comment` for ordinary work; `merge`,
    `close`, `deploy:<host>` only when the owner's label or comment says so).
    Send with `herdr:message` and `authorized_by = {issue_url, label}`. A
-   refusal (`authorization_missing`, `duplicate`, `agent_busy`, ...) ends that
-   item for this tick, not the tick; report the `error.kind` verbatim and go to
-   the next item.
+   refusal (`authorization_missing`, `duplicate`, ...) ends that item for this
+   tick, not the tick; report the `error.kind` verbatim and go to the next item.
+   `agent_busy` is parked, not lost: the audit log keeps the refused send, so
+   first draft the item for another free worker; with none free, move on, and
+   `coord:changed` prints a `retry` line once a worker is free.
 4. **Follow up** every P2 item once: `herdr:await` by `audit_id` with a finite
    timeout, then `work:status`. `unknown_delivery` or
    `agent_prompt_stalled`: `herdr:inspect`, report, never resend.
