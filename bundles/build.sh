@@ -204,7 +204,7 @@ cat >"$stage/bin/bundle-run" <<'RUN'
 # bundle-run <task> [input-json]: run one task this bundle ships, after the tasks it depends on, the way devenv
 # would: DEVENV_TASK_INPUT is the task's declared `input` defaults overlaid by the caller's JSON (dependencies get
 # their defaults), DEVENV_TASK_OUTPUT_FILE, the outputs of its `after` tasks in DEVENV_TASKS_OUTPUTS; a failed
-# dependency stops the run only on an `@succeeded` edge (every other edge is `@completed`);
+# dependency stops the run unless its edge is `@completed` (a bare edge blocks, as devenv's oneshot default `@succeeded`);
 # prints the task's output record and exits with its exit code. Only shipped tasks run; nothing is fetched.
 set -uo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)

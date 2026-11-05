@@ -117,6 +117,10 @@ nixb=$(nix build --no-link --print-out-paths --impure --expr "
     role = \"quality\"; harness = \"claude-code\"; skills = [ \"rust-engineering\" \"nix-flake-development\" ]; }" 2>"$T/nix.err") || nixb=""
 expect "bundles/default.nix builds a bundle with the same skills and role digest as the script" "true" \
   "$([ -n "$nixb" ] && jq -n --slurpfile a "$B" --slurpfile b "$nixb/bundle.json" '$a[0].skills == $b[0].skills and $a[0].role == $b[0].role' || echo "false: $(tail -n 3 "$T/nix.err")")"
+expect "after modes: only @completed lets a failed dependency through; a bare edge blocks (devenv's oneshot default @succeeded)" '["bare","succ","ready","start"]' \
+  "$(nix eval --json --impure --expr "
+    let pkgs = import (builtins.getFlake \"nixpkgs\") { }; in
+    (import $ROOT/bundles { inherit pkgs; src = $ROOT; rev = \"$REV\"; }).blockingEdges [ \"bare\" \"succ@succeeded\" \"done@completed\" \"ready@ready\" \"start@started\" ]" 2>&1)"
 
 # --tasks (skills#63 item 5): the role's declared read and run tasks ship from a task directory, with what they run after
 mkdir -p "$T/tasks"
