@@ -649,6 +649,108 @@
         summary
       '';
     };
+    "skills:test:tasks:coord-retry" = {
+      description = "skills#28 06:19Z: two drafts for one item refused agent_busy are parked in the audit log, not dropped; coord:changed prints one retry line once a worker is free (once per refusal), a later delivered send for the item resolves both; a working interactive Coordinator pane defers the wake (interactiveQuietSeconds) and the line comes out after the quiet period";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0   # the suite runs its tasks from the Coordinator's own pane, never a target
+        devenv() { command devenv "$1" "$2" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" "''${@:3}"; }
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log" FAKE_GH_DIR="$FX/gh" FAKE_HERDR_MACHINES='[]' FAKE_HERDR_SESSION=s1 FAKE_HERDR_SEQ=5 FAKE_PROMPT_OUT="$TMP/prompt.txt"
+        export FAKE_GH_LABELS='["approved"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"approved"},"actor":{"login":"sammasak"},"created_at":"2026-11-04T09:00:00Z"}]'
+        export FAKE_GH_REPOS='[]'
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $* :: $(grep -E 'error|jq:' "$TMP/run.log" | tail -n 2 | tr '\n' ' ')"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+        H=$(hostname -s 2>/dev/null || hostname)
+        STATE="$TMP/state"; PANES="$H/wM:p1"; QUIET=0
+        opts() { echo --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" --option coordinator.stateDir:string "$STATE" \
+          --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --option coordinator.panes:string "$PANES" \
+          --option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000 --option coordinator.interactiveQuietSeconds:int "$QUIET"; }
+        task() { # <task> <input-json> -> CODE, OUT
+          devenv tasks run "$1" $(opts) --input-json "$2" --show-output > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E '^\s*\{' "$TMP/run.log" | sed -E 's/^\s+//' | jq -c --arg t "$1" 'select(type == "object") | (.[$t] // select(.task == $t)) // empty' 2>/dev/null | tail -1); [ -n "$OUT" ] || OUT='{}'; }
+        changed() { task coord:changed '{"consume":true}'; LINES=$(grep -E '^\s*(blocked|settled|gone|new|replaced|host|repo|audit|snapshot|idle|retry) ' "$TMP/run.log" | sed -E 's/^\s+//'); }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        # the fleet: wF:p1 and wT:p1 workers, wM:p1 the interactive Coordinator's pane (coordinator.panes)
+        LOCAL="$TMP/local.json"
+        jq '.result.agents += [(.result.agents[0] | .pane_id = "wM:p1" | .agent_session.value = "mmmm" | .agent_status = "working" | .terminal_title_stripped = "coordinator")]' "$FX/herdr/local-two-agents.json" > "$LOCAL"
+        export FAKE_HERDR_LIST="$LOCAL"
+        set_agent() { jq --arg p "$1" "(.result.agents[] | select(.pane_id == \$p)) |= ($2)" "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"; }
+        set_agent wF:p1 '.agent_status = "working"'; set_agent wT:p1 '.agent_status = "working"'
+        AUTH='{"issue_url":"https://github.com/sammasak/nixos-config/issues/42","label":"approved"}'
+        draft() { task coord:handoff "{\"agent_id\":\"$1\",\"task_ref\":\"$2\",\"scope\":\"$3\",\"expected_evidence\":\"a PR\",\"acceptance\":\"green\",\"allowed_actions\":[\"comment\"]}"; jqr .handoff_id; }
+        send() { task herdr:message "{\"handoff_id\":\"$1\",\"confirm\":\"$H/$2\",\"authorized_by\":''${3:-$AUTH}}"; }
+
+        # (1) the 06:19Z wake: two drafts for nixos-config#42, both refused agent_busy (the owner's session had just dispatched)
+        D1=$(draft wF:p1 "#42" "naked-pi research, part one"); D2=$(draft wT:p1 "#42" "naked-pi research, part two")
+        FAKE_HERDR_STATE=working send "$D1" wF:p1; c1=$CODE; k1=$(jqr .error.kind)
+        FAKE_HERDR_STATE=working send "$D2" wT:p1; c2=$CODE; k2=$(jqr .error.kind)
+        [ "$c1" -ne 0 ] && [ "$c2" -ne 0 ] && [ "$k1 $k2" = "agent_busy agent_busy" ] && jqr .error.message | grep -q 'another free worker' && ok || bad "both sends refused agent_busy, naming the way on ($c1 $k1 $c2 $k2 $(jqr .error.message))"
+        A="$STATE/audit.jsonl"
+        [ "$(jq -sc '[.[] | select(.phase == "parked") | "\(.handoff_id) \(.agent_id) \(.reason) \(.task_ref) \(.authorized_by.issue_url)"] | join("|")' "$A")" = "\"$D1 wF:p1 agent_busy #42 https://github.com/sammasak/nixos-config/issues/42|$D2 wT:p1 agent_busy #42 https://github.com/sammasak/nixos-config/issues/42\"" ] \
+          && [ "$(jq -s '[.[] | select(.phase == "attempt")] | length' "$A")" = 0 ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "each refusal is parked in the audit log, nothing was sent ($(cat "$A"))"
+        # (2) the wake session ends; the next ticks: no free worker, no retry line (baseline, then nothing)
+        changed; changed
+        [ "$CODE" -eq 0 ] && ! grep -q '^retry' <<<"$LINES" && [ "$(jqr '.parked | length')" = 2 ] && ok || bad "no free worker: parked, no retry line ($LINES $(jqr .parked))"
+        # (3) wF:p1 settles: one retry line for the item, naming both parked sends and the free worker (the interactive
+        #     Coordinator works throughout; with interactiveQuietSeconds 0, the default, it does not defer anything)
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq += 1'
+        changed
+        [ "$CODE" -eq 0 ] && [ "$(grep -c '^retry' <<<"$LINES")" = 1 ] && grep -q "^retry sammasak/nixos-config#42 2 send(s) refused agent_busy ($D1→$H/wF:p1, $D2→$H/wT:p1); free worker(s): $H/wF:p1$" <<<"$LINES" && ok || bad "a free worker: one retry line per item ($LINES)"
+        changed; [ -z "$(grep '^retry' <<<"$LINES")" ] && [ "$(jqr '.parked | length')" = 2 ] && ok || bad "reported once: silent after, still parked ($LINES)"
+        # (4) the later tick's session sends: wF:p1 is idle now, the parked draft goes through; the item is resolved for both drafts
+        FAKE_HERDR_STATE=idle send "$D1" wF:p1
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "the parked draft is sent on a later tick ($CODE $OUT)"
+        changed; [ "$(jqr '.parked | length')" = 0 ] && ! grep -q '^retry' <<<"$LINES" && [ "$(jq -r '.retried | length' "$STATE/changed/snapshot.json")" = 0 ] && ok || bad "a delivered send for the item resolves both parked drafts ($LINES $(jqr .parked))"
+        # (5) a new refusal is a new park: reported once a worker is free again
+        D3=$(draft wT:p1 "#43" "the next item"); FAKE_HERDR_STATE=working send "$D3" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/43","label":"approved"}'
+        changed; [ "$(grep -c '^retry' <<<"$LINES")" = 1 ] && grep -q "^retry sammasak/nixos-config#43 1 send(s) refused agent_busy ($D3→$H/wT:p1)" <<<"$LINES" && ok || bad "a later refusal is reported once ($LINES)"
+
+        # (5b) the double dispatch (review of #66): #45 was delivered to wF:p1 first; the wake then drafts #45 for wT:p1 and is
+        #      refused busy: parked, but resolved by the earlier delivery, so no retry line asks for a second assignment;
+        #      a resend of the delivered handoff to its busy target is refused, not parked
+        D5=$(draft wF:p1 "#45" "first owner"); FAKE_HERDR_STATE=idle send "$D5" wF:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/45","label":"approved"}'
+        sleep 1   # the refusal strictly after the delivery (the audit's times have one-second resolution)
+        D6=$(draft wT:p1 "#45" "second try"); FAKE_HERDR_STATE=working send "$D6" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/45","label":"approved"}'
+        FAKE_HERDR_STATE=working task herdr:message "{\"handoff_id\":\"$D5\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/nixos-config/issues/45\",\"label\":\"approved\"}}"
+        [ "$(jqr .error.kind)" = agent_busy ] && [ "$(jq -s --arg i "$D5" '[.[] | select(.phase == "parked" and .handoff_id == $i)] | length' "$A")" = 0 ] && ok || bad "a resend of a delivered handoff to a busy target is not parked ($(jqr .error))"
+        changed; ! grep -q '#45' <<<"$LINES" && [ "$(jqr '[.parked[] | select(.task_ref == "#45")] | length')" = 0 ] && ok || bad "an item delivered before the busy refusal is resolved: no retry line, not parked ($LINES $(jqr .parked))"
+        # (5c) a follow-up after the earlier delivery settled (re-review of #66): #46 delivered to wF:p1, which works and settles
+        #      (its handoff is closed); a new draft for #46 refused busy is a real lost send: the retry line comes
+        D7=$(draft wF:p1 "#46" "first round"); FAKE_HERDR_STATE=idle send "$D7" wF:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/46","label":"approved"}'
+        changed; set_agent wF:p1 '.agent_status = "working" | .state_change_seq += 1'; changed
+        set_agent wF:p1 '.agent_status = "idle" | .state_change_seq += 1'; changed
+        grep -q "^settled $H/wF:p1 #46 handoff $D7" <<<"$LINES" && ok || bad "the first round settles ($LINES)"
+        sleep 1
+        D8=$(draft wT:p1 "#46" "fix-up round"); FAKE_HERDR_STATE=working send "$D8" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/46","label":"approved"}'
+        changed; grep -q "^retry sammasak/nixos-config#46 1 send(s) refused agent_busy ($D8→$H/wT:p1)" <<<"$LINES" && ok || bad "a follow-up refused busy after the first round settled gets its retry line ($LINES $(jqr .parked))"
+        # a corrupt interactive.json falls back to 0, never aborts the run
+        printf '{"last_working_epoch":"x; rm"}\n' > "$STATE/changed/interactive.json"; QUIET=600; changed; QUIET=0
+        [ "$CODE" -eq 0 ] && ok || bad "a non-numeric interactive.json does not abort coord:changed ($CODE)"; rm -f "$STATE/changed/interactive.json"
+
+        # (6) the race: an interactive Coordinator working defers the wake (interactiveQuietSeconds), the line waits under
+        #     wake.pending; idle again, the quiet period still holds; after it, the line comes out once
+        STATE="$TMP/state2"; QUIET=600; mkdir -p "$STATE"; grep -v '"#43"' "$A" > "$STATE/audit.jsonl"
+        D4=$(draft wT:p1 "#44" "raced"); FAKE_HERDR_STATE=working send "$D4" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/44","label":"approved"}'
+        changed
+        [ "$CODE" -eq 0 ] && [ -z "$LINES" ] && [ "$(jqr '.wake | "\(.deferred) \(.reason)"')" = "true interactive_coordinator" ] && [ "$(jqr '[.wake.pending[].kind] | index("retry") != null')" = true ] && grep -q 'wake deferred (interactive_coordinator)' "$TMP/run.log" && ok || bad "a working Coordinator pane defers the wake ($LINES $(jqr .wake))"
+        set_agent wM:p1 '.agent_status = "idle" | .state_change_seq += 1'
+        changed; [ -z "$LINES" ] && [ "$(jqr '.wake.reason')" = interactive_coordinator ] && ok || bad "idle, but within the quiet period: still deferred ($LINES $(jqr .wake))"
+        printf '{"last_working_epoch":%s}\n' "$(( $(date +%s) - 601 ))" > "$STATE/changed/interactive.json"
+        changed; grep -q "^retry sammasak/nixos-config#44 1 send(s) refused agent_busy ($D4→$H/wT:p1)" <<<"$LINES" && [ "$(jqr '.wake.deferred')" = false ] && ok || bad "after the quiet period the held line comes out ($LINES $(jqr .wake))"
+        # a plain read is never deferred, never spends anything and never moves the quiet clock (review of #66)
+        set_agent wM:p1 '.agent_status = "working" | .state_change_seq += 1'
+        rm -f "$STATE/changed/interactive.json"
+        task coord:changed '{}'; [ "$CODE" -eq 0 ] && [ "$(jqr '.wake.deferred')" = false ] && [ ! -e "$STATE/changed/interactive.json" ] && ok || bad "a plain read is not deferred and writes no interactive.json ($(jqr .wake) $(ls "$STATE/changed"))"
+        changed; [ -e "$STATE/changed/interactive.json" ] && ok || bad "the consuming run records the working Coordinator pane"
+        summary
+      '';
+    };
+
     "skills:test:tasks:coord-idle" = {
       description = "coord:changed F1: an idle fleet (every worker idle/done, every host answering; the Coordinator's own panes are not workers) with work left (open PR without an independent 9/10 on its head, approved issue without an open handoff (none, or its agent settled with no open PR), unverified delivered handoff) prints one idle line per distinct fleet+work fingerprint, through the wake budget; busy, blocked, unreachable, no agents, no work, gh failure: no wake, and GitHub lists are fetched only for an idle fleet";
       exec = ''
