@@ -21,6 +21,8 @@ devenv is the full dev environment (packages, tasks, git hooks); central policy 
 
 Repos with `platform.sdlc` are driven by the `sdlc-pipeline` skill. Toolchain is pinned stable via `rust-toolchain.toml`; no nightly.
 
+On a shared worker host every cargo or nix build takes the heavy lane, `flock /tmp/$(hostname)-heavy-work.lock <command>`; a jq or shell-only check takes the light lane, `flock -w 900 /tmp/$(hostname)-light-work.lock`. A reviewer checks the author's green run for the exact head first, `devenv tasks run gate:verify --input gate=rust:ci` (or `sdlc:done`), and reruns targeted mutants or probes rather than the whole gate.
+
 ## Factum evidence (optional, advisory)
 
 `factum` is the deterministic CLI (no model; `factum-worker` is the experimental model product, never the supported CLI). Installed on Lenovo only (nixos-config `factum-lenovo.nix`, 0.2.0 @ `5bb7fa3`; `factum --version` shows no revision). It shells out to `cargo`, so run it inside the repo's dev shell (`nix develop -c` / `devenv shell --`); bare PATH gives exit 3 `cannot load the workspace`. Operator guide: nixos-config `docs/factum-pilot.md`; `factum help` lists commands (`<cmd> --help` is a usage error).
