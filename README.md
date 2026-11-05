@@ -85,8 +85,9 @@ Built from Nix, a bundle also carries the role's declared read and run tasks as 
 imports, so each script is that task's code with its `coordinator.*` options applied (an optional
 `taskConfig` module sets them), never a copy. `act` tasks stay with the host's audited wrappers.
 `tasks.scripts` in `bundle.json` records each one's sha256 and what it runs after;
-`bin/bundle-run <task> [input-json]` runs it after its dependencies the way devenv passes inputs
-and outputs. Both entrypoints pin their store `PATH`, so they run in an empty environment. A declared
+`bin/bundle-run <task> [input-json]` runs it after its dependencies the way devenv does: the task's
+declared `input` defaults overlaid by the caller's JSON, its dependencies' outputs, and an
+`@succeeded` edge stopping the run when that dependency fails. Both entrypoints pin their store `PATH`, so they run in an empty environment. A declared
 task the modules do not define fails the build (class `task`). `bash tests/test-bundles.sh`
 (`skills:test:bundles`); `skills:test:bundle-sandbox` builds the quality bundle and runs it in a
 bubblewrap sandbox: new user, network, mount and pid namespaces, read-only store, private HOME, no

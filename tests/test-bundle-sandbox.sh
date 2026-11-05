@@ -41,6 +41,17 @@ expect "the coordinator role bundles too: every declared read task ships, no act
   "$(C=$(nix-build --no-out-link -E "let pkgs = import <nixpkgs> { }; in (import $src/bundles { inherit pkgs; src = $src; rev = \"$REV\"; }).bundle { role = \"coordinator\"; harness = \"claude-code\"; skills = [ \"herdr-operations\" ]; }" 2>/dev/null | tail -n 1)
      [ -n "$C" ] && jq '.tasks.scripts as $s | (.tasks.read - ($s | keys)) == [] and ([.tasks.act[] | . as $a | select($s | has($a))] == [])' "$C/bundle.json" 2>/dev/null || echo false)"
 
+# a task's declared input defaults reach it as devenv merges them (review of #71): the coordinator bundle's herdr:inspect
+# declares lines = 40 and source = "visible"; called with only agent_id it must ask the fake herdr for 40 visible lines
+C=$(nix-build --no-out-link -E "let pkgs = import <nixpkgs> { }; in (import $src/bundles { inherit pkgs; src = $src; rev = \"$REV\"; }).bundle { role = \"coordinator\"; harness = \"claude-code\"; skills = [ \"herdr-operations\" ]; }" 2>/dev/null | tail -n 1)
+expect "a shipped task records its declared input defaults" '{"agent_id":null,"lines":40,"machine":null,"source":"visible"}' "$(jq -cS '.tasks.scripts["herdr:inspect"].input' "$C/bundle.json" 2>/dev/null)"
+: > "$T/inspect.log"
+rc=0; PATH="$FAKES:$PATH" FAKE_LOG="$T/inspect.log" FAKE_HERDR_READ="$ROOT/task-modules/fixtures/herdr/read-visible.txt" HOME="$T" "$C/bin/bundle-run" herdr:inspect '{"agent_id":"wA:p2"}' > "$T/inspect.out" 2>&1 || rc=$?
+expect "bundle-run merges the defaults: herdr:inspect with only agent_id reads 40 visible lines" "0 yes" \
+  "$rc $(grep -q '^herdr agent read wA:p2 --lines 40 --source visible' "$T/inspect.log" && echo yes || echo "no ($(head -c 200 "$T/inspect.out"))")"
+expect "the caller's value wins over a default" "yes" \
+  "$(: > "$T/inspect.log"; PATH="$FAKES:$PATH" FAKE_LOG="$T/inspect.log" FAKE_HERDR_READ="$ROOT/task-modules/fixtures/herdr/read-visible.txt" HOME="$T" "$C/bin/bundle-run" herdr:inspect '{"agent_id":"wA:p2","lines":7}' >/dev/null 2>&1; grep -q -- '--lines 7 ' "$T/inspect.log" && echo yes || echo no)"
+
 # the fixture checkout (the quality suite's own fixture: one red stage, a stale verdict) and a store-only /usr/bin
 git init -q "$T/repo" && (cd "$T/repo" && git config user.email t@t && git config user.name t && echo a > a && printf '.devenv/\n' > .gitignore \
   && git add a .gitignore && git commit -qm init && mkdir -p .devenv/state/sdlc && printf '%s' fp1 > .devenv/state/sdlc/sketch-rust-check \

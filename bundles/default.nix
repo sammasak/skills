@@ -38,7 +38,13 @@ let
           ] ++ taskModules ++ roleModules role;
         }).config.tasks;
       runnable = lib.filterAttrs (_: t: (t.exec or null) != null) tasks;
-      index = lib.mapAttrs (_: t: { after = map (a: lib.head (lib.splitString "@" a)) (t.after or [ ]); }) runnable;
+      # devenv merges a task's `input` defaults into DEVENV_TASK_INPUT, so bundle-run must too; an `after` edge keeps its
+      # mode (`@succeeded` must not run past a failed dependency)
+      index = lib.mapAttrs (_: t: {
+        after = map (a: lib.head (lib.splitString "@" a)) (t.after or [ ]);
+        afterSucceeded = map (a: lib.head (lib.splitString "@" a)) (lib.filter (lib.hasSuffix "@succeeded") (t.after or [ ]));
+        input = t.input or { };
+      }) runnable;
     in
     pkgs.runCommand "agent-skill-bundle-tasks-${role}" { passAsFile = [ "index" ]; index = builtins.toJSON index; } (
       ''

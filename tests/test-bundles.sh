@@ -129,6 +129,13 @@ expect "tasks: a bundle with tasks gets the run entrypoint and its check covers 
 cp -a "$T/bt" "$T/bt-tampered"; chmod -R u+w "$T/bt-tampered"; echo 'echo extra' >> "$T/bt-tampered/tasks/gh:work"
 expect "tasks: an edited task script fails the check" "1 integrity" "$(rc=0; "$T/bt-tampered/bin/bundle-check" 2>"$T/err" >/dev/null || rc=$?; echo "$rc $(class "$T/err")")"
 expect "tasks: bundle-run refuses a task the bundle does not ship" "3 task" "$(rc=0; "$T/bt/bin/bundle-run" unused:task 2>"$T/err" >/dev/null || rc=$?; echo "$rc $(class "$T/err")")"
+printf '{"quality:report":{"after":["helper:dep"],"afterSucceeded":["helper:dep"],"input":{"x":1}},"gh:work":{"after":[]},"git:recent":{"after":[]},"quality:gate":{"after":[]},"helper:dep":{"after":[]}}' > "$T/tasks/index.json"
+printf '#!/bin/sh\nexit 4\n' > "$T/tasks/helper:dep"
+build "$T/bt4" "${pilot[@]}" --tasks "$T/tasks"
+expect "tasks: an @succeeded dependency that fails stops the run, class dependency" "4 dependency" "$(rc=0; "$T/bt4/bin/bundle-run" quality:report 2>"$T/err" >/dev/null || rc=$?; echo "$rc $(class "$T/err")")"
+expect "tasks: input defaults and after modes are in the manifest" '{"x":1} ["helper:dep"]' "$(jq -c '.tasks.scripts["quality:report"].input' "$T/bt4/bundle.json") $(jq -c '.tasks.scripts["quality:report"].afterSucceeded' "$T/bt4/bundle.json")"
+build "$T/bt5" "${pilot[@]}" --runtime '/nix/store/abc&def/bin'
+expect "runtime: a segment with sed metacharacters is refused" "2 usage" "$rc $(class "$T/err")"
 rm "$T/tasks/git:recent"
 build "$T/bt2" "${pilot[@]}" --tasks "$T/tasks"
 expect "tasks: a declared task the modules do not define fails as class task" "6 task" "$rc $(class "$T/err")"

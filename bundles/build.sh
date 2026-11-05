@@ -36,7 +36,7 @@ done
 [ -n "$src" ] && [ -n "$rev" ] && [ -n "$role" ] && [ -n "$harness" ] && [ -n "$out" ] || fail usage "usage: $USAGE"
 [[ $rev =~ ^[0-9a-f]{40}$ ]] || fail usage "rev must be the 40-hex revision of the skills source, got '$rev'"
 [ -d "$src/skills" ] && [ -d "$src/agents" ] || fail usage "$src is not a skills tree (no skills/ and agents/)"
-[ -z "$runtime" ] || [[ $runtime =~ ^/nix/store/[^:]+(:/nix/store/[^:]+)*$ ]] || fail usage "--runtime must be store bin directories joined by ':'"
+[ -z "$runtime" ] || [[ $runtime =~ ^/nix/store/[A-Za-z0-9+._/-]+(:/nix/store/[A-Za-z0-9+._/-]+)*$ ]] || fail usage "--runtime must be store bin directories joined by ':'"
 [ -e "$out" ] && fail usage "$out exists; a bundle is built into a fresh directory"
 case $harness in claude-code | codex | pi) ;; *) fail usage "harness must be claude-code, codex or pi, got '$harness'" ;; esac
 
@@ -115,8 +115,9 @@ if [ -n "$tasks_src" ]; then
     [ -n "$n" ] || continue
     cp "$tasks_src/$n" "$stage/tasks/$n"; chmod 755 "$stage/tasks/$n"
     scripts_json=$(jq -c --arg n "$n" --arg sum "$(sha256sum <"$stage/tasks/$n" | cut -c1-64)" --argjson after "$(jq -c --arg n "$n" '.[$n].after' "$tasks_src/index.json")" \
+      --argjson succ "$(jq -c --arg n "$n" '.[$n].afterSucceeded // []' "$tasks_src/index.json")" --argjson input "$(jq -c --arg n "$n" '.[$n].input // {}' "$tasks_src/index.json")" \
       --argjson declared "$(grep -qxF "$n" <<<"$want" && echo true || echo false)" \
-      '.[$n] = {path: ("tasks/" + $n), sha256: $sum, after: $after, declared: $declared}' <<<"$scripts_json")
+      '.[$n] = {path: ("tasks/" + $n), sha256: $sum, after: $after, afterSucceeded: $succ, input: $input, declared: $declared}' <<<"$scripts_json")
   done <<<"$closure"
 fi
 bundled=$(printf '%s\n' "$selected" | jq -Rsc 'split("\n") | map(select(length > 0))')
@@ -201,7 +202,9 @@ if [ "$(jq '.tasks.scripts | length' "$stage/bundle.json")" -gt 0 ]; then
 cat >"$stage/bin/bundle-run" <<'RUN'
 #!/usr/bin/env bash
 # bundle-run <task> [input-json]: run one task this bundle ships, after the tasks it depends on, the way devenv
-# would (DEVENV_TASK_INPUT, DEVENV_TASK_OUTPUT_FILE, the outputs of its `after` tasks in DEVENV_TASKS_OUTPUTS);
+# would: DEVENV_TASK_INPUT is the task's declared `input` defaults overlaid by the caller's JSON (dependencies get
+# their defaults), DEVENV_TASK_OUTPUT_FILE, the outputs of its `after` tasks in DEVENV_TASKS_OUTPUTS; a failed
+# dependency stops the run only on an `@succeeded` edge (every other edge is `@completed`);
 # prints the task's output record and exits with its exit code. Only shipped tasks run; nothing is fetched.
 set -uo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -214,16 +217,24 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 outputs='{}'
 run_one() { # <task> <input-json> -> its exit code; records its output in $outputs
   local n=$1 rc=0 dep
+  local input drc
   for dep in $(jq -r --arg n "$n" '.tasks.scripts[$n].after[]' "$m"); do
-    jq -e --arg d "$dep" 'has($d)' <<<"$outputs" >/dev/null || run_one "$dep" '{}' >/dev/null || true
+    jq -e --arg d "$dep" 'has($d)' <<<"$outputs" >/dev/null && continue
+    drc=0; run_one "$dep" '{}' >/dev/null || drc=$?
+    if [ "$drc" -ne 0 ] && jq -e --arg n "$n" --arg d "$dep" '.tasks.scripts[$n].afterSucceeded // [] | index($d)' "$m" >/dev/null; then
+      jq -nc --arg n "$n" --arg d "$dep" --argjson rc "$drc" '{error: {class: "dependency", message: ("\($n) runs after \($d) succeeded; it exited \($rc)")}}' >&2
+      return "$drc"
+    fi
   done
-  DEVENV_TASK_INPUT="$2" DEVENV_TASK_OUTPUT_FILE="$work/$n.out" DEVENV_TASKS_OUTPUTS="$outputs" \
+  input=$(jq -c --arg n "$n" --argjson caller "$2" '(.tasks.scripts[$n].input // {}) + $caller' "$m") \
+    || { jq -nc '{error: {class: "input", message: "the input is not a JSON object"}}' >&2; return 3; }
+  DEVENV_TASK_INPUT="$input" DEVENV_TASK_OUTPUT_FILE="$work/$n.out" DEVENV_TASKS_OUTPUTS="$outputs" \
     "$here/$(jq -r --arg n "$n" '.tasks.scripts[$n].path' "$m")" > "$work/$n.log" 2>&1 || rc=$?
   outputs=$(jq -c --arg n "$n" --slurpfile o <(cat "$work/$n.out" 2>/dev/null || echo null) '.[$n] = ($o[0] // null)' <<<"$outputs")
   return "$rc"
 }
 rc=0; run_one "$1" "${2:-{\}}" || rc=$?
-cat "$work/$1.out" 2>/dev/null || tail -n 5 "$work/$1.log" >&2
+if [ -s "$work/$1.out" ]; then cat "$work/$1.out"; elif [ -f "$work/$1.log" ]; then tail -n 5 "$work/$1.log" >&2; fi
 exit "$rc"
 RUN
 chmod 755 "$stage/bin/bundle-run"
