@@ -10,7 +10,7 @@
     pkgs.runCommand "agent-skill-bundle-${role}-${harness}"
       { nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.gnugrep pkgs.jq pkgs.yq-go ]; }
       ''
-        bash ${./build.sh} --src ${src} --rev ${rev} --role ${role} --harness ${harness} \
+        bash ${./build.sh} --src ${src} --rev ${pkgs.lib.escapeShellArg rev} --role ${pkgs.lib.escapeShellArg role} --harness ${pkgs.lib.escapeShellArg harness} \
           ${pkgs.lib.concatMapStringsSep " " (s: "--skill ${pkgs.lib.escapeShellArg s}") skills} --out "$TMPDIR/bundle"
         cp -a "$TMPDIR/bundle" "$out"
       '';

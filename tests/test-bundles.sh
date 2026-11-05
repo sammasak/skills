@@ -53,6 +53,8 @@ done
 expect "unknown, misspelled, traversing, empty and duplicate skill names fail as class skill, nothing written" 4 "$n"
 build "$T/f-misspelled" --src "$ROOT" --rev "$REV" --role quality --harness claude-code --skill rust-engineerin
 expect "a misspelling names the closest known skill" "true" "$(grep -q 'did you mean rust-engineering' "$T/err" && echo true || echo false)"
+build "$T/f-far" --src "$ROOT" --rev "$REV" --role quality --harness claude-code --skill zzz-nothing-like-it
+expect "an unknown name with no near match is refused without a guess" "skill false" "$(class "$T/err") $(grep -q 'did you mean' "$T/err" && echo true || echo false)"
 build "$T/f-noskill" --src "$ROOT" --rev "$REV" --role quality --harness claude-code
 expect "no skill named: class skill" "skill" "$(class "$T/err")"
 build "$T/f-role" --src "$ROOT" --rev "$REV" --role nonesuch --harness claude-code --skill rust-engineering
@@ -66,6 +68,7 @@ expect "a harness name outside claude-code, codex, pi: class usage" "usage" "$(c
 build "$T/f-rev" --src "$ROOT" --rev main --role quality --harness claude-code --skill rust-engineering
 expect "a rev that is not 40 hex: class usage" "usage" "$(class "$T/err")"
 build "$T/codex" --src "$ROOT" --rev "$REV" --role coordinator --harness codex --skill herdr --skill herdr-operations
+expect "a codex agent file carries no tool policy: the bundle says the host's codex config sets it" "host codex config" "$(jq -r .authorization.adapter.policySource "$T/codex/bundle.json")"
 expect "coordinator with codex: its codex.toml is the adapter" "0 codex/coordinator.toml same" \
   "$rc $(jq -r .harness.adapter "$T/codex/bundle.json") $(cmp -s "$ROOT/agents/coordinator/codex.toml" "$T/codex/codex/coordinator.toml" && echo same || echo differ)"
 
@@ -91,6 +94,18 @@ envrun() { env -i PATH="$(dirname "$(command -v bash)"):$(dirname "$(command -v 
 rc=0; envrun "$T/b1/bin/bundle-check" >"$T/check.out" 2>"$T/err" || rc=$?
 expect "bin/bundle-check: exit 0 in an empty environment, names the role and its tasks" "0 true" \
   "$rc $(grep -q 'quality: read quality:report,gh:work,git:recent; run quality:gate; act -' "$T/check.out" && echo true || echo false)"
+# tampering bundle-check must catch: an added skill, an edited manifest, a redirected harness link, a lost exec bit
+tamper() { rm -rf "$T/t"; cp -a "$T/b1again" "$T/t"; chmod -R u+w "$T/t"; "$@"; rc=0; envrun "$T/t/bin/bundle-check" >/dev/null 2>"$T/err" || rc=$?; echo "$rc $(class "$T/err")"; }
+expect "an extra skill copied into skills/ is refused" "1 integrity" "$(tamper cp -r "$ROOT/skills/credentials" "$T/t/skills/")"
+expect "a manifest with its authorization emptied is refused (its digest no longer matches)" "1 integrity" \
+  "$(tamper sh -c "jq '.authorization.forbidden = [] | .authorization.adapter.disallowedTools = []' '$T/t/bundle.json' > '$T/t/bj' && mv '$T/t/bj' '$T/t/bundle.json'")"
+expect "a .claude link pointing elsewhere is refused" "1 integrity" "$(tamper sh -c "rm '$T/t/claude/skills' && ln -s /etc '$T/t/claude/skills'")"
+x=$(find "$T/b1again/skills" -type f -perm -u+x | head -n 1)
+if [ -n "$x" ]; then
+  expect "a lost exec bit changes the skill's hash" "1 integrity" "$(tamper chmod a-x "$T/t/${x#"$T/b1again/"}")"
+else
+  expect "an exec bit added to a skill file changes the skill's hash" "1 integrity" "$(tamper chmod +x "$T/t/skills/rust-engineering/SKILL.md")"
+fi
 chmod -R u+w "$T/b1"; printf 'tampered\n' >>"$T/b1/skills/nix-flake-development/SKILL.md"
 rc=0; envrun "$T/b1/bin/bundle-check" >/dev/null 2>"$T/err" || rc=$?
 expect "bin/bundle-check refuses a bundle whose skill no longer matches its sha256" "1 integrity" "$rc $(class "$T/err")"

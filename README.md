@@ -76,7 +76,11 @@ per-skill sha256, and a digest. A skill is visibility only: `authorization` (the
 list, its `act` tasks, the adapter's tool policy) does not change with the skills bundled. An
 unknown, misspelled, duplicate or empty skill name, an unknown role or a role without an adapter for
 the harness fails with one JSON error line (classes `skill`, `role`, `harness`, `usage`).
-`bash tests/test-bundles.sh` (`skills:test:bundles`).
+`bin/bundle-check` catches an edited, added or relinked file and a manifest that no longer
+matches its own digest; it is not a signature (anyone who can write the bundle can rewrite both),
+so the trust anchor stays the bundle's read-only store path or a pinned `digests.bundle`. Running
+the bundled role's tasks under a real harness inside a sandbox is not covered here (skills#63 item 3,
+follow-up). `bash tests/test-bundles.sh` (`skills:test:bundles`).
 
 ## License
 

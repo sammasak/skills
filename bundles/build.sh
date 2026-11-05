@@ -68,9 +68,11 @@ selected=$(printf '%s\n' "${skills[@]}" | LC_ALL=C sort)
 
 # tree_sha DIR: sha256 over every file's relative path and content, symlinks by their target
 tree_sha() {
-  (cd "$1" && find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
+  (cd "$1" && find . -mindepth 1 \( -type f -o -type l -o \( -type d -empty \) \) -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
     printf '%s\0' "$f"
-    if [ -L "$f" ]; then printf 'link:%s\0' "$(readlink "$f")"; else sha256sum <"$f" | cut -c1-64; fi
+    if [ -L "$f" ]; then printf 'link:%s\0' "$(readlink "$f")"
+    elif [ -d "$f" ]; then printf 'dir\0'
+    else printf 'mode:%s\0' "$( [ -x "$f" ] && echo x || echo -)"; sha256sum <"$f" | cut -c1-64; fi
   done) | sha256sum | cut -c1-64
 }
 
@@ -102,7 +104,10 @@ case $harness in
   codex)
     mkdir -p "$stage/codex"
     cp "$src/$adapter_src" "$stage/$adapter"; chmod u+w "$stage/$adapter"
-    policy=$(yq -p toml -o=json '{"sandbox_mode": (.sandbox_mode // null), "approval_policy": (.approval_policy // null)}' "$src/$adapter_src" 2>/dev/null) || policy='{}'
+    # a codex agent file carries no tool policy of its own: the host's codex config sets sandbox and approvals
+    policy=$(yq -p toml -o=json '{"sandbox_mode": (.sandbox_mode // null), "approval_policy": (.approval_policy // null)}' "$src/$adapter_src" 2>/dev/null) \
+      || fail harness "$adapter_src is not valid TOML"
+    policy=$(jq -c 'if .sandbox_mode == null and .approval_policy == null then . + {policySource: "host codex config"} else . + {policySource: "agent file"} end' <<<"$policy")
     ;;
 esac
 
@@ -129,9 +134,11 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 m=$here/bundle.json
 fail() { jq -nc --arg m "$1" '{error: {class: "integrity", message: $m}}' >&2; exit 1; }
 tree_sha() {
-  (cd "$1" && find . \( -type f -o -type l \) -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
+  (cd "$1" && find . -mindepth 1 \( -type f -o -type l -o \( -type d -empty \) \) -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
     printf '%s\0' "$f"
-    if [ -L "$f" ]; then printf 'link:%s\0' "$(readlink "$f")"; else sha256sum <"$f" | cut -c1-64; fi
+    if [ -L "$f" ]; then printf 'link:%s\0' "$(readlink "$f")"
+    elif [ -d "$f" ]; then printf 'dir\0'
+    else printf 'mode:%s\0' "$( [ -x "$f" ] && echo x || echo -)"; sha256sum <"$f" | cut -c1-64; fi
   done) | sha256sum | cut -c1-64
 }
 [ "$(sha256sum <"$here/$(jq -r .role.contract "$m")" | cut -c1-64)" = "$(jq -r .role.sha256 "$m")" ] || fail "the role contract does not match bundle.json"
@@ -139,8 +146,17 @@ tree_sha() {
 for s in $(jq -r '.skills | keys[]' "$m"); do
   [ "$(tree_sha "$here/$(jq -r --arg s "$s" '.skills[$s].path' "$m")")" = "$(jq -r --arg s "$s" '.skills[$s].sha256' "$m")" ] || fail "skill $s does not match bundle.json"
 done
+# exactly the manifest's skills and role, nothing added beside them
+[ "$(find "$here/skills" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' ')" = "$(jq -r '.skills | keys | join(" ") + (if length > 0 then " " else "" end)' "$m")" ] \
+  || fail "skills/ holds other entries than bundle.json names"
+[ "$(find "$here/roles" -mindepth 1 -maxdepth 1 -printf '%f\n' | tr '\n' ' ')" = "$(jq -r '.role.name' "$m") " ] || fail "roles/ holds other entries than bundle.json names"
+if [ "$(jq -r .harness.name "$m")" = claude-code ]; then
+  [ "$(readlink "$here/.claude")" = claude ] && [ "$(readlink "$here/claude/skills")" = ../skills ] || fail "the .claude layout points elsewhere than the bundled skills"
+fi
+# the manifest itself: its digest over everything but the digest
+[ "$(jq -cS 'del(.digests)' "$m" | sha256sum | cut -c1-64)" = "$(jq -r .digests.bundle "$m")" ] || fail "bundle.json does not match its own digest"
 jq -r '"\(.role.name): read \(.tasks.read | join(",") | if . == "" then "-" else . end); run \(.tasks.run | join(",") | if . == "" then "-" else . end); act \(.tasks.act | join(",") | if . == "" then "-" else . end)"' "$m"
 CHECK
 chmod 755 "$stage/bin/bundle-check"
-mv "$stage" "$out"
+mv -T "$stage" "$out" || fail usage "$out appeared while the bundle was built"
 trap - EXIT
