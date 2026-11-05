@@ -657,6 +657,19 @@
         D3=$(draft wT:p1 "#43" "the next item"); FAKE_HERDR_STATE=working send "$D3" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/43","label":"approved"}'
         changed; [ "$(grep -c '^retry' <<<"$LINES")" = 1 ] && grep -q "^retry sammasak/nixos-config#43 1 send(s) refused agent_busy ($D3→$H/wT:p1)" <<<"$LINES" && ok || bad "a later refusal is reported once ($LINES)"
 
+        # (5b) the double dispatch (review of #66): #45 was delivered to wF:p1 first; the wake then drafts #45 for wT:p1 and is
+        #      refused busy: parked, but resolved by the earlier delivery, so no retry line asks for a second assignment;
+        #      a resend of the delivered handoff to its busy target is refused, not parked
+        D5=$(draft wF:p1 "#45" "first owner"); FAKE_HERDR_STATE=idle send "$D5" wF:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/45","label":"approved"}'
+        sleep 1   # the refusal strictly after the delivery (the audit's times have one-second resolution)
+        D6=$(draft wT:p1 "#45" "second try"); FAKE_HERDR_STATE=working send "$D6" wT:p1 '{"issue_url":"https://github.com/sammasak/nixos-config/issues/45","label":"approved"}'
+        FAKE_HERDR_STATE=working task herdr:message "{\"handoff_id\":\"$D5\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/nixos-config/issues/45\",\"label\":\"approved\"}}"
+        [ "$(jqr .error.kind)" = agent_busy ] && [ "$(jq -s --arg i "$D5" '[.[] | select(.phase == "parked" and .handoff_id == $i)] | length' "$A")" = 0 ] && ok || bad "a resend of a delivered handoff to a busy target is not parked ($(jqr .error))"
+        changed; ! grep -q '#45' <<<"$LINES" && [ "$(jqr '[.parked[] | select(.task_ref == "#45")] | length')" = 0 ] && ok || bad "an item delivered before the busy refusal is resolved: no retry line, not parked ($LINES $(jqr .parked))"
+        # a corrupt interactive.json falls back to 0, never aborts the run
+        printf '{"last_working_epoch":"x; rm"}\n' > "$STATE/changed/interactive.json"; QUIET=600; changed; QUIET=0
+        [ "$CODE" -eq 0 ] && ok || bad "a non-numeric interactive.json does not abort coord:changed ($CODE)"; rm -f "$STATE/changed/interactive.json"
+
         # (6) the race: an interactive Coordinator working defers the wake (interactiveQuietSeconds), the line waits under
         #     wake.pending; idle again, the quiet period still holds; after it, the line comes out once
         STATE="$TMP/state2"; QUIET=600; mkdir -p "$STATE"; grep -v '"#43"' "$A" > "$STATE/audit.jsonl"

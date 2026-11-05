@@ -106,8 +106,9 @@ in
           && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
       fi
       jq -c --slurpfile P "$tmpd/panes.json" '. - $P[0]' "$tmpd/workers.json" > "$tmpd/workers.tmp" && mv "$tmpd/workers.tmp" "$tmpd/workers.json"
-      # parked sends (herdr:message refused agent_busy, skills#28 06:19Z): still parked while no attempt of that handoff and no
-      # delivered handoff for the same item followed the refusal, and not older than openHandoffDays; a free worker is a
+      # parked sends (herdr:message refused agent_busy, skills#28 06:19Z): still parked while no attempt of that handoff followed
+      # the refusal and no handoff for the same item was delivered within openHandoffDays, before or after it (a worker busy
+      # on the very item must not buy a second assignment), and not older than openHandoffDays; a free worker is a
       # worker the inventory lists idle or done
       printf '[]\n' > "$tmpd/parked.json"
       if [ "$audit_state" = ok ]; then
@@ -117,7 +118,8 @@ in
             | [$all[] | select(.phase == "attempt") | . + {repo:repo, delivered:(($byid[.audit_id | tostring].outcome // "") == "delivered")}] as $att
             | [$all[] | select(.phase == "parked" and (.handoff_id | type) == "string" and (.host | type) == "string" and (.agent_id | type) == "string" and (.at | type) == "string")
                | select((.at | try fromdateiso8601 catch 0) >= $cut) | . + {repo:repo} | . as $k
-               | select(any($att[]; .at >= $k.at and (.handoff_id == $k.handoff_id or (.delivered and .repo == $k.repo and .task_ref == $k.task_ref))) | not)
+               | select(any($att[]; (.handoff_id == $k.handoff_id and .at >= $k.at)
+                                       or (.delivered and .repo == $k.repo and .task_ref == $k.task_ref and ((.at // "") | try fromdateiso8601 catch 0) >= $cut)) | not)
                | {audit_id, handoff_id, host, agent_id, task_ref, repo, at}]' "$audit" > "$tmpd/parked.json" 2>/dev/null || printf '[]\n' > "$tmpd/parked.json"
       fi
       jq -c --slurpfile W "$tmpd/workers.json" '[.hosts[]? | select(.reachable == true) | .host as $h | .agents[]? | select(.observed_state == "idle" or .observed_state == "done")
@@ -263,7 +265,7 @@ in
       nchanges=$(jq 'length' "$tmpd/changes.json"); deferred=false; reason=null; next_at=null
       if [ "$consume" = true ] && [ "$nchanges" -gt 0 ]; then
         last=$(jq -r 'max // 0' <<<"$recent"); hour=$(jq -r --argjson now "$now" '[.[] | select(. > $now - 3600)] | length' <<<"$recent")
-        quiet=${toString cfg.interactiveQuietSeconds}; iw_last=$(jq -r '.last_working_epoch // 0' "$dir/interactive.json" 2>/dev/null) || iw_last=0
+        quiet=${toString cfg.interactiveQuietSeconds}; iw_last=$(jq -r '.last_working_epoch // 0' "$dir/interactive.json" 2>/dev/null) || iw_last=0; [[ "$iw_last" =~ ^[0-9]+$ ]] || iw_last=0
         if [ "$quiet" -gt 0 ] && { [ "$coord_working" = true ] || [ $((now - iw_last)) -lt "$quiet" ]; }; then
           base=$iw_last; [ "$coord_working" != true ] || base=$now
           deferred=true; reason='"interactive_coordinator"'; next_at=$((base + quiet))
