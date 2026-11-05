@@ -25,7 +25,7 @@ just deploy-acer      # deploy-rs with magic rollback; acer has no BMC, so prove
 just deploy-pi        # deploy-rs remoteBuild: the Pi builds its own closure (lenovo has no aarch64 builder)
 ```
 
-Run heavy gates on a host with free capacity (not a full Lenovo root, not next to another session's build) under its shared lock: `flock /tmp/$(hostname)-heavy-work.lock devenv tasks run nixos:qa`. Prefer the narrow task (`nixos:lint-shell`, `nixos:flake-check`, a module's own regression script) when it covers the change.
+Run heavy gates on a host with free capacity (not a full Lenovo root, not next to another session's build) under its shared lock: `flock /tmp/$(hostname)-heavy-work.lock devenv tasks run nixos:qa`. Eval-only and script gates (`nix eval`, a module's regression script, `nix flake check` with no builds) take the light lane instead, `flock -w 900 /tmp/$(hostname)-light-work.lock ...`, so they never queue behind a build. Before rerunning a full gate on a head someone already ran it on, `devenv tasks run gate:verify --input gate=<gate>` (devenv-platform gate records) and rerun only the probes the review needs. Prefer the narrow task (`nixos:lint-shell`, `nixos:flake-check`, a module's own regression script) when it covers the change.
 
 **Switching and rollback are operator actions.** Do not run `just switch`, a `just deploy-*` or a generation rollback unless the owner asked for that host now; hand over the exact command and keep the previous generation available. Never switch while an agent session depends on the current shell environment.
 

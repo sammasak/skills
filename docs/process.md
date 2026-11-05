@@ -51,6 +51,17 @@ issue.
    repository an outstanding handoff names. When `gh:repos` or `gh:work` says
    `truncated: true`, say so in the report and work the visible items;
    raising `coordinator.ghLimit` is the owner's call.
+   Gates on a worker host run in two lock lanes (skills#28): `flock
+   /tmp/$(hostname)-heavy-work.lock` for anything that builds or compiles
+   (`nixos:qa`, `platform:verify`, `sdlc:done`, `rust:ci`, `cargo`, `nix build`)
+   and `flock -w 900 /tmp/$(hostname)-light-work.lock` for eval-only and
+   script gates (`skills:test*`, `nix eval`, `nix flake check` without builds,
+   jq/bash suites), so a short gate never queues behind a long one. `coord:capacity`
+   shows each lane (`lock_queue`) and refuses a heavy spawn while the heavy lane
+   holds `heavy_jobs` or more jobs. A green gate on a clean head is recorded once
+   (`gate:record:<gate>`, devenv-platform); a reviewer or merger runs
+   `gate:verify --input gate=<gate>` for the exact head and reruns targeted
+   probes, never the whole gate a second time.
 2. **Prioritize**, highest first:
    - P0: a delivered handoff whose agent is `blocked` or `needs_owner`
      (report it first, with the exact decision).

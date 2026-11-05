@@ -90,7 +90,7 @@ and name the checkout in the handoff. Elsewhere `agent start` returns
 `agent_not_ready` and the workspace stays for you to inspect. A host
 configured with spawning off is refused as `capacity` whether or not it is
 in the inventory. The task never
-closes a pane or workspace.
+closes a pane or workspace. Each host also carries `lock_queue`: the heavy-work and light-work lanes with their holder, waiters and ages (`host:locks`, over the saved machine's ssh target); a heavy spawn is refused while the heavy lane already holds `heavy_jobs` jobs.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of
 `needs-decision`, `blocked`, `needs-live` on one issue or PR) and
