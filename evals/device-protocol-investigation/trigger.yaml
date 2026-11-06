@@ -1,0 +1,23 @@
+skill: device-protocol-investigation
+
+# Queries that should activate device-protocol-investigation
+positives:
+  - "Figure out what protocol my Flipper Zero speaks over USB so we can read its device info"
+  - "I have the firmware image for my smart plug, work out its local LAN API so I can write a client"
+  - "Which fields does this Pineapple module read, so we can reproduce its inventory behaviour ourselves?"
+  - "Reverse the BLE protocol my own thermostat uses before we write a Rust client for it"
+  - "Write up an evidence record for this device's serial RPC: what is observed versus guessed"
+  - "Investigate the companion app's protocol for my owned sensor and hand off acceptance fixtures"
+
+# Queries that look similar but should activate a different skill
+hard_negatives:
+  - "Break down the management frames in capture.pcap by subtype"            # → pcap-evidence-analysis
+  - "Does this USB adapter actually pass monitor mode?"                       # → wireless-lab-diagnostics
+  - "Review my deauth chaos experiment spec before I run it against my AP"   # → rf-chaos-experiment-review
+  - "Add a typed error enum to the protobuf parser crate and fix clippy"     # → rust-engineering
+
+# Queries that should activate no skill
+true_negatives:
+  - "How does protobuf varint encoding work?"
+  - "What is the difference between BLE and Bluetooth classic?"
+  - "Explain what a USB CDC ACM device is"
