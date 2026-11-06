@@ -23,6 +23,10 @@ let
     in
     map (f: dir + "/${f}") (lib.filter (f: lib.hasSuffix ".nix" f && f != "tests.nix") files);
   # the task scripts run with these on PATH ahead of the caller's; herdr, gh and devenv stay the caller's
+  # devenv: "When no suffix is given the default is `@ready` for processes and `@succeeded` for oneshot tasks"
+  # (https://devenv.sh/tasks/); only `@completed` lets a failure through, so every other edge blocks
+  name = a: lib.head (lib.splitString "@" a);
+  blockingEdges = after: map name (lib.filter (a: !lib.hasSuffix "@completed" a) after);
   runtime = lib.makeBinPath (with pkgs; [ bash coreutils findutils gnugrep gnused gawk jq git util-linux procps inetutils ]);
   tasksDir =
     role: taskConfig:
@@ -39,10 +43,10 @@ let
         }).config.tasks;
       runnable = lib.filterAttrs (_: t: (t.exec or null) != null) tasks;
       # devenv merges a task's `input` defaults into DEVENV_TASK_INPUT, so bundle-run must too; an `after` edge keeps its
-      # mode (`@succeeded` must not run past a failed dependency)
+      # mode (a blocking edge must not run past a failed dependency)
       index = lib.mapAttrs (_: t: {
-        after = map (a: lib.head (lib.splitString "@" a)) (t.after or [ ]);
-        afterSucceeded = map (a: lib.head (lib.splitString "@" a)) (lib.filter (lib.hasSuffix "@succeeded") (t.after or [ ]));
+        after = map name (t.after or [ ]);
+        afterSucceeded = blockingEdges (t.after or [ ]);
         input = t.input or { };
       }) runnable;
     in
@@ -64,6 +68,7 @@ let
     );
 in
 {
+  inherit blockingEdges;
   bundle =
     { role, harness, skills, taskConfig ? { } }:
     pkgs.runCommand "agent-skill-bundle-${role}-${harness}"
