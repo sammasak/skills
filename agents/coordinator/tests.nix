@@ -272,6 +272,9 @@
         bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
         H=$(hostname -s 2>/dev/null || hostname)
+        # the fixture grades sign "-- acer-swift wX:pN"; the handoff host and local agent host are $H (the runner).
+        # Templatize the signer host to $H so the host-qualified ownership match holds on any host, not just acer.
+        sed -i "s/acer-swift/$H/g" "$TMP/gh-corr/sammasak__skills.prs.json"
         # panes now: wA:p1 carries a title naming the wrong issue; wB:p1 has no ref at all; wG:p1 was restarted (new
         # session) since its handoff; wT:p2 is title-only on the open epic; wC:p1 and wR:p1 have handoffs only
         jq '.result.agents[0] as $t | .result.agents = [
@@ -314,7 +317,7 @@
         [ "$(h h00000000001 '"\(.work_verdict) \(.evidence_ref) \(.task_issue_open)"')" = "verified https://github.com/sammasak/skills/pull/51 true" ] && [ "$(h h00000000002 '"\(.work_verdict) \(.evidence_ref) \(.task_issue_open)"')" = "verified https://github.com/sammasak/skills/pull/52 true" ] && ok || bad "merged children of an open epic are verified with their PR as evidence_ref (a closed, unmerged PR does not hold it back)"
         [ "$(it wT:p2 '.work_verdict')" = unverified ] && it wT:p2 '.reasons[0]' | grep -q 'still open' && [ "$(it wT:p2 '.correlation.by')" = title ] && ok || bad "a title-only agent on the epic keeps the issue-closed rule ($(it wT:p2 '{work_verdict,reasons}'))"
         # (3) stages are distinct: reviewed needs >= 9 by another agent on the exact head; live needs a Live acceptance note
-        [ "$(h h00000000001 '.stages | "\(.implemented[0]) \(.reviewed[0].grade) \(.reviewed[0].by) \(.reviewed[0].head[0:7]) \(.merged[0]) \(.live)"')" = "https://github.com/sammasak/skills/pull/51 9 acer-swift/wR:p1 aaaa111 https://github.com/sammasak/skills/pull/51 null" ] && ok || bad "PR 51: implemented, reviewed (review commit = head), merged, not live ($(h h00000000001 .stages))"
+        [ "$(h h00000000001 '.stages | "\(.implemented[0]) \(.reviewed[0].grade) \(.reviewed[0].by) \(.reviewed[0].head[0:7]) \(.merged[0]) \(.live)"')" = "https://github.com/sammasak/skills/pull/51 9 $H/wR:p1 aaaa111 https://github.com/sammasak/skills/pull/51 null" ] && ok || bad "PR 51: implemented, reviewed (review commit = head), merged, not live ($(h h00000000001 .stages))"
         [ "$(h h00000000002 '.stages | "\(.reviewed[0].url) \(.live[0])"')" = "https://github.com/sammasak/skills/pull/52#issuecomment-522 https://github.com/sammasak/skills/pull/52#issuecomment-523" ] && ok || bad "PR 52: the re-review naming the head counts, the author's 8/10 response does not; live from its note ($(h h00000000002 .stages))"
         [ "$(h h00000000003 '"\(.work_verdict) \(.evidence_ref) \(.stages.implemented[0]) \(.stages.reviewed) \(.stages.merged)"')" = "unverified null https://github.com/sammasak/skills/pull/53 null null" ] && ok || bad "PR 53: open; a 9/10 on another head, or unsigned, is not reviewed ($(h h00000000003 '{work_verdict,stages}'))"
         [ "$(h h00000000003 '[.prs[].number] | join(",")')" = 53 ] && ok || bad "PR 54, which wB:p1 itself graded 9/10, is a review it did, not its own work ($(h h00000000003 '[.prs[].number]'))"
@@ -326,7 +329,7 @@
         [ "$(h h00000000009 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stale) \(.session_state)"')" = " unknown false same" ] && ok || bad "a PR the handoff's agent graded 7/10 is a review it did ($(h h00000000009 '{prs:[.prs[].number], work_verdict, stale, reasons}'))"
         # the reviewers' form: the grade line itself names the reviewer and the author ("Reviewer acer-swift wR:p1; author
         # wD:p1"), no sign-off; the author's review request, which names the reviewer in parentheses, is signed "-- " by the author
-        [ "$(h h00000000010 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stages.reviewed[0].by) \(.stages.reviewed[0].grade) \(.evidence_ref)"')" = "57 verified acer-swift/wR:p1 9 https://github.com/sammasak/skills/pull/57" ] && ok || bad "a 9/10 signed 'Reviewer <host> <agent>' on the grade line is the reviewer's ($(h h00000000010 '{prs:[.prs[].number], work_verdict, stages, reasons}'))"
+        [ "$(h h00000000010 '"\([.prs[].number] | join(",")) \(.work_verdict) \(.stages.reviewed[0].by) \(.stages.reviewed[0].grade) \(.evidence_ref)"')" = "57 verified $H/wR:p1 9 https://github.com/sammasak/skills/pull/57" ] && ok || bad "a 9/10 signed 'Reviewer <host> <agent>' on the grade line is the reviewer's ($(h h00000000010 '{prs:[.prs[].number], work_verdict, stages, reasons}'))"
         [ "$(it wD:p1 '"\(.correlation.by) \(.work_verdict)"')" = "handoff verified" ] && ok || bad "the author's pane is verified by that review ($(it wD:p1 '{correlation,work_verdict,reasons}'))"
         [ "$(it wB:p1 '"\(.correlation.by) \(.task_ref) \(.work_verdict)"')" = "handoff #29 unverified" ] && ok || bad "a pane with no ref in its title is correlated by its handoff"
         # (4) stale handoffs: the pane restarted, or is gone; neither is verified and the restarted pane falls back to its title
@@ -408,6 +411,26 @@
         grep -q '## Handoffs (from the audit log): 5 total, 0 verified, 1 open, 4 unknown, 0 closed$' <<<"$md" && grep -q 'h0000000000c → lenovo-gone/wL:p1 .*HOLD UNKNOWN: host lenovo-gone did not answer' <<<"$md" \
           && grep -q 'h0000000000e → '"$H"'/wE:p9 .*HOLD UNKNOWN: delivery unknown (interrupted)' <<<"$md" && grep -q '#40 item 40 \[held by handoff h0000000000e → '"$H"'/wE:p9 (unknown: delivery unknown (interrupted)' <<<"$md" \
           && grep -q '#47 item 47 \[held by open PR #77\]' <<<"$md" && grep -q '#45 item 45 \[held by handoff h0000000000b → '"$H"'/wU:p9 (unknown: agent state unknown is not idle or done)\]' <<<"$md" && ok || bad "Markdown: unknown handoffs listed as holding, PR-held items marked ($(grep -A8 '## Handoffs' <<<"$md"; grep 'sammasak/skills:' <<<"$md"))"
+        # skills#28 host-qualified identity: agent ids (w12:p1) are per-Herdr-server, not fleet-unique. A grade by the
+        # SAME agent id on ANOTHER host is not the implementer's own review, so it must not drop the implementer's PR;
+        # a grade by the same host AND agent is that agent's review, excluded.
+        mkdir -p "$TMP/state-xh" "$TMP/gh-xh"
+        cat > "$TMP/gh-xh/sammasak__skills.issues.json" <<JSON
+[{"number":40,"title":"xh 40","state":"OPEN","labels":[{"name":"approved"}],"url":"https://github.com/sammasak/skills/issues/40","author":{"login":"sammasak"}},
+ {"number":41,"title":"xh 41","state":"OPEN","labels":[{"name":"approved"}],"url":"https://github.com/sammasak/skills/issues/41","author":{"login":"sammasak"}}]
+JSON
+        cat > "$TMP/gh-xh/sammasak__skills.prs.json" <<JSON
+[{"number":58,"title":"xh 58","body":"Refs #40","state":"OPEN","createdAt":"2026-11-03T10:30:00Z","url":"https://github.com/sammasak/skills/pull/58","headRefName":"feat/40","headRefOid":"5858585858585858585858585858585858585858","closingIssuesReferences":[],"statusCheckRollup":[],"comments":[{"body":"Review at \`5858585\` (remote-host w12:p1, not the author): **9/10**","url":"https://github.com/sammasak/skills/pull/58#issuecomment-581"}],"reviews":[]},
+ {"number":59,"title":"xh 59","body":"Refs #41","state":"OPEN","createdAt":"2026-11-03T10:30:00Z","url":"https://github.com/sammasak/skills/pull/59","headRefName":"feat/41","headRefOid":"5959595959595959595959595959595959595959","closingIssuesReferences":[],"statusCheckRollup":[],"comments":[{"body":"Review at \`5959595\` ($H w13:p1, not the author): **9/10**","url":"https://github.com/sammasak/skills/pull/59#issuecomment-591"}],"reviews":[]}]
+JSON
+        A="$TMP/state-xh/audit.jsonl"
+        handoff hx1 w12:p1 sx1 "#40" 2026-11-03T10:00:00Z
+        handoff hx2 w13:p1 sx2 "#41" 2026-11-03T10:00:00Z
+        FAKE_GH_DIR="$TMP/gh-xh" devenv tasks run coord:brief --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state-xh" --option coordinator.timeoutSeconds:int 2 > "$TMP/xh.log" 2>&1
+        BX="$TMP/state-xh/brief/latest.json"; [ -s "$BX" ] || echo '{}' > "$BX"
+        [ "$(jq -r '.handoffs[]|select(.handoff_id=="hx1")|[.prs[].number]|join(",")' "$BX")" = 58 ] && ok || bad "cross-host: a grade by the same agent id (w12:p1) on another host does not drop the implementer's PR 58 ($(jq -c '.handoffs[]|select(.handoff_id=="hx1")|{prs:[.prs[].number]}' "$BX") ; log $(tail -2 "$TMP/xh.log"))"
+        [ "$(jq -r '.handoffs[]|select(.handoff_id=="hx2")|[.prs[].number]|join(",")' "$BX")" = "" ] && ok || bad "same host+agent: a grade by $H w13:p1 is its own review, PR 59 excluded ($(jq -c '.handoffs[]|select(.handoff_id=="hx2")|{prs:[.prs[].number]}' "$BX"))"
         summary
       '';
     };
