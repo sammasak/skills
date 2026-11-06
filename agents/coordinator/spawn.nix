@@ -37,13 +37,13 @@ in
 
   options.coordinator.capacity = lib.mkOption {
     type = lib.types.str;
-    # lenovo is the control plane (one heavy job, no spawning: nixos-config#109, two platform:verify runs killed at
+    # lenovo is the control plane: no spawning and no heavy gates (nixos-config#109, two platform:verify runs killed at
     # 98 % swap); acer-swift is the worker (two heavy jobs). A host not named here has no capacity and is refused.
     default = builtins.toJSON {
-      "acer-swift" = { heavy_jobs = 2; max_workers = 3; spawn = true; };
-      "lenovo-21CB001PMX" = { heavy_jobs = 1; max_workers = 2; spawn = false; };
+      "acer-swift" = { heavy_jobs = 2; max_workers = 3; spawn = true; heavy_gates = true; };
+      "lenovo-21CB001PMX" = { heavy_jobs = 1; max_workers = 2; spawn = false; heavy_gates = false; };
     };
-    description = "JSON object: per Herdr host label (matched case-insensitively) {heavy_jobs, max_workers, spawn}.";
+    description = "JSON object: per Herdr host label (matched case-insensitively) {heavy_jobs, max_workers, spawn, heavy_gates}. heavy_gates defaults true; false refuses heavy-gate assignments (review, implementation) on that host and leaves it light work only (finding 6: lenovo is the control plane).";
   };
   options.coordinator.kinds = lib.mkOption {
     type = lib.types.attrsOf (lib.types.submodule { options = {

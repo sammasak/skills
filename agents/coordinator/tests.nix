@@ -214,6 +214,19 @@
         [ "$(hq worker-a '.fits.spawn | join(",")')" = "mechanical,planning" ] && ok || bad "only light kinds fit while the heavy lane is full ($(hq worker-a '.fits.spawn'))"
         export FAKE_SSH_OUT_worker_a="$FX/locks/idle.tsv"
 
+        # (3c) #28 finding 6: a host marked heavy_gates:false refuses heavy gates (nixos-config#109: lenovo, the control
+        #      plane, was OOM-killed twice mid platform:verify) but still takes light work; a heavy_gates:true or unset
+        #      host accepts a heavy spawn (worker-a did above, spawn_ok.heavy true). Read-only (coord:capacity writes no
+        #      audit): the clean idle fleet with only heavy_gates toggled on worker-a, so the refusal is heavy_gates alone.
+        CAPH=$(jq -cn --arg h "$H" '{($h): {heavy_jobs:1, max_workers:3, spawn:false, heavy_gates:false}, "worker-a": {heavy_jobs:2, max_workers:3, spawn:true, heavy_gates:false}}')
+        devenv tasks run coord:capacity --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.capacity:string "$CAPH" --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output > "$TMP/run.log" 2>&1
+        OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F '"task":"coord:capacity"' | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        [ "$(hq worker-a '"\(.spawn_ok.light) \(.spawn_ok.heavy) \(.limits.heavy_gates)"')" = "true false false" ] && ok || bad "heavy_gates:false refuses a heavy spawn, keeps light ($(hq worker-a '{spawn_ok,limits}' | jq -c .))"
+        hq worker-a '.reasons[]' | grep -q 'no heavy gates (heavy_gates:false)' && ok || bad "the reason names heavy_gates ($(hq worker-a .reasons))"
+        [ "$(hq worker-a '.fits.spawn | join(",")')" = "mechanical,planning" ] && ok || bad "a heavy_gates:false host fits only light kinds, no review or implementation ($(hq worker-a '.fits.spawn'))"
+        [ "$(hq "$H" '.limits.heavy_gates')" = false ] && ok || bad "the control-plane host carries heavy_gates:false (lenovo-config)"
+
         # (4) accepted: a heavy implementation spawn on worker-a, with its kind's model, in a workspace of its own; audited.
         #     FAKE_HERDR_STARTED makes the fake list every agent it started, like a real server
         export FAKE_HERDR_STARTED="$TMP/started.jsonl"; : > "$FAKE_HERDR_STARTED"
