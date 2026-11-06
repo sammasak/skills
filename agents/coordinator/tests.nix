@@ -92,6 +92,42 @@
         [ "$CODE" -ne 0 ] && grep -q 'herdr:inventory' "$TMP/run.log" && ok || bad "herdr down everywhere: brief must fail"
         grep -q '0/1 answered' "$TMP/state/brief/latest.md" && ok || bad "exit 2 still leaves a fresh latest.md saying why ($(head -c 200 "$TMP/state/brief/latest.md" 2>&1))"
         unset FAKE_HERDR_EXIT
+        # skills#77: the portfolio names each open PR head's review state, so a wake reads which head is a review to hand out.
+        #   #90 (fix #41, wF:p1's handoff) has wR:p1's 6/10 on its head: findings, back to wF:p1; #91 is held by an open review
+        #   handoff for exactly its head; #92 is unreviewed; #93 is merged and not listed. The closed-handoff line never asks
+        #   for a review after a merge
+        HB=$(hostname -s 2>/dev/null || hostname); B0=$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ); B1=$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)
+        H90=9090909090909090909090909090909090909090; H91=9191919191919191919191919191919191919191; H92=9292929292929292929292929292929292929292
+        bpr() { # <number> <state> <head> <title> <comment-bodies-json>
+          jq -cn --argjson n "$1" --arg s "$2" --arg h "$3" --arg t "$4" --argjson cm "$5" --arg c "$B1" \
+            '{number:$n, title:$t, body:"", state:$s, isDraft:false, reviewDecision:"", mergedAt:(if $s == "MERGED" then $c else null end), updatedAt:$c, createdAt:$c,
+              url:("https://github.com/sammasak/skills/pull/" + ($n|tostring)), headRefName:("b" + ($n|tostring)), headRefOid:$h, statusCheckRollup:[],
+              closingIssuesReferences:[], comments:($cm | map({body:., url:("https://github.com/sammasak/skills/pull/" + ($n|tostring) + "#c")})), reviews:[]}'; }
+        { bpr 90 OPEN "$H90" "fix #41" "[\"Grade: 6/10 (head $H90)\\n\\nblocking: a field is dropped\\n\\n-- acer-swift wR:p1\"]"
+          bpr 91 OPEN "$H91" "docs" '[]'; bpr 92 OPEN "$H92" "more" '[]'
+          bpr 93 MERGED 9393939393939393939393939393939393939393 "merged, never reviewed" '[]'; } | jq -s . > "$TMP/gh/sammasak__skills.prs.json"
+        echo '[{"number":41,"title":"t","state":"OPEN","url":"https://github.com/sammasak/skills/issues/41","labels":[{"name":"approved"}],"author":{"login":"sammasak"}}]' > "$TMP/gh/sammasak__skills.issues.json"
+        export FAKE_GH_REPOS='[{"name":"skills","pushedAt":"2026-11-03T10:18:03Z","isArchived":false,"isPrivate":false,"pullRequests":{"totalCount":3},"issues":{"totalCount":1},"issue_labels":[["approved"]]}]'
+        { printf '%s\n' "{\"audit_id\":\"b41\",\"handoff_id\":\"hb000000041\",\"task_ref\":\"#41\",\"phase\":\"attempt\",\"host\":\"$HB\",\"machine\":null,\"agent_id\":\"wF:p1\",\"at\":\"$B0\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/41\",\"label\":\"approved\"}}" \
+            "{\"audit_id\":\"b41\",\"handoff_id\":\"hb000000041\",\"phase\":\"outcome\",\"at\":\"$B0\",\"outcome\":\"delivered\"}" \
+            "{\"audit_id\":\"b91\",\"handoff_id\":\"hb000000091\",\"task_ref\":\"#91\",\"phase\":\"attempt\",\"host\":\"$HB\",\"machine\":null,\"agent_id\":\"wR:p1\",\"at\":\"$B1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/pull/91\",\"label\":\"approved\"},\"review\":{\"pr\":\"sammasak/skills#91\",\"head\":\"$H91\"}}" \
+            "{\"audit_id\":\"b91\",\"handoff_id\":\"hb000000091\",\"phase\":\"outcome\",\"at\":\"$B1\",\"outcome\":\"delivered\"}"; } > "$TMP/state/audit.jsonl"
+        # the reviewer of #91 is at work on it
+        jq '.result.agents += [(.result.agents[0] | .pane_id = "wR:p1" | .agent_session.value = "rrrr" | .agent_status = "working" | .state_change_seq = 9 | .terminal_title_stripped = "review")]' "$TMP/local.json" > "$TMP/local77.json"
+        export FAKE_HERDR_LIST="$TMP/local77.json"
+        runb
+        st77() { jqr ".portfolio.active[] | select(.repo == \"sammasak/skills\") | .open_pr_reviews | map({(.number | tostring): .state}) | add | tojson"; }
+        [ "$CODE" -eq 0 ] && [ "$(st77)" = '{"90":"findings","91":"in_review","92":"unreviewed"}' ] && ok || bad "skills#77: open PR review states in the brief (code $CODE: $(st77) $(grep -E 'jq: error|syntax error|line [0-9]+:' "$TMP/run.log" | head -3))"
+        [ "$(jqr '.portfolio.active[] | select(.repo == "sammasak/skills") | .open_pr_reviews[] | select(.number == 90) | "\(.implementer | join(",")) \(.grades[0].grade) \(.grades[0].by)"')" = "$HB/wF:p1 6 acer-swift/wR:p1" ] \
+          && grep -qF "#90@9090909 findings 6/10 acer-swift/wR:p1 → back to $HB/wF:p1, not another review" "$TMP/state/brief/latest.md" && ok || bad "skills#77: findings routed to the implementer in the brief ($(grep -o 'PRs: .*' "$TMP/state/brief/latest.md"))"
+        grep -qF "#91@9191919 in review ($HB/wR:p1)" "$TMP/state/brief/latest.md" && grep -qF "#92@9292929 to review (a worker other than its author)" "$TMP/state/brief/latest.md" && ok || bad "skills#77: in review and to review in the Markdown ($(grep -o 'PRs: .*' "$TMP/state/brief/latest.md"))"
+        [ "$(jqr '[.portfolio.active[].open_pr_reviews[]? | select(.number == 93)] | length')" = 0 ] && ! grep -q '#93@' "$TMP/state/brief/latest.md" && ok || bad "skills#77: a merged PR is never offered in the brief"
+        ! grep -q 'needs that review' "$TMP/state/brief/latest.md" && ok || bad "skills#77: no review is asked after a merge"
+        # the reviewer of #91 settles without a grade: the head is free again, offered once more (recovery), the others unchanged
+        jq '(.result.agents[] | select(.pane_id == "wR:p1")) |= (.agent_status = "idle" | .state_change_seq = 10)' "$TMP/local77.json" > "$TMP/local77.tmp" && mv "$TMP/local77.tmp" "$TMP/local77.json"
+        runb
+        [ "$(st77)" = '{"90":"findings","91":"unreviewed","92":"unreviewed"}' ] && ok || bad "skills#77: a review that yielded no grade frees its head ($(st77))"
+        export FAKE_HERDR_LIST="$TMP/local.json"
         summary
       '';
     };
@@ -342,7 +378,7 @@
         # (6b) open vs closed (skills#28: a stale or settled handoff kept its item out of reach): open while a PR of it is open
         #      or its agent works on it; closed ones carry the reason, are counted in the header and listed per item in one line
         [ "$(q '[.handoffs | sort_by(.handoff_id)[] | "\(.handoff_id[-1:])=\(if .open then "open" else .closed_reason end)"] | join(" ")')" = "1=verified 2=verified 3=open 4=stale 5=stale 6=not delivered 7=open 8=merged without an independent review 9=settled without an open PR 0=verified" ] && ok || bad "open/closed_reason per handoff ($(q '[.handoffs[] | {id:.handoff_id, open, closed_reason}]'))"
-        grep -q '## Handoffs (from the audit log): 10 total, 3 verified, 2 open, 0 unknown, 5 closed$' <<<"$md" && grep -q -- '- closed, nobody on it (the item can be handed out again; a merged one without an independent review needs that review): .*sammasak/skills#30 (h00000000004 stale)' <<<"$md" && grep -q 'sammasak/skills#33 (h00000000009 settled without an open PR)' <<<"$md" && ok || bad "closed handoffs: counted and summarised per item ($(grep -A12 '## Handoffs' <<<"$md"))"
+        grep -q '## Handoffs (from the audit log): 10 total, 3 verified, 2 open, 0 unknown, 5 closed$' <<<"$md" && grep -q -- '- closed, nobody on it (the item can be handed out again; a merged PR without an independent review is reported for the owner, never reviewed after the merge): .*sammasak/skills#30 (h00000000004 stale)' <<<"$md" && grep -q 'sammasak/skills#33 (h00000000009 settled without an open PR)' <<<"$md" && ok || bad "closed handoffs: counted and summarised per item ($(grep -A12 '## Handoffs' <<<"$md"))"
         # the portfolio says which approved items are held and which can be handed out again
         [ "$(q '.portfolio.active[0].approved | map("\(.number):\(.reassignable):\([.open_handoffs[].handoff_id] | join("+")):\(.last_handoff.handoff_id)") | join(" ")')" = "28:true::h00000000002 29:false:h00000000003+h00000000007:h00000000007" ] && ok || bad "approved items: open handoffs hold, closed ones leave them re-assignable ($(q '.portfolio.active[0].approved'))"
         grep -q '#28 .* \[re-assignable: handoff h00000000002 → '"$H"'/wA:p1 verified\]' <<<"$md" && grep -q '#29 .* \[held by handoff h00000000003 → '"$H"'/wB:p1, h00000000007 → '"$H"'/wB:p1\]' <<<"$md" && ok || bad "portfolio Markdown marks held and re-assignable items ($(grep 'sammasak/skills:' <<<"$md"))"
@@ -824,7 +860,7 @@
             "{\"audit_id\":\"x$1\",\"handoff_id\":\"$1\",\"phase\":\"outcome\",\"at\":\"$4\",\"outcome\":\"delivered\"}" >> "$AUDIT"; }
         handoff h00000000001 wT:p1 "#30" "$T0" 30   # verified by the merged #62 (closes #30, opened after the send)
         handoff h00000000002 wF:p1 "#31" "$T0" 31   # #64 names it but is open: unverified
-        WORK1='3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64), 2 approved issue(s) without an open handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
+        WORK1='3 open PR head(s) to review (sammasak/nixos-config#119@1191191, sammasak/skills#60@6060606, sammasak/skills#64@6464646), 2 approved issue(s) without an open handoff (sammasak/skills#28, sammasak/skills#33), 1 unverified handoff(s) (h00000000002:#31)'
 
         # (0) no worker known (an empty audit log, nothing configured): idle agents are not an idle fleet, no GitHub list is fetched
         STATE="$TMP/state0" run
@@ -841,7 +877,7 @@
         run
         [ "$CODE" -eq 0 ] && [ "$(nlines)" = 2 ] && [ "$(tail -n 1 <<<"$LINES")" = "idle 2 worker(s) idle/done on 1 host(s); work left: $WORK1" ] && grep -q "^settled $H/wF:p1 #31 handoff h00000000002 idle" <<<"$LINES" && ok || bad "idle workers with work, Coordinator working: settled + one idle line ($LINES)"
         [ "$(iw '"\(.fleet_idle) \(.evaluated) \(.fired) \(.skipped) \(.non_workers)"')" = "true true true null 1" ] && [ "$(jqr '[.changes[].kind] | join(" ")')" = "settled idle" ] && [ "$(fp)" != null ] && ok || bad "idle_wake record and fingerprint ($(iw .) fp=$(fp))"
-        [ "$(iw '[.work.open_prs, .work.approved_issues, .work.unverified_handoffs | length] | join(" ")')" = "3 2 1" ] && [ "$(iw '.work.open_prs | join(" ")')" = "sammasak/nixos-config#119 sammasak/skills#60 sammasak/skills#64" ] && ok || bad "work lists in latest.json ($(iw .work))"
+        [ "$(iw '[.work.open_prs, .work.approved_issues, .work.unverified_handoffs | length] | join(" ")')" = "3 2 1" ] && [ "$(iw '.work.open_prs | join(" ")')" = "sammasak/nixos-config#119@1191191 sammasak/skills#60@6060606 sammasak/skills#64@6464646" ] && ok || bad "work lists in latest.json ($(iw .work))"
         grep -q '^gh pr list -R sammasak/skills --state open' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/skills --state merged' "$FAKE_LOG" && grep -q '^gh issue list -R sammasak/skills' "$FAKE_LOG" && grep -q '^gh pr list -R sammasak/nixos-config --state open' "$FAKE_LOG" \
           && ! grep -q 'sammasak/nixos-config --state merged' "$FAKE_LOG" && ! grep -q 'sammasak/quiet' "$FAKE_LOG" && ok || bad "lists per active repo, merged only for a handoff repo, nothing for an inactive one ($(grep -E '^gh (pr|issue) list' "$FAKE_LOG" | sort -u))"
         FP1=$(fp)
@@ -863,12 +899,12 @@
         run; [ "$(fp)" = "$FP1" ] && ok || bad "the pane gone again: the earlier fleet fingerprint ($LINES)"
         # (5) new work (another ungraded PR) is a new fingerprint: one line, listing capped at three refs; then silence
         pr sammasak/skills 65 OPEN 6565656565656565656565656565656565656565 "$T3" null "more" '[]' '[]' | skills_prs
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 4 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#60, sammasak/skills#64, +1 more), 2 approved' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "new work fires once, refs capped ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle 2 worker(s) idle/done on 1 host(s); work left: 4 open PR head(s) to review (sammasak/nixos-config#119@1191191, sammasak/skills#60@6060606, sammasak/skills#64@6464646, +1 more), 2 approved' <<<"$LINES" && [ "$(fp)" != "$FP1" ] && ok || bad "new work fires once, refs capped ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "new work: silent after ($LINES)"
         # (6) a grade arrives on #60's head from another agent: the work set shrinks, which is a new fingerprint
         { pr sammasak/skills 65 OPEN 6565656565656565656565656565656565656565 "$T3" null "more" '[]' '[]'; } | skills_prs
         jq --arg h "$H60" '(.[] | select(.number == 60) | .comments) = [{body:("Review at `" + $h[0:7] + "`: 9/10\n\n-- acer-swift wR:p1"), url:"u"}]' "$GH/sammasak__skills.prs.json" > "$GH/t.json" && mv "$GH/t.json" "$GH/sammasak__skills.prs.json"
-        run; [ "$(nlines)" = 1 ] && grep -q '3 open PR(s) without a 9/10 review (sammasak/nixos-config#119, sammasak/skills#64, sammasak/skills#65)' <<<"$LINES" && ok || bad "a review on the head leaves the work set ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '3 open PR head(s) to review (sammasak/nixos-config#119@1191191, sammasak/skills#64@6464646, sammasak/skills#65@6565656)' <<<"$LINES" && ok || bad "a review on the head leaves the work set ($LINES)"
         # a grade on an older head (#119) and the implementer's own grade (#64, wF:p1 holds its handoff) never count
         grep -q 'sammasak/nixos-config#119' <<<"$LINES" && grep -q 'sammasak/skills#64' <<<"$LINES" && ok || bad "old-head and self grades do not count ($LINES)"
         # (7) work done: every open PR graded, approved issues gone, the open handoff verified by a merged PR: idle, no wake
@@ -925,7 +961,7 @@
         [ "$woke" = 1 ] && [ "$deferred" = 4 ] && [ "$(jq 'length' "$STATE/changed/wakes.json")" = 2 ] && ok || bad "burst: five fingerprints in a minute wake at most the cap (woke=$woke deferred=$deferred)"
         FPB=$(fp); run; [ -z "$LINES" ] && [ "$(fp)" = "$FPB" ] && ok || bad "burst: a deferred run keeps the fingerprint ($LINES)"
         jq -c 'map(. - 3601)' "$STATE/changed/wakes.json" > "$STATE/changed/wakes.tmp" && mv "$STATE/changed/wakes.tmp" "$STATE/changed/wakes.json"
-        run; [ "$(nlines)" = 1 ] && grep -q '^idle .* 5 open PR(s) without a 9/10 review (sammasak/skills#70, sammasak/skills#71, sammasak/skills#72, +2 more)' <<<"$LINES" && [ "$(fp)" != "$FPB" ] && ok || bad "burst: one catch-up wake with the newest state ($LINES)"
+        run; [ "$(nlines)" = 1 ] && grep -q '^idle .* 5 open PR head(s) to review (sammasak/skills#70@0000000, sammasak/skills#71@0000000, sammasak/skills#72@0000000, +2 more)' <<<"$LINES" && [ "$(fp)" != "$FPB" ] && ok || bad "burst: one catch-up wake with the newest state ($LINES)"
         run; [ -z "$LINES" ] && ok || bad "burst: silent after the catch-up ($LINES)"
         # (15) the Coordinator's own pane as a past handoff target (lenovo wM:p1, 2026-11-04: timer sessions addressed handoffs to
         #      the interactive Coordinator's pane, so it became a "worker" that is always working and the fleet never idle).
@@ -965,8 +1001,38 @@
         skills_prs < /dev/null
         run; grep -q 'approved issue(s) without an open handoff (sammasak/skills#40)' <<<"$LINES" && [ "$(iw '.work.approved_issues | join(",")')" = sammasak/skills#40 ] && ok || bad "a settled handoff with no PR leaves the approved item re-assignable ($LINES $(iw .work))"
         pr sammasak/skills 80 OPEN 8080808080808080808080808080808080808080 "$T3" null "fix #40" '[]' '[]' | skills_prs
-        run; [ "$(iw '.work.approved_issues | length')" = 0 ] && [ "$(iw '.work.open_prs | index("sammasak/skills#80") != null')" = true ] && ok || bad "an open PR naming the item keeps its handoff open: not re-assignable, the PR is the work ($LINES $(iw .work))"
+        run; [ "$(iw '.work.approved_issues | length')" = 0 ] && [ "$(iw '.work.open_prs | index("sammasak/skills#80@8080808") != null')" = true ] && ok || bad "an open PR naming the item keeps its handoff open: not re-assignable, the PR is the work ($LINES $(iw .work))"
         skills_prs < /dev/null
+        unset STATE
+        # (18) skills#77: a reviewed head is not offered for review again. #90 (fix #41: wF:p1's handoff, opened after the send) has
+        #      wR:p1's 6/10 on its head: its findings go back to the implementer, named, and the same head never wakes again; a merged
+        #      or closed PR is never offered; conflicting grades on one head are the owner's; a new head is a review again; a review
+        #      handoff open for that exact head holds it
+        export STATE="$TMP/state-77"; mkdir -p "$STATE"; cp "$AUDIT" "$STATE/audit.jsonl"; cp "$TMP/local-full.json" "$LOCAL"
+        BUDGET='--option coordinator.wakeMinGapSeconds:int 0 --option coordinator.wakeMaxPerHour:int 1000'   # (16) left a min gap
+        AUDIT0=$AUDIT; AUDIT="$STATE/audit.jsonl"; handoff h00000000041 wF:p1 "#41" "$T0" 41; AUDIT=$AUDIT0
+        H90=9090909090909090909090909090909090909090; H91=9191919191919191919191919191919191919191; H95=9595959595959595959595959595959595959595
+        prs77() { # <head of #90>
+          { pr sammasak/skills 90 OPEN "$1" "$T2" null "fix #41" '[]' "[\"Grade: 6/10 (head $H90)\\n\\nblocking: the parser drops a field\\n\\n-- acer-swift wR:p1\"]"
+            pr sammasak/skills 92 MERGED 9292929292929292929292929292929292929292 "$T1" "$T3" "merged, never reviewed" '[]' '[]'
+            pr sammasak/skills 93 CLOSED 9393939393939393939393939393939393939393 "$T1" null "closed unmerged" '[]' '[]'
+            pr sammasak/skills 95 OPEN "$H95" "$T2" null "two reviewers disagree" '[]' "[\"Grade: 6/10 (head $H95)\\n\\n-- acer-swift wR:p1\", \"Grade: 9/10 (head $H95)\\n\\n-- lenovo wN:p1\"]"; } | skills_prs; }
+        mine() { iw '[.work.open_prs[] | select(test("^sammasak/skills#9[0-9]@"))] | join(" ")'; }
+        prs77 "$H90"
+        run
+        [ -z "$(mine)" ] && ok || bad "skills#77: unchanged graded head not re-offered for review (open_prs: $(mine))"
+        [ "$(iw '.work.pr_findings | map({pr, implementer}) | tojson')" = "[{\"pr\":\"sammasak/skills#90@9090909\",\"implementer\":[\"$H/wF:p1\"]}]" ] && [ "$(iw '.work.pr_findings[0].grades[0] | "\(.grade) \(.by)"')" = "6 acer-swift/wR:p1" ] \
+          && grep -q "PR head(s) graded below 9, back to the implementer, not another review (sammasak/skills#90@9090909 → $H/wF:p1)" <<<"$LINES" && ok || bad "skills#77: findings routed to the implementer ($LINES $(iw .work.pr_findings))"
+        [ "$(iw '.work.pr_disputed | join(",")')" = "sammasak/skills#95@9595959" ] && grep -q 'PR head(s) with conflicting grades, an owner decision (sammasak/skills#95@9595959)' <<<"$LINES" && ok || bad "skills#77: a 9/10 does not override a 6/10 on the same head ($(iw .work.pr_disputed))"
+        [ "$(iw '[.work.open_prs[], .work.pr_findings[].pr, .work.pr_disputed[]] | map(select(test("#9[23]@"))) | length')" = 0 ] && ok || bad "skills#77: merged PR never offered, nor a closed one ($(iw .work))"
+        FP77=$(fp)
+        run; [ -z "$LINES" ] && [ "$(fp)" = "$FP77" ] && ok || bad "skills#77: a second timer tick on the unchanged graded head wakes nobody ($LINES)"
+        run --plain; ! grep -qE 'to review \([^)]*sammasak/skills#9[05]' <<<"$LINES" && [ "$(fp)" = "$FP77" ] && ok || bad "skills#77: an interactive read offers no review of the graded heads ($LINES)"
+        prs77 "$H91"
+        run; [ "$(mine)" = "sammasak/skills#90@9191919" ] && [ "$(iw '.work.pr_findings | length')" = 0 ] && grep -q 'open PR head(s) to review (.*sammasak/skills#90@9191919' <<<"$LINES" && ok || bad "skills#77: new head re-offered for review ($LINES $(iw .work) $(jqr .wake))"
+        printf '%s\n' "{\"audit_id\":\"x77\",\"handoff_id\":\"h00000000077\",\"task_ref\":\"#41\",\"phase\":\"attempt\",\"host\":\"acer-swift\",\"machine\":null,\"agent_id\":\"wR:p1\",\"at\":\"$T3\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/41\",\"label\":\"approved\"},\"review\":{\"pr\":\"sammasak/skills#90\",\"head\":\"$H91\"}}" \
+          "{\"audit_id\":\"x77\",\"handoff_id\":\"h00000000077\",\"phase\":\"outcome\",\"at\":\"$T3\",\"outcome\":\"delivered\"}" >> "$STATE/audit.jsonl"
+        run; [ -z "$(mine)" ] && ok || bad "skills#77: an open review handoff for the exact head holds it ($(mine))"
         unset STATE
         # (14) read-only and model-free: list calls only, no prompt, no gh write
         ! grep -qE 'agent (prompt|send-keys|start)|^gh (api -X|api --method|label)|^gh api (repos|graphql.*mutation)' "$FAKE_LOG" && [ "$(grep '^gh ' "$FAKE_LOG" | grep -vcE '^gh (api graphql -f query=|search issues --owner [^ ]+ --label [^ ]+ --state open |pr list -R [^ ]+ --state (open|merged)|issue list -R [^ ]+ --state open)')" = 0 ] && ok || bad "only reads ($(grep '^gh ' "$FAKE_LOG" | grep -vE '^gh (api graphql|pr list|issue list)' | sort -u | head -3))"
@@ -1192,6 +1258,19 @@
         [ "$CODE" -eq 0 ] && [ "$(jqr .text | grep -c "$LONG")" = 1 ] && ok || bad "4000-character field accepted ($CODE)"
         run coord:handoff --input-json "{\"agent_id\":\"wF:p1\",\"task_ref\":\"#7\",\"scope\":\"$TOOLONG\",\"expected_evidence\":\"e\",\"acceptance\":\"a\",\"allowed_actions\":[\"comment\"]}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 4000 && ok || bad "4001-character field rejected"
+        # skills#77: a review handoff names the PR and the exact head it reviews; the key is a line of the text (so the id covers it)
+        #   and a field of the draft; anything but OWNER/REPO#N@<40-hex> is refused
+        HEAD77=9090909090909090909090909090909090909090
+        R77='{"agent_id":"wF:p1","task_ref":"#41","scope":"review PR #90","expected_evidence":"Grade comment","acceptance":"graded","allowed_actions":["comment","merge"]'
+        run coord:handoff --input-json "$R77}"; ID_PLAIN=$(jqr .handoff_id)
+        run coord:handoff --input-json "$R77,\"review\":\"sammasak/skills#90@$HEAD77\"}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.review | "\(.pr) \(.head)"')" = "sammasak/skills#90 $HEAD77" ] && jqr .text | grep -qx "Review of: sammasak/skills#90 at head $HEAD77" && [ "$(jqr .handoff_id)" != "$ID_PLAIN" ] \
+          && ok || bad "skills#77: a review draft carries its PR and head in the text and the record ($(jqr .review) $(jqr .text | tail -3))"
+        [ "$(jq -r .review "$TMP/state/handoffs/$ID_PLAIN.json")" = null ] && ok || bad "skills#77: a draft without review names none"
+        for bad_review in "sammasak/skills#90@abc1234" "sammasak/skills#90" "skills#90@$HEAD77" "sammasak/skills#90@$HEAD77 x"; do
+          run coord:handoff --input-json "$R77,\"review\":\"$bad_review\"}"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "skills#77: review '$bad_review' refused"
+        done
         summary
       '';
     };

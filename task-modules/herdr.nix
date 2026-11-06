@@ -97,6 +97,10 @@ in
         draft="${cfg.stateDir}/handoffs/$id.json"
         [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"
         host=$(jq -r '.host // empty' "$draft"); m=$(jq -r '.machine // empty' "$draft"); agent=$(jq -r '.agent_id // empty' "$draft"); text=$(jq -r '.text // empty' "$draft"); ref=$(jq -r '.task_ref // empty' "$draft"); want_session=$(jq -r '.session_id // empty' "$draft")
+        # a review handoff's key (skills#77), only as its text states it (the text is what the id covers)
+        review=$(jq -c '.review // null' "$draft")
+        [ "$review" = null ] || grep -qxF "Review of: $(jq -r .pr <<<"$review") at head $(jq -r .head <<<"$review")" <<<"$text" \
+          || fail 3 invalid_input "draft $id names a review its text does not state (edited?)" "$ctx"
         acts=$(jq -c '.allowed_actions // empty' "$draft")
         [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] && [ -n "$acts" ] || fail 3 invalid_input "draft $id is incomplete (a draft without allowed_actions predates this version: redraft it)" "$ctx"
         # the id is content-addressed: re-derive it so the text and actions sent are the ones the owner confirmed
@@ -158,8 +162,8 @@ in
           done < <(tac <<<"$attempts")
         fi
         aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
-        jq -cn --arg a "$aid" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" --arg from "$sender" \
-          '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"attempt", from:(if $from == "" then null else $from end), host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q}' >> "$audit" \
+        jq -cn --arg a "$aid" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" --argjson rv "$review" --arg from "$sender" \
+          '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"attempt", from:(if $from == "" then null else $from end), host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q, review:$rv}' >> "$audit" \
           || fail 2 audit_failed "could not write the attempt record; not sending" "$ctx"
         outcome=interrupted
         trap 'jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" "{audit_id:\$a, handoff_id:\$i, phase:\"outcome\", at:\$at, outcome:\$o}" >> "$audit"' EXIT
