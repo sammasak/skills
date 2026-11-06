@@ -9,7 +9,8 @@ $inv[0] as $inv | $handoffs[0] as $log | $log.omitted as $omitted | $log.handoff
 | def title_repo: [capture("(^|[^A-Za-z0-9_./-])(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(#|\\s|$)").r] | first;
 
 # per-PR stages; reviewed = a signed grade >= 9 on the PR's head (the review's commit, or the head's short sha in the
-# comment); graded_by names the signers of any grade, so a handoff never counts a PR its own agent graded (see below);
+# comment); graded_by lists the AGENT ids that signed any grade (one GitHub account per agent, so the host may differ
+# from the handoff's), so a handoff never counts a PR its own agent graded (see below);
 # live = a comment with a "Live acceptance:" line
 def pr_view: (.headRefOid // "") as $head
   | passes as $passes
@@ -19,13 +20,13 @@ def pr_view: (.headRefOid // "") as $head
              reviewed:($passes | last | if . then {grade, by, head:$head, url} else null end),
              merged:(if .mergedAt then {url, merged_at:.mergedAt} else null end),
              live:(if $live then {url:$live.url} else null end)},
-     graded_by:[notes[] | select(.grade != null and .by != null) | .by] | unique};
+     graded_by:[notes[] | select(.grade != null and .by != null) | .by | split("/") | last] | unique};
 
 def agent_at($h; $a): [$inv.hosts[]? | select(.host == $h) | .agents[]? | select(.agent_id == $a)] | first;
 def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
 
-# a handoff owns the PRs naming its task_ref opened, or given commits, in its window [sent_at, until), except a PR its own agent
-# graded (at any grade, on any head): that agent reviewed it, a concurrent handoff implemented it
+# a handoff owns the PRs naming its task_ref opened, or given commits, in its window [sent_at, until), except a PR its own
+# agent (by agent id, any host) graded at any grade on any head: that agent reviewed it, a concurrent handoff implemented it
 ($handoffs
  | map(. as $h | ($h.task_ref | num) as $n | ($repos[$h.repo // ""] // null) as $d | "\($h.host)/\($h.agent_id)" as $impl
    | agent_at($h.host; $h.agent_id) as $now
@@ -36,7 +37,7 @@ def host_answered($h): any($inv.hosts[]?; .host == $h and .reachable != false);
         # existing PR, its review findings handed back as a new handoff)
         def in_window: . != null and . >= $h.sent_at and ($h.until == null or . < $h.until);
         [$d.prs[] | select(refs($n)) | select(.number == $n or (.createdAt | in_window) or any((.commits // [])[]; .committedDate | in_window))
-         | pr_view | select(.graded_by | index($impl) | not) | del(.graded_by)] | sort_by(.number)
+         | pr_view | select(.graded_by | index($h.agent_id) | not) | del(.graded_by)] | sort_by(.number)
       else [] end) as $prs
    | [$prs[] | select(.state != "CLOSED" or .stages.merged != null)] as $live_prs
    | (reduce ("implemented", "reviewed", "merged", "live") as $k ({};
