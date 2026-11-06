@@ -96,6 +96,9 @@ inventory as `error.kind: invalid_label` until it is renamed.
 - `blocked`: the agent shows an approval or question UI. It needs a human;
   never prompt a blocked agent.
 - `unknown`: an agent is present but unclassified. Treat as "no information".
+- `unavailable: {reason: "usage_limit", line}` (any state but `working`): the
+  agent's last visible lines hold the harness's usage-limit line. It takes no
+  work; tell the owner to switch it to an available model or wait for the reset.
 - Host `error.kind` of `timeout` or `command_failed` (Herdr's own message,
   e.g. a failed ssh connection, follows in `error.message`): say so; do not
   guess what the host is doing.

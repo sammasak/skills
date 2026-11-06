@@ -1,0 +1,9 @@
+● Running a quick check.
+
+  ╭─ You've reached your Fable limit. Run /usage-credits to continue or switch models with /model.
+
+> /model opus
+  ⎿  Set model to Opus 5.5 for this session only
+
+> 
+  ? for shortcuts

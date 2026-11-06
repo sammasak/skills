@@ -34,16 +34,18 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null]
    | [$hst.agents[]? | . as $a | ($a.observed_state // "unknown") as $s | last_work($hst.host; $a.agent_id; $a.session_id) as $w
        | ($usage["\($hst.host)/\($a.agent_id)"] // null) as $tok
        | ($next != null and $w != null and ($next.repo != $w.repo or $next.task_ref != $w.task_ref)) as $independent
-       | {agent_id:$a.agent_id, harness:$a.harness, herdr_state:$s, session_id:$a.session_id, kind:($spawns.kind_of["\($hst.host)/\($a.agent_id)"] // null), last_task_ref:($w.task_ref // null), last_repo:($w.repo // null),
+       | {agent_id:$a.agent_id, harness:$a.harness, herdr_state:$s, unavailable:($a.unavailable // null), session_id:$a.session_id, kind:($spawns.kind_of["\($hst.host)/\($a.agent_id)"] // null), last_task_ref:($w.task_ref // null), last_repo:($w.repo // null),
           hygiene:({context_tokens:$tok} + (
             if ($s | idle | not) then {advice:null, reasons:[]}
             elif $independent then {advice:"/clear", reasons:["next assignment \($next.repo // "?")\($next.task_ref // "") is independent of its last (\($w.repo // "?")\($w.task_ref // ""))"]
                                      + (if $tok != null and $tok >= $threshold then ["context \($tok) tokens >= \($threshold)"] else [] end)}
             elif $tok != null and $tok >= $threshold then {advice:"/compact", reasons:["context \($tok) tokens >= \($threshold)"]}
             else {advice:null, reasons:[]} end))}] as $ws
-   | ([$ws[] | select(.herdr_state | idle)] | length) as $idle
-   | ([$ws[] | select(.herdr_state | busy)] | length) as $busy
-   | (($ws | length) - $idle - $busy) as $unknown
+   # a worker at its usage limit is neither idle nor busy: it holds its slot and takes no work
+   | ([$ws[] | select(.unavailable == null and (.herdr_state | idle))] | length) as $idle
+   | ([$ws[] | select(.unavailable == null and (.herdr_state | busy))] | length) as $busy
+   | ([$ws[] | select(.unavailable != null)] | length) as $unavail
+   | (($ws | length) - $idle - $busy - $unavail) as $unknown
    | [$spawns.inflight[] | select((.host | ascii_downcase) == ($hst.host | ascii_downcase))] as $fly
    | ([$ws[] | select((.kind | heavy_kind) or (.kind == null and (.herdr_state | idle | not)))] | length) as $heavy_held
    | ($heavy_held + ([$fly[] | select(.kind | heavy_kind)] | length)) as $heavy_used
@@ -55,13 +57,14 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null]
    | ($light and $free_h > 0 and ($c == null or $heavy_queue < $c.heavy_jobs)) as $heavy
    | {host:$hst.host, machine:($hst.machine // null), reachable:$up, configured:($c != null),
       limits:(if $c == null then null else {heavy_jobs:$c.heavy_jobs, max_workers:$c.max_workers, spawn:$c.spawn} end),
-      workers:{total:($ws | length), idle:$idle, busy:$busy, unknown:$unknown, spawning:($fly | length), list:$ws},
+      workers:{total:($ws | length), idle:$idle, busy:$busy, unavailable:$unavail, unknown:$unknown, spawning:($fly | length), list:$ws},
       free:{workers:$free_w, heavy_jobs:$free_h},
       lock_queue:(if $lq == null then {observed:false, lanes:[]} else {observed:$lq.reachable, error:$lq.error, lanes:$lq.lanes} end),
       spawn_ok:{light:$light, heavy:$heavy},
       fits:{spawn:[$kinds | to_entries[] | select(if .value.heavy then $heavy else $light end) | .key],
             idle_worker:[$kinds | to_entries[] | select($up and $idle > 0 and ((.value.heavy | not) or $free_h > 0)) | .key]},
-      reasons:([if $up | not then "host did not answer" else empty end, if $c == null then "no capacity configured for this host (coordinator.capacity)" else empty end,
+      reasons:([if $up | not then "host did not answer" else empty end,
+                if $unavail > 0 then "\($unavail) worker(s) unavailable (usage limit): " + ([$ws[] | select(.unavailable != null) | .agent_id] | join(", ")) else empty end, if $c == null then "no capacity configured for this host (coordinator.capacity)" else empty end,
                 if $c != null and $c.spawn != true then "spawning is off for this host" else empty end,
                 if $c != null and $free_w == 0 then "\($slots_used) of \($c.max_workers) workers in use" else empty end,
                 if $c != null and $free_h == 0 then "\($heavy_used) of \($c.heavy_jobs) heavy-job slots taken" else empty end,

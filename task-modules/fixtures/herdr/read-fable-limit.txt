@@ -1,0 +1,8 @@
+● Running the VM check under the heavy-work lock.
+
+  ⎿  You've reached your Fable limit. Run /usage-credits to continue or switch models with /model.
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ? for shortcuts

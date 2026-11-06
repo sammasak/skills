@@ -8,8 +8,9 @@ $inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev | $w
 # an agent is its pane (host/agent_id), not its session: /clear and a harness restart keep the pane and must not buy a
 # new wake for the same work; herdr never reuses a pane id, so a new worker still changes the fingerprint. The fleet is
 # the workers among the listed agents: the Coordinator's own panes (never a handoff target) do not keep it busy
-| [$inv.hosts[]? | .host as $h | .agents[]? | {id:($h + "/" + .agent_id), state:(.observed_state // "unknown")}] as $all
-| [$all[] | select(.id as $i | $workers | index($i))] as $agents
+| [$inv.hosts[]? | .host as $h | .agents[]? | {id:($h + "/" + .agent_id), state:(.observed_state // "unknown"), unavailable:(.unavailable != null)}] as $all
+# a worker at its usage limit is not a worker this run: it neither keeps the fleet busy nor counts as an idle one with work
+| [$all[] | select((.unavailable | not) and (.id as $i | $workers | index($i)))] as $agents
 # idle: every host answered, at least one worker, every worker idle or done (blocked, working and unknown are not idle)
 | (all($inv.hosts[]?; .reachable == true) and ($agents | length) > 0 and all($agents[]; .state == "idle" or .state == "done")) as $idle
 | ($open | to_entries | map(.value + {handoff_id:.key})) as $hs

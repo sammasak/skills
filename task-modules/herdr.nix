@@ -23,7 +23,16 @@ in
                session_id:(.agent_session.value? // null), cwd:(.cwd // null), title:(.terminal_title_stripped // .terminal_title // ""),
                observed_state:(.agent_status // "unknown"), observed_at:$at, state_change_seq:(.state_change_seq // null),
                task_ref:((.terminal_title_stripped // "") | capture("(?<r>#[0-9]+)")?.r // null), evidence_ref:null,
-               approval_required:(.agent_status == "blocked"), error:null})' <<<"$3" 2>/dev/null; }
+               approval_required:(.agent_status == "blocked"), unavailable:null, error:null})' <<<"$3" 2>/dev/null; }
+        # a worker at its usage limit sits idle at its prompt: unavailable, not free (the owner switches its model or waits)
+        mark_unavailable() { # <machine-or-empty> <records json>
+          local recs="$2" a line
+          while IFS= read -r a; do
+            valid_id "$a" || continue
+            line=$(usage_limit_line "$1" "$a")
+            [ -z "$line" ] || recs=$(jq -c --arg a "$a" --arg l "$line" 'map(if .agent_id == $a then .unavailable = {reason:"usage_limit", line:$l} else . end)' <<<"$recs")
+          done < <(jq -r '.[] | select(.observed_state != "working") | .agent_id' <<<"$recs")
+          printf '%s\n' "$recs"; }
         observe() { # <host-label> <machine-or-empty>
           local host="$1" m="$2" rc=0 raw records errf herr
           errf=$(mktemp); raw=$(herdr_at ${t} "$m" agent list 2>"$errf") || rc=$?
@@ -33,6 +42,7 @@ in
             hosts_out=$(jq -c --arg h "$host" --arg m "$m" --arg k "$(rc_kind $rc)" --argjson rc "$rc" --arg e "$herr" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:$k, message:("herdr agent list: " + $k + " (exit " + ($rc|tostring) + ")" + (if $e == "" then "" else ": " + $e end))}, agents:[]}]' <<<"$hosts_out"); return; fi
           records=$(normalise "$host" "$m" "$raw") && [ -n "$records" ] \
             || { hosts_out=$(jq -c --arg h "$host" --arg m "$m" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:false, error:{kind:"malformed", message:"herdr agent list did not return an agent_list"}, agents:[]}]' <<<"$hosts_out"); return; }
+          records=$(mark_unavailable "$m" "$records")
           answered=$((answered+1))
           hosts_out=$(jq -c --arg h "$host" --arg m "$m" --argjson r "$records" '. + [{host:$h, machine:(if $m == "" then null else $m end), reachable:true, error:null, agents:$r}]' <<<"$hosts_out")
         }
@@ -97,11 +107,14 @@ in
         draft="${cfg.stateDir}/handoffs/$id.json"
         [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"
         host=$(jq -r '.host // empty' "$draft"); m=$(jq -r '.machine // empty' "$draft"); agent=$(jq -r '.agent_id // empty' "$draft"); text=$(jq -r '.text // empty' "$draft"); ref=$(jq -r '.task_ref // empty' "$draft"); want_session=$(jq -r '.session_id // empty' "$draft")
-        # a review handoff's key (skills#77), only as its text states it (the text is what the id covers)
+        acts=$(jq -c '.allowed_actions // empty' "$draft"); pr=$(jq -r '.pr_url // empty' "$draft")
+        # a review handoff's key (skills#77) and a merge handoff's PR (#70), each only as the text states it (the text is
+        # what the id covers), so the field cannot be swapped under an owner-confirmed text
         review=$(jq -c '.review // null' "$draft")
         [ "$review" = null ] || grep -qxF "Review of: $(jq -r .pr <<<"$review") at head $(jq -r .head <<<"$review")" <<<"$text" \
           || fail 3 invalid_input "draft $id names a review its text does not state (edited?)" "$ctx"
-        acts=$(jq -c '.allowed_actions // empty' "$draft")
+        [ -z "$pr" ] || grep -qxF "Merge target: $pr" <<<"$text" \
+          || fail 3 invalid_input "draft $id names a merge target its text does not state (edited?)" "$ctx"
         [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] && [ -n "$acts" ] || fail 3 invalid_input "draft $id is incomplete (a draft without allowed_actions predates this version: redraft it)" "$ctx"
         # the id is content-addressed: re-derive it so the text and actions sent are the ones the owner confirmed
         [ "$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$acts" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
@@ -136,6 +149,36 @@ in
               || fail 2 audit_failed "agent $host/$agent is mid-turn, and the parked line could not be written" "$ctx"
             fail 2 agent_busy "agent $host/$agent is mid-turn; a queued prompt would blur which turn answered it. Parked in the audit log: hand the item to another free worker now, or coord:changed prints a retry line once one is free" "$ctx" ;;
           *) fail 2 agent_state_unknown "herdr agent get returned no usable state for $host/$agent; not sending" "$ctx" ;; esac
+        limit=$(usage_limit_line "$m" "$agent")
+        [ -z "$limit" ] || fail 2 worker_unavailable "agent $host/$agent is at its usage limit ($limit); not sending. Hand the item to another available worker, or have the owner switch its model (/model) first" "$ctx"
+        author_flag=""
+        if jq -e 'index("merge")' <<<"$acts" >/dev/null; then
+          # the enforced author-merge gate (#70): key on the authorship of the PR being merged, not the authorizing item --
+          # the owner labels the issue, so an item's implement, review and merge handoffs share authorized_by.issue_url and
+          # it cannot tell author from an independent reviewer. The merge handoff names the PR -- pr_url (a pure merge) or
+          # the review handoff's review.pr (OWNER/REPO#N, skills#77) -- and we resolve that PR's implementer from the audit
+          # the way correlate.jq attributes PRs (reference + the handoff window, across repos) and refuse only it.
+          pr_repo=""; pr_num=""
+          if [ -n "$pr" ]; then pr_repo=$(sed -E 's#^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$#\1#' <<<"$pr"); pr_num=$(sed -E 's#.*/pull/([0-9]+)$#\1#' <<<"$pr"); named="$pr"
+          elif [ "$review" != null ] && [ -n "$review" ]; then rp=$(jq -r '.pr' <<<"$review"); pr_repo="''${rp%#*}"; pr_num="''${rp##*#}"; named="$rp"
+          else fail 3 invalid_input "a merge handoff must name the PR it merges (pr_url, or the review field when it also reviews)" "$ctx"; fi
+          errf=$(mktemp); grc=0
+          prs=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$pr_repo" --state all --limit ${toString cfg.ghLimit} \
+            --json number,createdAt,title,body,headRefName,closingIssuesReferences,commits 2>"$errf" 9>&-) || grc=$?
+          gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+          # fail closed on a gh error: the implementer is unknown and the merge might go to its author, so retry rather than send
+          [ "$grc" -eq 0 ] || fail 2 gh_error "could not read $named to check its implementer: gh pr list exited $grc''${gherr:+: $gherr}; not sending the merge" "$ctx"
+          prj=$(jq -c --argjson n "$pr_num" 'if type == "array" then (map(select(.number == $n)) | first) else null end' <<<"$prs" 2>/dev/null)
+          if [ -n "$prj" ] && [ "$prj" != null ]; then
+            impls=$(pr_implementer "$audit" "$pr_repo" "$pr_num" "$prj")
+            printf '%s\n' "$impls" | grep -qxF "$host/$agent" \
+              && fail 3 author_merge "$host/$agent implemented $named; the implementer never merges its own change, whatever item authorizes the merge. Draft the merge for the independent reviewer" "$ctx"
+            # #70 (wW should-fix 3): a PR the audit attributes to no one is not silently allowed -- flag it so the pass is visible
+            [ -n "$impls" ] || author_flag="the audit attributes $named to no implementer; $host/$agent cannot be confirmed not to have written it (the independent 9/10 on its head still gates)"
+          else
+            author_flag="$named is not in $pr_repo's PR list (closed/merged long ago, or beyond the page); its implementer cannot be attributed from the audit (the independent 9/10 on its head still gates)"
+          fi
+        fi
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then
           fail 2 agent_changed "pane $host/$agent now runs session ''${session:-?} (draft was for $want_session); the agent restarted or the pane was reused" "$ctx"
@@ -175,9 +218,9 @@ in
           case "$code" in agent_blocked|agent_not_found) outcome=$code ;; agent_prompt_stalled) outcome=agent_prompt_stalled ;; *) outcome=unknown_delivery ;; esac
         fi
         rm -f "$errf"
-        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" \
+        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" --arg af "$author_flag" \
           '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), sent_at:$at, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q, outcome:$o,
-            receipt:($o == "delivered"), worker_done:false, accepted:false,
+            receipt:($o == "delivered"), worker_done:false, accepted:false, author_check:(if $af == "" then null else $af end),
             error:(if $o == "delivered" then null elif ($o == "unknown_delivery" or $o == "agent_prompt_stalled") then {kind:$o, message:"prompt did not confirm; the text may already sit in the input box of the agent. Inspect the pane; only the owner decides on a resend (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt refused: " + $o + "; nothing was delivered"} end)}')
         emit "$rec"
         [ "$outcome" = delivered ] || exit 2

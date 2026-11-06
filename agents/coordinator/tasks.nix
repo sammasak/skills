@@ -186,7 +186,7 @@ in
           (if (.portfolio.skipped_active|length) > 0 then "- active but not expanded (cap \(.portfolio.active|length)): \(.portfolio.skipped_active | join(", "))" else empty end),
           (if .portfolio.search_error != null then "- issue search unavailable: \(.portfolio.search_error.kind) — \(.portfolio.search_error.message); repos pushed before the page may hold authorized items" else empty end),
           "", "Full JSON: \($f)", "", "## Agents",
-          (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 and .correlation.by != "none" then " | " + (.reasons | join("; ")) else "" end)") end),
+          (if (.items|length) == 0 then "- none observed" else (.items[0:30][] | "- \(.host)/\(.agent_id) \(.harness) \(.task_ref // "-") | herdr=\(.herdr_state)\(if .unavailable != null then " | UNAVAILABLE (\(.unavailable.reason))" else "" end) | work=\(.work_verdict)\(if .evidence_ref then " " + .evidence_ref else "" end)\(if (.reasons|length) > 0 and .correlation.by != "none" then " | " + (.reasons | join("; ")) else "" end)") end),
           (if (.items|length) > 30 then "… \((.items|length) - 30) more agents in the JSON" else empty end)
         ' <<<"$brief" > "$dir/latest.md.tmp" || { rm -f "$dir/latest.md.tmp"; fail 2 internal "coord:brief Markdown render failed" '{"task":"coord:brief"}'; }
         mv "$dir/latest.md.tmp" "$dir/latest.md" && cat "$dir/latest.md"
@@ -197,10 +197,10 @@ in
 
     "coord:handoff" = {
       description = "Draft (never send) a bounded assignment brief for one agent, with the actions it may take; saves it under the state dir with a handoff_id.";
-      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; allowed_actions = null; owner_input = ""; review = null; };
+      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; allowed_actions = null; pr_url = null; owner_input = ""; review = null; };
       exec = ''
         ${cfg.prelude}
-        m=$(input .machine); host=$([ -n "$m" ] && printf '%s' "$m" || local_host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input); review=$(input .review)
+        m=$(input .machine); host=$([ -n "$m" ] && printf '%s' "$m" || local_host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); pr=$(input .pr_url); need=$(input .owner_input); review=$(input .review)
         actions=$(jq -c '.allowed_actions // empty' <<<"''${DEVENV_TASK_INPUT:-{\}}")
         ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"coord:handoff",host:$h,agent_id:$a}')
         [ -z "$ses" ] || [[ "$ses" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail 3 invalid_input "session_id has unsafe characters" "$ctx"
@@ -225,15 +225,23 @@ in
             and (length == (unique | length)) and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1))
             then sort_by([(if . == "merge" then 0 elif . == "close" then 1 elif . == "label" then 2 elif . == "comment" then 3 else 4 end), .]) else empty end' <<<"$actions")
         [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
+        # #70: author-merge is enforced at herdr:message send by the authorship of the PR being merged, not the authorizing
+        # item (implement, review and merge handoffs share the issue the owner labelled). The draft is composed freely (as a
+        # review draft is); the send is the gate: it resolves the implementer from the PR the merge handoff names -- pr_url
+        # (a .../pull/N URL) or the review field (OWNER/REPO#N@head, when the same handoff reviews and merges, skills#77) --
+        # and a merge draft that names neither is refused there. Here only pr_url's shape is checked, and it is merge-only.
+        if [ -n "$pr" ]; then
+          [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$ ]] || fail 3 invalid_input "pr_url must be https://github.com/OWNER/REPO/pull/N" "$ctx"
+          jq -e 'index("merge")' <<<"$actions" >/dev/null || fail 3 invalid_input "pr_url is only for a merge handoff (allowed_actions must include merge)" "$ctx"
+        fi
         actions_line=$(jq -r 'join(", ")' <<<"$actions")
         at=$(now_iso)
-        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s%s\nReply in this pane when done, naming the evidence above.\n' \
-          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")" \
-          "$([ -n "$review" ] && printf '\nReview of: %s at head %s\n' "''${review%@*}" "''${review##*@}")")
+        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s%s%s\nReply in this pane when done, naming the evidence above.\n' \
+          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$pr" ] && printf '\nMerge target: %s\n' "$pr")" "$([ -n "$review" ] && printf '\nReview of: %s at head %s\n' "''${review%@*}" "''${review##*@}")" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
         id=$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
-        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" --argjson acts "$actions" --arg rv "$review" \
-          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, allowed_actions:$acts, text:$t,
+        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg pr "$pr" --arg need "$need" --argjson acts "$actions" --arg rv "$review" \
+          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, allowed_actions:$acts, pr_url:(if $pr == "" then null else $pr end), text:$t,
             review:(if $rv == "" then null else {pr:($rv | split("@")[0]), head:($rv | split("@")[1])} end),
             owner_input: (if $need == "" then null else $need end), approval_required:true, error:null}')
         if [ ! -f "$dir/$id.json" ]; then

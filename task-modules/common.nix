@@ -64,6 +64,62 @@ in
       # herdr_at <timeout_s> <machine-label-or-empty> <herdr args...>: the local server, or herdr's own forwarding to a saved machine
       herdr_at() { local tmo="$1" m="$2"; shift 2
         if [ -z "$m" ]; then timeout -k 1 "$tmo" ${cfg.herdrCommand} "$@"; else timeout -k 1 "$tmo" ${cfg.herdrCommand} --machine "$m" "$@"; fi; }
+      # usage_limit_line <machine-or-empty> <agent_id>: the harness's usage-limit line ("You've reached your Fable limit. …",
+      # "You've hit your weekly limit · resets …") among the agent's last 30 visible lines, or nothing. It must start its
+      # line (after box-drawing or bullet characters, which are trimmed), so a prompt or document quoting the phrase does not match; a read
+      # that fails is nothing, never a limit.
+      # #70 review: the limit goes stale once the agent has moved on. A limit line with a later `Set model
+      # to …` (the owner's /model switch) or a later assistant/tool turn (a new ●/⏺ bullet) after it is not
+      # reported, so a worker whose limit has reset -- or whose model the owner switched -- becomes
+      # available again without 30 lines having to scroll off.
+      usage_limit_line() { { herdr_at ${toString cfg.timeoutSeconds} "$1" agent read "$2" --lines 30 --source visible --format text 2>/dev/null 9>&- || true; } \
+        | awk '
+            { raw[NR] = $0; stripped = $0; sub(/^[^[:alpha:]]*/, "", stripped); clean[NR] = stripped }
+            clean[NR] ~ /^You(.{1,3}ve| have) (reached|hit) your [[:alnum:] .-]{0,30}limit/ { last = NR }
+            END {
+              if (!last) exit
+              for (i = last + 1; i <= NR; i++)
+                if (raw[i] ~ /Set model to / || raw[i] ~ /^[[:space:]]*[●⏺]/) exit   # moved on: stale limit, report nothing
+              print clean[last]
+            }' | head -c 300 | tr -d '\000-\037' || true; }
+      # pr_implementer <audit-file> <OWNER/REPO of the PR> <pr-number> <pr-json>: every "host/agent_id" whose delivered
+      # implement handoff attributes the PR, one per line, or nothing. The implementer never merges its own change, whatever
+      # item authorizes the merge.
+      # #70 review (wW/wN): the owner authorizes by labelling the issue, so an item's implement, review and merge handoffs
+      # all carry the same authorized_by.issue_url -- keying author-merge on that item is the old coordinating-task_ref key
+      # and still refuses an independent reviewer (and, when a merge is authorized by the PR URL, never catches the real
+      # author, whose implement handoff is authorized by the issue). So key on authorship of the PR being merged: the merge
+      # handoff names the PR, and this resolves its implementer -- the delivered IMPLEMENT handoff whose authorizing issue the
+      # PR references (as #N when the PR is in that repo, or as the qualified OWNER/REPO#N from any repo -- implementation PRs
+      # routinely live in a different repo than their issue, e.g. rf-proto#4 for nixos-config#42) and in whose window
+      # [sent_at, next handoff to that pane) the PR was opened or a commit landed.
+      # Authorship is structural, never inferred from comment text (wW): a review or merge handoff is excluded because it
+      # carries the merge action or a #77 review field, not because its pane posted or quoted a grade. So an author whose own
+      # comment quotes another reviewer's grade, in any wording, stays an implementer. Host-qualified: the same agent id on
+      # another host is not it. The $pr object carries number, createdAt, title, body, headRefName, closingIssuesReferences[].{number,repository}
+      # and commits[].committedDate.
+      pr_implementer() { [ -s "$1" ] || return 0
+        jq -rs --arg prrepo "$2" --argjson n "$3" --argjson pr "$4" '
+          # the PR references issue #<num> of <repo>: closes it (same or cross repo), names #num in its own repo, carries num
+          # in its branch in its own repo, or names the qualified <repo>#num from any repo
+          def pr_refs($repo; $num):
+            ((($pr.closingIssuesReferences // []) | any(.number == $num and ((.repository.nameWithOwner // $prrepo) == $repo)))
+             or (($repo == $prrepo) and ((($pr.title // "") + "\n" + ($pr.body // "")) | test("(^|[^A-Za-z0-9_./#-])#\($num)([^0-9]|$)")))
+             or (($repo == $prrepo) and (($pr.headRefName // "") | test("(^|[/_-])\($num)([/_-]|$)")))
+             or ((($pr.title // "") + "\n" + ($pr.body // "")) | test("(^|[^A-Za-z0-9_./-])" + ($repo | gsub("\\."; "\\.")) + "#\($num)([^0-9]|$)")));
+          (map(select(type == "object")) | INDEX(.[] | select(.phase == "outcome"); .audit_id)) as $o
+          | [ map(select(type == "object" and .phase == "attempt" and (.handoff_id | type) == "string"))
+              | group_by(.handoff_id) | .[] | last
+              | (.authorized_by.issue_url // "" | capture("github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/(?<n>[0-9]+)")?) as $cap
+              | . + {pane:(.host + "/" + .agent_id), sent_at:.at, delivered:(($o[.audit_id | tostring].outcome // "") == "delivered"),
+                     is_merge:(((.allowed_actions // []) | index("merge")) != null), is_review:((.review // null) != null),
+                     irepo:($cap.r // null), inum:(if $cap then ($cap.n | tonumber) else null end)} ] as $hs
+          | [ $hs[] | . as $h | ($hs | map(select(.pane == $h.pane and .sent_at > $h.sent_at) | .sent_at) | min) as $until
+              | select($h.delivered and ($h.is_merge | not) and ($h.is_review | not) and $h.irepo != null)
+              | select(pr_refs($h.irepo; $h.inum))
+              | select(($pr.createdAt != null and $pr.createdAt >= $h.sent_at and ($until == null or $pr.createdAt < $until))
+                  or any(($pr.commits // [])[]; (.committedDate // null) as $c | $c != null and $c >= $h.sent_at and ($until == null or $c < $until)))
+              | $h.pane ] | unique | .[]' "$1" 2>/dev/null || true; }
       # machines_json: {machines:[enabled saved machines], error:null|{kind,message}}; a failing herdr is data, never fatal
       machines_json() { local raw rc=0; raw=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.herdrCommand} machine list --json 2>/dev/null) || rc=$?
         if [ "$rc" -ne 0 ]; then jq -cn --arg m "herdr machine list: $(rc_kind $rc) (exit $rc)" '{machines:[], error:{kind:"herdr_error", message:$m}}'; return 0; fi

@@ -50,7 +50,11 @@ fixed; skipping a step is a boundary violation.
    `devenv tasks run herdr:message --input-json '{"handoff_id":"<id>","confirm":"<host>/<agent_id>","authorized_by":{"issue_url":"https://github.com/OWNER/REPO/issues/N","label":"<label>"}}'`
    It forwards through `herdr --machine <label> agent prompt` for a saved
    machine, only sends to an `idle`/`done` agent and refuses: `agent_blocked`,
-   `agent_busy` (mid-turn: wait, then send), `agent_changed` (session differs
+   `agent_busy` (mid-turn: wait, then send), `worker_unavailable` (its pane
+   ends on the harness's usage-limit line: hand the item to another available
+   worker, or the owner switches its model), `author_merge` (`merge` for the
+   pane that implemented the `task_ref`; `coord:handoff` refuses it too: the
+   reviewer merges, never the implementer), `agent_changed` (session differs
    from the draft), an edited draft (text or `allowed_actions`), a draft
    without `allowed_actions` (redraft it), a missing or malformed
    `authorized_by`, `authorization_missing` (the label is not on the issue),
@@ -59,7 +63,7 @@ fixed; skipping a step is a boundary violation.
    carries `allowed_actions` and `authorized_by` (`verified: true`,
    `verified_at`, `labeled_by`, `labeled_at`) for every attempt. A refusal before sending has no `outcome`, only `error.kind`
    (`invalid_input`, `not_confirmed`, `authorization_missing`, `gh_error`,
-   `agent_busy`, `agent_blocked`,
+   `agent_busy`, `agent_blocked`, `worker_unavailable`, `author_merge`,
    `agent_not_found`, `agent_changed`, `agent_restarted`,
    `agent_state_unknown`, `duplicate`, `probably_received`, `audit_corrupt`,
    `audit_failed`, `busy`, `timeout`, `command_failed`): nothing was sent; report it verbatim and
