@@ -84,9 +84,12 @@ has no assignment until the coordinator hands it one (`coord:handoff`,
 `herdr:message`). `--dangerously-skip-permissions` starts unattended only where
 user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code
 2.1.300 no longer reads `~/.claude.json`'s `bypassPermissionsModeAccepted`)
-and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` only
-(nixos-config `mcp.nix`, `acceptClaudeStartupDialogs`), so spawn in `$HOME`
-and name the checkout in the handoff. Elsewhere `agent start` returns
+and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` on
+every host and, on a worker host, that host's `sam.herdr.worker.trustedDirs`
+as well (acer-swift: `~/claude-code-skills` and `~/nixos-config`; nixos-config
+`mcp.nix`, `acceptClaudeStartupDialogs`, since nixos-config#146). So on a worker
+host spawn in `$HOME` or either checkout; the coordinator host (lenovo, which
+does not spawn) pre-trusts `$HOME` only. Name the checkout in the handoff. Elsewhere `agent start` returns
 `agent_not_ready` and the workspace stays for you to inspect. A host
 configured with spawning off is refused as `capacity` whether or not it is
 in the inventory. The task never
