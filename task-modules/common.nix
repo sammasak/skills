@@ -82,19 +82,45 @@ in
                 if (raw[i] ~ /Set model to / || raw[i] ~ /^[[:space:]]*[●⏺]/) exit   # moved on: stale limit, report nothing
               print clean[last]
             }' | head -c 300 | tr -d '\000-\037' || true; }
-      # implementer_of <audit-file> <host/agent_id> <#N> [handoff_id to skip] [item_url]: the handoff_id of a delivered
-      # non-merge handoff by which that pane implemented the item, or nothing; the implementer never merges its own change.
-      # #70 review: a coordinating task_ref (#28, #109) buckets review, implement and deploy handoffs of many different
-      # items, so matching on it alone refuses an independent reviewer's merge. When the caller knows the exact item being
-      # merged (the merge's authorized_by.issue_url, OWNER/REPO#N), match the pane's prior non-merge handoff by that item --
-      # host- and repo-qualified -- so a reviewer whose only handoff was for a different item under the same coordinating
-      # number is not taken for the implementer. Without an item (a pre-authorization coord:handoff draft) it falls back to
-      # the task_ref, a conservative heads-up before the enforced send gate.
-      implementer_of() { [ -s "$1" ] || return 0
-        jq -rs --arg p "$2" --arg r "$3" --arg skip "''${4:-}" --arg url "''${5:-}" 'map(select(type == "object")) as $all | (INDEX($all[] | select(.phase == "outcome"); .audit_id)) as $o
-          | [$all[] | select(.phase == "attempt" and (.host + "/" + .agent_id) == $p and .handoff_id != $skip
-              and (if $url != "" then (.authorized_by.issue_url // "") == $url else .task_ref == $r end)
-              and (($o[.audit_id | tostring].outcome // "") == "delivered") and ((.allowed_actions // []) | index("merge") | not)) | .handoff_id] | first // empty' "$1" 2>/dev/null || true; }
+      # pr_implementer <audit-file> <OWNER/REPO> <pr-number> <pr-json>: every "host/agent_id" whose delivered non-merge
+      # handoff is the one by which correlate.jq attributes the PR, one per line, or nothing. The implementer never merges
+      # its own change, whatever item authorizes the merge.
+      # #70 review (wW/wN): the owner authorizes by labelling the issue, so an item's implement, review and merge handoffs
+      # all carry the same authorized_by.issue_url -- keying author-merge on that item is the old coordinating-task_ref key
+      # and still refuses an independent reviewer (and, when a merge is authorized by the PR URL, never catches the real
+      # author, whose implement handoff is authorized by the issue). So key on authorship of the PR being merged: the merge
+      # handoff names the PR (pr_url), and this resolves its implementer from the audit the way correlate.jq does -- the
+      # delivered non-merge handoff whose task_ref the PR references and in whose window [sent_at, next handoff to that pane)
+      # the PR was opened or a commit landed, except a pane that only graded it (it reviewed it; a concurrent handoff
+      # implemented it). Host- and repo-qualified: the same agent id on another host, or a handoff in another repo, is not it.
+      # The $pr object carries number, createdAt, title, body, headRefName, closingIssuesReferences, commits[].committedDate
+      # and comments/reviews[].body. refs/signer mirror evidence.jq (correlate.jq's attribution); keep them in sync.
+      pr_implementer() { [ -s "$1" ] || return 0
+        jq -rs --arg repo "$2" --argjson n "$3" --argjson pr "$4" '
+          def num: if type == "string" and test("^#[0-9]+$") then ltrimstr("#") | tonumber else null end;
+          def refs($k): ((($pr.closingIssuesReferences // []) | any(.number == $k))
+            or ((($pr.title // "") + "\n" + ($pr.body // "")) | test("(^|[^A-Za-z0-9_./#-])#\($k)([^0-9]|$)"))
+            or (($pr.headRefName // "") | test("(^|[/_-])\($k)([/_-]|$)")));
+          def host_agent: "(?<h>[A-Za-z0-9][A-Za-z0-9.-]*) (?<a>[A-Za-z0-9_]+:[A-Za-z0-9_]+)";
+          def signer: (([capture("-- " + host_agent; "g")] | last)
+            // ([capture("(?i)review(er:?|ed by) " + host_agent; "g")] | first))
+            | if . == null then null else "\(.h)/\(.a)" end;
+          # graders: every pane that signed any grade on the PR -- a concurrent handoff implemented what a grader reviewed
+          ([ (($pr.comments // [])[] | .body), (($pr.reviews // [])[] | .body) ]
+           | map({by:signer, g:(test("(?<![0-9.])(10|[0-9])/10(?![0-9])"))}) | [.[] | select(.g and .by != null) | .by] | unique) as $graders
+          | (map(select(type == "object")) | INDEX(.[] | select(.phase == "outcome"); .audit_id)) as $o
+          | [ map(select(type == "object" and .phase == "attempt" and (.handoff_id | type) == "string"))
+              | group_by(.handoff_id) | .[] | last
+              | . + {pane:(.host + "/" + .agent_id), sent_at:.at, delivered:(($o[.audit_id | tostring].outcome // "") == "delivered"),
+                     is_merge:(((.allowed_actions // []) | index("merge")) != null),
+                     repo:((.authorized_by.issue_url // "") | capture("github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/")?.r // null)} ] as $hs
+          | [ $hs[] | . as $h | ($hs | map(select(.pane == $h.pane and .sent_at > $h.sent_at) | .sent_at) | min) as $until
+              | select($h.delivered and ($h.is_merge | not) and $h.repo == $repo and ($graders | index($h.pane) | not))
+              | ($h.task_ref | num) as $k | select($k != null and refs($k))
+              | select($pr.number == $k
+                  or ($pr.createdAt != null and $pr.createdAt >= $h.sent_at and ($until == null or $pr.createdAt < $until))
+                  or any(($pr.commits // [])[]; (.committedDate // null) as $c | $c != null and $c >= $h.sent_at and ($until == null or $c < $until)))
+              | $h.pane ] | unique | .[]' "$1" 2>/dev/null || true; }
       # machines_json: {machines:[enabled saved machines], error:null|{kind,message}}; a failing herdr is data, never fatal
       machines_json() { local raw rc=0; raw=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.herdrCommand} machine list --json 2>/dev/null) || rc=$?
         if [ "$rc" -ne 0 ]; then jq -cn --arg m "herdr machine list: $(rc_kind $rc) (exit $rc)" '{machines:[], error:{kind:"herdr_error", message:$m}}'; return 0; fi

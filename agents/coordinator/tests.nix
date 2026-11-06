@@ -1184,13 +1184,13 @@
         [ ! -s "$FAKE_LOG" ] && ok || bad "handoff must not call herdr"
         run coord:handoff --input-json '{"machine":"acer-swift","agent_id":"wA:p2","session_id":"sess-1","task_ref":"#7","scope":"fix typo","expected_evidence":"commit","acceptance":"typo gone","allowed_actions":["comment","deploy:none"],"owner_input":"none"}'
         [ "$(jqr .handoff_id)" = "$ID" ] && ok || bad "same content => same id"
-        run coord:handoff --input-json '{"machine":"acer-swift","agent_id":"wA:p2","session_id":"sess-1","task_ref":"#7","scope":"fix typo","expected_evidence":"commit","acceptance":"typo gone","allowed_actions":["merge","deploy:none"],"owner_input":"none"}'
+        run coord:handoff --input-json '{"machine":"acer-swift","agent_id":"wA:p2","session_id":"sess-1","task_ref":"#7","scope":"fix typo","expected_evidence":"commit","acceptance":"typo gone","allowed_actions":["merge","deploy:none"],"pr_url":"https://github.com/sammasak/skills/pull/7","owner_input":"none"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .handoff_id)" != "$ID" ] && ok || bad "different allowed_actions => different id"
-        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["deploy:msi","comment","label","deploy:acer-swift","close","merge"]}'
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["deploy:msi","comment","label","deploy:acer-swift","close","merge"],"pr_url":"https://github.com/sammasak/skills/pull/7"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .machine)" = null ] && [ "$(jqr .host)" = "$(hostname -s 2>/dev/null || hostname)" ] && ok || bad "local handoff: host is this host, machine null"
         ID_LOCAL=$(jqr .handoff_id)
         jqr .text | grep -q '^Allowed actions: merge, close, label, comment, deploy:acer-swift, deploy:msi\. ' && [ "$(jqr '.allowed_actions | join(",")')" = "merge,close,label,comment,deploy:acer-swift,deploy:msi" ] && ok || bad "actions rendered and recorded in canonical order"
-        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","close","label","comment","deploy:acer-swift","deploy:msi"]}'
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","close","label","comment","deploy:acer-swift","deploy:msi"],"pr_url":"https://github.com/sammasak/skills/pull/7"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .handoff_id)" = "$ID_LOCAL" ] && ok || bad "same actions in another order => same id"
         run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"7","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "task_ref must be #N"

@@ -107,10 +107,10 @@ in
         draft="${cfg.stateDir}/handoffs/$id.json"
         [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"
         host=$(jq -r '.host // empty' "$draft"); m=$(jq -r '.machine // empty' "$draft"); agent=$(jq -r '.agent_id // empty' "$draft"); text=$(jq -r '.text // empty' "$draft"); ref=$(jq -r '.task_ref // empty' "$draft"); want_session=$(jq -r '.session_id // empty' "$draft")
-        acts=$(jq -c '.allowed_actions // empty' "$draft")
+        acts=$(jq -c '.allowed_actions // empty' "$draft"); pr=$(jq -r '.pr_url // empty' "$draft")
         [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] && [ -n "$acts" ] || fail 3 invalid_input "draft $id is incomplete (a draft without allowed_actions predates this version: redraft it)" "$ctx"
-        # the id is content-addressed: re-derive it so the text and actions sent are the ones the owner confirmed
-        [ "$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$acts" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
+        # the id is content-addressed: re-derive it so the text, actions and merge target sent are the ones the owner confirmed
+        [ "$(printf '%s|%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$acts" "$pr" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
         [ "$confirm" = "$host/$agent" ] || fail 3 not_confirmed "confirm must equal the draft target '$host/$agent' (got '$confirm')" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$ctx"
         [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "draft machine label has unsafe characters" "$ctx"
@@ -145,10 +145,24 @@ in
         limit=$(usage_limit_line "$m" "$agent")
         [ -z "$limit" ] || fail 2 worker_unavailable "agent $host/$agent is at its usage limit ($limit); not sending. Hand the item to another available worker, or have the owner switch its model (/model) first" "$ctx"
         if jq -e 'index("merge")' <<<"$acts" >/dev/null; then
-          # the enforced gate: match the implementer by the exact item being merged (authorized_by.issue_url),
-          # so a reviewer with only an unrelated handoff under the same coordinating task_ref is not refused (#70)
-          impl=$(implementer_of "$audit" "$host/$agent" "$ref" "$id" "$(jq -r '.issue_url // ""' <<<"$auth")")
-          [ -z "$impl" ] || fail 3 author_merge "$host/$agent implemented that item (handoff $impl); the implementer never merges its own change. Draft the merge for the independent reviewer" "$ctx"
+          # the enforced author-merge gate (#70): key on the authorship of the PR being merged, not the authorizing item --
+          # the owner labels the issue, so an item's implement, review and merge handoffs share authorized_by.issue_url and
+          # it cannot tell author from an independent reviewer. The merge draft names the PR (pr_url); resolve that PR's
+          # implementer from the audit the way correlate.jq attributes PRs (refs + the handoff window) and refuse only it.
+          [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$ ]] \
+            || fail 3 invalid_input "a merge handoff must name the PR it merges (pr_url); redraft it with pr_url" "$ctx"
+          pr_repo=$(sed -E 's#^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$#\1#' <<<"$pr"); pr_num=$(sed -E 's#.*/pull/([0-9]+)$#\1#' <<<"$pr")
+          errf=$(mktemp); grc=0
+          prs=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$pr_repo" --state all --limit ${toString cfg.ghLimit} \
+            --json number,createdAt,title,body,headRefName,closingIssuesReferences,commits,comments,reviews 2>"$errf" 9>&-) || grc=$?
+          gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+          # fail closed: if the PR cannot be read, the implementer is unknown and the merge might go to its author
+          [ "$grc" -eq 0 ] || fail 2 gh_error "could not read $pr to check its implementer: gh pr list exited $grc''${gherr:+: $gherr}; not sending the merge" "$ctx"
+          prj=$(jq -c --argjson n "$pr_num" 'if type == "array" then (map(select(.number == $n)) | first) else null end' <<<"$prs" 2>/dev/null)
+          [ -n "$prj" ] && [ "$prj" != null ] || fail 2 gh_error "$pr was not found in $pr_repo (cannot attribute its implementer); not sending the merge" "$ctx"
+          if pr_implementer "$audit" "$pr_repo" "$pr_num" "$prj" | grep -qxF "$host/$agent"; then
+            fail 3 author_merge "$host/$agent implemented $pr; the implementer never merges its own change, whatever item authorizes the merge. Draft the merge for the independent reviewer" "$ctx"
+          fi
         fi
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then

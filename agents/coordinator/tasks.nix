@@ -170,10 +170,10 @@ in
 
     "coord:handoff" = {
       description = "Draft (never send) a bounded assignment brief for one agent, with the actions it may take; saves it under the state dir with a handoff_id.";
-      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; allowed_actions = null; owner_input = ""; };
+      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; allowed_actions = null; pr_url = null; owner_input = ""; };
       exec = ''
         ${cfg.prelude}
-        m=$(input .machine); host=$([ -n "$m" ] && printf '%s' "$m" || local_host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input)
+        m=$(input .machine); host=$([ -n "$m" ] && printf '%s' "$m" || local_host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); pr=$(input .pr_url); need=$(input .owner_input)
         actions=$(jq -c '.allowed_actions // empty' <<<"''${DEVENV_TASK_INPUT:-{\}}")
         ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"coord:handoff",host:$h,agent_id:$a}')
         [ -z "$ses" ] || [[ "$ses" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail 3 invalid_input "session_id has unsafe characters" "$ctx"
@@ -195,18 +195,24 @@ in
             and (length == (unique | length)) and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1))
             then sort_by([(if . == "merge" then 0 elif . == "close" then 1 elif . == "label" then 2 elif . == "comment" then 3 else 4 end), .]) else empty end' <<<"$actions")
         [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
-        # #70: author-merge is enforced at herdr:message send, where the merge's authorized_by names the exact item, so the
-        # implementer is matched per PR not per coarse coordinating task_ref. A draft has no authorized_by yet, so a draft-time
-        # task_ref check would refuse a legitimate reviewer whose only other handoff shares the coordinating number; the draft
-        # is composed freely and the send is the gate.
+        # #70: author-merge is enforced at herdr:message send by the authorship of the PR being merged, not the authorizing
+        # item (implement, review and merge handoffs share the issue the owner labelled). So a merge handoff must name the PR
+        # it merges (pr_url, a .../pull/N URL); the send resolves that PR's implementer from the audit and refuses it. pr_url
+        # is meaningless without merge, and a draft without it could not be sent, so require it with merge and reject it otherwise.
+        if jq -e 'index("merge")' <<<"$actions" >/dev/null; then
+          [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$ ]] \
+            || fail 3 invalid_input "a merge handoff needs pr_url, the https://github.com/OWNER/REPO/pull/N it merges (the send refuses its own implementer)" "$ctx"
+        else
+          [ -z "$pr" ] || fail 3 invalid_input "pr_url is only for a merge handoff (allowed_actions must include merge)" "$ctx"
+        fi
         actions_line=$(jq -r 'join(", ")' <<<"$actions")
         at=$(now_iso)
-        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s\nReply in this pane when done, naming the evidence above.\n' \
-          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
-        id=$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$text" | sha256sum | cut -c1-12)
+        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s%s\nReply in this pane when done, naming the evidence above.\n' \
+          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$pr" ] && printf '\nMerge target: %s\n' "$pr")" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
+        id=$(printf '%s|%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$pr" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
-        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" --argjson acts "$actions" \
-          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, allowed_actions:$acts, text:$t,
+        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg pr "$pr" --arg need "$need" --argjson acts "$actions" \
+          '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, allowed_actions:$acts, pr_url:(if $pr == "" then null else $pr end), text:$t,
             owner_input: (if $need == "" then null else $need end), approval_required:true, error:null}')
         if [ ! -f "$dir/$id.json" ]; then
           [ -n "$rec" ] && printf '%s\n' "$rec" > "$dir/$id.json.tmp" && mv "$dir/$id.json.tmp" "$dir/$id.json" || fail 2 state_write_failed "could not write the draft under $dir" "$ctx"
