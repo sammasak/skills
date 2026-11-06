@@ -28,3 +28,18 @@ def notes: . as $p
 # the signed grades of 9 or more on the PR's exact head (the review's commit, or the head's short sha in the note)
 def passes: (.headRefOid // "") as $head
   | [notes[] | select(.grade != null and .grade >= 9 and .by != null and $head != "" and (.oid == $head or (.body | contains($head[0:7]))))];
+# every signed grade on the PR's exact head, by anyone
+def head_grades: (.headRefOid // "") as $head
+  | [notes[] | select(.grade != null and .by != null and $head != "" and (.oid == $head or (.body | contains($head[0:7]))))];
+# the review state of an open PR's current head (skills#77), from its independent signed grades on that head ($impl: its
+# implementers, host/agent, whose grades do not count) and the open review handoffs for exactly this head ($in_review):
+# passed (a 9 or more, no lower grade), disputed (both: a 9 never overrides a lower grade's findings, the owner decides),
+# findings (only lower grades: back to the implementer, not another review), in_review, unreviewed (the one state a review
+# handoff is for). A new head starts over at unreviewed or in_review.
+def review_state($impl; $in_review): (.headRefOid // "") as $head
+  | [head_grades[] | select(.by as $b | $impl | index($b) | not)] as $g
+  | (any($g[]; .grade >= 9)) as $pass | (any($g[]; .grade < 9)) as $low
+  | {head:(if $head == "" then null else $head end), implementer:$impl, in_review:$in_review,
+     grades:[$g[] | {grade, by, url}],
+     state:(if $pass and $low then "disputed" elif $pass then "passed" elif $low then "findings"
+            elif ($in_review | length) > 0 then "in_review" else "unreviewed" end)};

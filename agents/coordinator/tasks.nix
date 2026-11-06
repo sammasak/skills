@@ -34,7 +34,7 @@ in
             | map(. as $a | ($byid[$a.audit_id | tostring] // null) as $o | (($a.authorized_by // {}) | {issue_url, label}) as $auth
                 | {handoff_id:$a.handoff_id, audit_id:$a.audit_id, host:$a.host, machine:$a.machine, agent_id:$a.agent_id, session_id:($a.session_id // null), sent_at:$a.at,
                    outcome:($o.outcome // "interrupted"), delivered:(($o.outcome // "") == "delivered"),
-                   allowed_actions:($a.allowed_actions // []), authorized_by:$auth, task_ref:($a.task_ref // null),
+                   allowed_actions:($a.allowed_actions // []), authorized_by:$auth, task_ref:($a.task_ref // null), review:($a.review // null),
                    repo:((($auth.issue_url // "") | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first) // $a.repo // null)})
             # a handoff owns the PRs opened from its send until the next handoff to the same pane (until); only the newest
             # ${toString handoffsKept} are evaluated and carried, so the record stays well under the environment size devenv passes it in
@@ -96,7 +96,11 @@ in
             [ -n "$repo" ] || continue
             if [ "$(jq -r length <<<"$active")" -ge ${toString cfg.portfolioActive} ]; then skipped=$(jq -c --arg r "$repo" '. + [$r]' <<<"$skipped"); continue; fi
             w=$(gh_work_json "$repo")
-            active=$(jq -c -L ${./.} --argjson w "$w" --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson may ${lib.boolToString cfg.mayApprove} --arg o ${lib.escapeShellArg cfg.ghOwner} --argjson r "$(jq -c --arg r "$repo" '[.repos[] | select(.repo == $r)] | first' <<<"$repos")" \
+            # the open PRs' heads with their notes, for each head's review state (skills#77); a failed call leaves it unknown
+            prs_raw=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$repo" --state open --limit ${toString cfg.ghLimit} \
+                --json number,title,body,url,headRefName,headRefOid,createdAt,closingIssuesReferences,comments,reviews 2>/dev/null) \
+              && jq -e 'type == "array"' >/dev/null 2>&1 <<<"$prs_raw" || prs_raw=null
+            active=$(jq -c -L ${./.} --argjson w "$w" --slurpfile rp <(printf '%s\n' "$prs_raw") --slurpfile WS <(printf '%s\n' "$ws") --argjson labels ${lib.escapeShellArg (builtins.toJSON cfg.authorizingLabels)} --argjson may ${lib.boolToString cfg.mayApprove} --arg o ${lib.escapeShellArg cfg.ghOwner} --argjson r "$(jq -c --arg r "$repo" '[.repos[] | select(.repo == $r)] | first' <<<"$repos")" \
               'include "evidence"; . + [$r + {error:$w.error, truncated:($w.truncated // false),
                           # open_prs: the open PRs naming the issue; one holds the item whether or not a handoff owns it. gh:work keeps the
                           # closes, branch and title of each PR (no body, to stay small), mapped back to the fields refs() reads
@@ -106,7 +110,23 @@ in
                           # under the delegation (coordinator.mayApprove): what gh:label may approve (open, the owner wrote it, no authorizing
                           # label, no hold; the task checks author and state again at approval time)
                           approvable:(if $may then [$w.issues[]? | select((.state // "OPEN") == "OPEN") | select((.author // "") == $o) | select(any((.labels // [])[]; . as $l | ($labels | index($l)) != null or (. == "needs-live" or . == "blocked" or . == "needs-decision" or . == "needs-triage")) | not) | {number, title, url, labels}] else [] end),
-                          open_pr_list:([$w.prs[]? | select(.state == "OPEN") | {number, title, url, review_decision, draft, checks}])}]' <<<"$active")
+                          open_pr_list:([$w.prs[]? | select(.state == "OPEN") | {number, title, url, review_decision, draft, checks}]),
+                          # the review state of each open PR head (skills#77): only unreviewed is a review to hand out; findings go back
+                          # to the implementer it names, disputed is for the owner, in_review and passed are no work. A merged or closed PR
+                          # is not listed. Implementer: a delivered non-review handoff for an issue the PR names, sent before it opened;
+                          # in review: a review handoff for exactly this head whose agent is on it (same session, working or blocked), or
+                          # out of sight (host unanswered, delivery unknown: never a duplicate); idle, done, gone or a new session with no
+                          # grade frees the head, which is then offered once more (the recovery of a review that yielded nothing)
+                          open_pr_reviews:(($r.repo) as $repo | ($WS[0].handoffs // []) as $hs
+                            | if $rp[0] == null then null else [$rp[0][] | . as $pr
+                              | ([$hs[] | select(.repo == $repo and .delivered and .review == null) | (.task_ref | num) as $n
+                                  | select($n != null and ($pr | refs($n)) and ($pr.createdAt // "") >= (.sent_at // "")) | .host + "/" + .agent_id] | unique) as $impl
+                              | ([$hs[] | select(.review != null and .review.pr == ($repo + "#" + ($pr.number | tostring)) and .review.head == ($pr.headRefOid // "") and .until == null)
+                                  | (.herdr_state // "") as $hs_state
+                                  | select((.delivered and .session_state == "same" and ((["working", "blocked"] | index($hs_state)) != null))
+                                           or (.delivered and .session_state == "unobserved") or .hold == "unknown")
+                                  | .host + "/" + .agent_id]) as $ir
+                              | {number, url} + ($pr | review_state($impl; $ir))] end)}]' <<<"$active")
           # repos holding authorized work (an open PR or an authorizing label) are expanded first, delegation-only ones after,
           # newest push first within each group, so the cap never drops authorized work for unlabelled issues
           done < <(jq -r '[.repos[] | select(.active)] | sort_by(if .open_prs > 0 or .approved_issues > 0 then 0 else 1 end) | .[] | .repo' <<<"$repos")
@@ -147,7 +167,7 @@ in
                + ([mark("implemented"), mark("reviewed"), mark("merged"), mark("live")] | join(" ")) + " | work=\(.work_verdict)"
                + (if .hold == "unknown" then " | HOLD UNKNOWN: \(.unknown_reason)" else "" end) + (if .stale then " | STALE" else "" end) + (if (.reasons|length) > 0 then " | " + (.reasons | join("; ")) else "" end)),
             (if ($open|length) > 20 then "… \(($open|length) - 20) more open handoffs in the JSON" else empty end),
-            (if ($closed|length) > 0 then "- closed, nobody on it (the item can be handed out again; a merged one without an independent review needs that review): "
+            (if ($closed|length) > 0 then "- closed, nobody on it (the item can be handed out again; a merged PR without an independent review is reported for the owner, never reviewed after the merge): "
                + ([$closed | group_by([.repo, .task_ref])[] | "\(.[0].repo // "no repo")\(.[0].task_ref // "-") (" + ([.[] | "\(.handoff_id) \(.closed_reason)"] | join(", ")) + ")"] | join("; ")) else empty end) end)),
           "", "## Portfolio (\(.portfolio.owner): \(.portfolio.repos_listed) of \(.portfolio.repos_total) repos by recent push\(if .portfolio.truncated then ", truncated at the cap" else "" end); authorizing labels: \(.portfolio.authorizing_labels | join(", ")))",
           (if .portfolio.error != null then "- unavailable (agents above are unaffected): \(.portfolio.error.kind) — \(.portfolio.error.message)"
@@ -155,7 +175,14 @@ in
            else (.portfolio.active[] | "- \(.repo): \(.open_prs) open PR(s), \(.approved_issues) approved issue(s)" + (if (.approved|length) > 0 then " → " + ([.approved[] | "#\(.number) \(.title)"
                + (if (.open_handoffs|length) > 0 then " [held by handoff " + ([.open_handoffs[] | "\(.handoff_id) → \(.agent)" + (if .hold == "unknown" then " (unknown: \(.unknown_reason))" else "" end)] | join(", ")) + "]"
                   elif ((.open_prs // []) | length) > 0 then " [held by open PR " + ([.open_prs[] | "#\(.)"] | join(", ")) + "]"
-                  elif .last_handoff != null then " [re-assignable: handoff \(.last_handoff.handoff_id) → \(.last_handoff.agent) \(.last_handoff.closed_reason)]" else "" end)] | join("; ")) else "" end) + (if .error != null then " (gh:work: \(.error.kind))" else "" end) + (if (.approvable|length) > 0 then " | approvable: " + ([.approvable[:8][] | "#\(.number) \(.title)"] | join("; ")) + (if (.approvable|length) > 8 then "; +\((.approvable|length) - 8) more" else "" end) else "" end)) end),
+                  elif .last_handoff != null then " [re-assignable: handoff \(.last_handoff.handoff_id) → \(.last_handoff.agent) \(.last_handoff.closed_reason)]" else "" end)] | join("; ")) else "" end)
+               + (if .open_pr_reviews == null then " | PR review states unavailable (gh pr list failed)" elif (.open_pr_reviews | length) > 0 then " | PRs: " + ([.open_pr_reviews[] | "#\(.number)@\((.head // "")[0:7]) "
+                   + (if .state == "unreviewed" then "to review (a worker other than \(if (.implementer | length) > 0 then .implementer | join("+") else "its author" end))"
+                      elif .state == "findings" then "findings \([.grades[] | "\(.grade)/10 \(.by)"] | join(", ")) → back to \(if (.implementer | length) > 0 then .implementer | join("+") else "the author (implementer unknown)" end), not another review"
+                      elif .state == "disputed" then "conflicting grades \([.grades[] | "\(.grade)/10 \(.by)"] | join(", ")): an owner decision"
+                      elif .state == "in_review" then "in review (\(.in_review | join("+")))"
+                      else "passed \([.grades[] | select(.grade >= 9) | "\(.grade)/10 \(.by)"] | join(", ")): its reviewer merges" end)] | join("; ")) else "" end)
+               + (if .error != null then " (gh:work: \(.error.kind))" else "" end) + (if (.approvable|length) > 0 then " | approvable: " + ([.approvable[:8][] | "#\(.number) \(.title)"] | join("; ")) + (if (.approvable|length) > 8 then "; +\((.approvable|length) - 8) more" else "" end) else "" end)) end),
           (if (.portfolio.skipped_active|length) > 0 then "- active but not expanded (cap \(.portfolio.active|length)): \(.portfolio.skipped_active | join(", "))" else empty end),
           (if .portfolio.search_error != null then "- issue search unavailable: \(.portfolio.search_error.kind) — \(.portfolio.search_error.message); repos pushed before the page may hold authorized items" else empty end),
           "", "Full JSON: \($f)", "", "## Agents",
@@ -170,10 +197,10 @@ in
 
     "coord:handoff" = {
       description = "Draft (never send) a bounded assignment brief for one agent, with the actions it may take; saves it under the state dir with a handoff_id.";
-      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; allowed_actions = null; owner_input = ""; };
+      input = { machine = null; agent_id = null; session_id = null; task_ref = null; scope = null; expected_evidence = null; acceptance = null; allowed_actions = null; owner_input = ""; review = null; };
       exec = ''
         ${cfg.prelude}
-        m=$(input .machine); host=$([ -n "$m" ] && printf '%s' "$m" || local_host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input)
+        m=$(input .machine); host=$([ -n "$m" ] && printf '%s' "$m" || local_host); agent=$(input .agent_id); ses=$(input .session_id); ref=$(input .task_ref); scope=$(input .scope); ev=$(input .expected_evidence); acc=$(input .acceptance); need=$(input .owner_input); review=$(input .review)
         actions=$(jq -c '.allowed_actions // empty' <<<"''${DEVENV_TASK_INPUT:-{\}}")
         ctx=$(jq -cn --arg h "$host" --arg a "$agent" '{task:"coord:handoff",host:$h,agent_id:$a}')
         [ -z "$ses" ] || [[ "$ses" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail 3 invalid_input "session_id has unsafe characters" "$ctx"
@@ -185,6 +212,9 @@ in
         jq -e --arg t "$host/$agent" 'index($t) | not' <<<"$(coordinator_panes "${cfg.stateDir}/audit.jsonl")" >/dev/null \
           || fail 3 invalid_input "$host/$agent is a Coordinator pane (coordinator.panes, the pane running this task, or a past sender in the audit log); handoffs go to workers only" "$ctx"
         [[ "$ref" =~ ^#[0-9]+$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
+        # a review handoff names the PR and the exact head it reviews (skills#77): the line is part of the text the id hashes,
+        # the attempt line carries it, and coord:changed and coord:brief then read that head as in review
+        [ -z "$review" ] || [[ "$review" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+@[0-9a-f]{40}$ ]] || fail 3 invalid_input "review must be OWNER/REPO#N@<40-hex head sha>" "$ctx"
         for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 4000 ] || fail 3 invalid_input "a field exceeds 4000 characters" "$ctx"; done
         # allowed_actions: a non-empty list (at most 8) of distinct actions the agent may take beyond reading, committing and
         # opening a PR, which are always implied; the owner's "do not merge, deploy or delete" is now spelled per handoff.
@@ -197,12 +227,14 @@ in
         [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
         actions_line=$(jq -r 'join(", ")' <<<"$actions")
         at=$(now_iso)
-        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s\nReply in this pane when done, naming the evidence above.\n' \
-          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
+        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s%s\nReply in this pane when done, naming the evidence above.\n' \
+          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")" \
+          "$([ -n "$review" ] && printf '\nReview of: %s at head %s\n' "''${review%@*}" "''${review##*@}")")
         id=$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
-        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" --argjson acts "$actions" \
+        rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg need "$need" --argjson acts "$actions" --arg rv "$review" \
           '{schema_version:1, task:"coord:handoff", handoff_id:$id, created_at:$at, host:$h, machine:(if $m == "" then null else $m end), agent_id:$a, session_id:(if $ses == "" then null else $ses end), task_ref:$r, allowed_actions:$acts, text:$t,
+            review:(if $rv == "" then null else {pr:($rv | split("@")[0]), head:($rv | split("@")[1])} end),
             owner_input: (if $need == "" then null else $need end), approval_required:true, error:null}')
         if [ ! -f "$dir/$id.json" ]; then
           [ -n "$rec" ] && printf '%s\n' "$rec" > "$dir/$id.json.tmp" && mv "$dir/$id.json.tmp" "$dir/$id.json" || fail 2 state_write_failed "could not write the draft under $dir" "$ctx"

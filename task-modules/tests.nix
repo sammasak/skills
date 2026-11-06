@@ -292,6 +292,20 @@
         unset FAKE_HERDR_STATE_SEQ
         run herdr:await --input-json '{"audit_id":"000000000000"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "unknown audit id rejected"
+        # skills#77: a review handoff's key reaches the audit's attempt line, where coord:changed and coord:brief read it; a draft
+        #   whose review field no longer matches its text (edited) is refused before herdr
+        HEAD77=9090909090909090909090909090909090909090
+        export FAKE_HERDR_STATE=idle FAKE_HERDR_SEQ=40
+        draft "{\"machine\":\"acer-swift\",\"agent_id\":\"wA:p2\",\"session_id\":\"sess-1\",\"task_ref\":\"#7\",\"scope\":\"review PR #90 at its head\",\"expected_evidence\":\"Grade comment\",\"acceptance\":\"graded\",\"allowed_actions\":[\"comment\",\"merge\"],\"review\":\"sammasak/skills#90@$HEAD77\"}"
+        RID=$ID
+        run herdr:message --input-json "{\"handoff_id\":\"$RID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jq -r --arg i "$RID" 'select(.handoff_id == $i and .phase == "attempt") | .review | "\(.pr) \(.head)"' "$TMP/state/audit.jsonl")" = "sammasak/skills#90 $HEAD77" ] \
+          && ok || bad "skills#77: the review key reaches the attempt line ($OUT)"
+        draft "{\"machine\":\"acer-swift\",\"agent_id\":\"wA:p2\",\"session_id\":\"sess-1\",\"task_ref\":\"#7\",\"scope\":\"review PR #91\",\"expected_evidence\":\"Grade comment\",\"acceptance\":\"graded\",\"allowed_actions\":[\"comment\"],\"review\":\"sammasak/skills#91@$HEAD77\"}"
+        jq '.review.pr = "sammasak/skills#92"' "$TMP/state/handoffs/$ID.json" > "$TMP/d.json" && mv "$TMP/d.json" "$TMP/state/handoffs/$ID.json"
+        : > "$FAKE_LOG"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'review its text does not state' && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "skills#77: an edited review key is refused ($OUT)"
         summary
       '';
     };
