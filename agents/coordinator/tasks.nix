@@ -195,10 +195,10 @@ in
             and (length == (unique | length)) and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1))
             then sort_by([(if . == "merge" then 0 elif . == "close" then 1 elif . == "label" then 2 elif . == "comment" then 3 else 4 end), .]) else empty end' <<<"$actions")
         [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
-        if jq -e 'index("merge")' <<<"$actions" >/dev/null; then
-          impl=$(implementer_of "${cfg.stateDir}/audit.jsonl" "$host/$agent" "$ref")
-          [ -z "$impl" ] || fail 3 author_merge "$host/$agent implemented $ref (handoff $impl); the implementer never merges its own change. Give merge to the independent reviewer" "$ctx"
-        fi
+        # #70: author-merge is enforced at herdr:message send, where the merge's authorized_by names the exact item, so the
+        # implementer is matched per PR not per coarse coordinating task_ref. A draft has no authorized_by yet, so a draft-time
+        # task_ref check would refuse a legitimate reviewer whose only other handoff shares the coordinating number; the draft
+        # is composed freely and the send is the gate.
         actions_line=$(jq -r 'join(", ")' <<<"$actions")
         at=$(now_iso)
         text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s\nReply in this pane when done, naming the evidence above.\n' \

@@ -98,6 +98,10 @@
         [ "$(jqr '.hosts[0].agents[1].unavailable')" = null ] && ok || bad "usage limit: a quoted phrase is not a limit ($(jqr '.hosts[0].agents[1].unavailable'))"
         export FAKE_HERDR_READ_wT_p1="$FX/herdr/read-weekly-limit.txt"; run herdr:inventory
         jqr '.hosts[0].agents[1].unavailable.line' | grep -q "You've hit your weekly limit · resets Nov 9" && ok || bad "usage limit: the weekly form ($(jqr '.hosts[0].agents[1].unavailable'))"
+        # #70: a stale limit -- the owner ran /model after it (a later "Set model to …" line) -- is not reported, so the
+        # worker whose limit has reset or whose model was switched is available again without 30 lines scrolling off
+        export FAKE_HERDR_READ_wT_p1="$FX/herdr/read-fable-limit-cleared.txt"; run herdr:inventory
+        [ "$(jqr '.hosts[0].agents[1].unavailable')" = null ] && ok || bad "usage limit: a limit the owner cleared with /model is stale, the worker is available ($(jqr '.hosts[0].agents[1].unavailable'))"
         unset FAKE_HERDR_READ_wT_p1 FAKE_HERDR_READ_wF_p1
         # 2. the coordinator host: two saved machines, one unreachable -> forwarded reads, partial, errors as data
         : > "$FAKE_LOG"
@@ -302,9 +306,11 @@
         FAKE_HERDR_READ_wF_p1="$FX/herdr/read-fable-limit.txt" run herdr:message --input-json "{\"handoff_id\":\"$ID5\",\"confirm\":\"$H/wF:p1\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = worker_unavailable ] && jqr .error.message | grep -q "reached your Fable limit" && ! grep -q 'agent prompt' "$FAKE_LOG" \
           && ! jq -e --arg i "$ID5" 'select(.handoff_id == $i)' "$TMP/state/audit.jsonl" >/dev/null && ok || bad "usage-limited worker refused, nothing sent or audited ($CODE $OUT)"
-        # the implementer never merges: acer-swift/wA:p2 took #7 without merge, so a merge draft for it is refused, the reviewer's is not
+        # #70: author-merge is enforced at the item-precise send gate (below), not the coordinating-task_ref draft. A
+        # merge is composed freely at draft -- for the implementer or a reviewer -- so a reviewer bucketed under the same
+        # coordinating number is no longer refused before it can be drafted.
         run coord:handoff --input-json '{"machine":"acer-swift","agent_id":"wA:p2","task_ref":"#7","scope":"merge it","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","comment"]}'
-        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && jqr .error.message | grep -Eq 'implemented #7 \(handoff [a-f0-9]{12}\)' && ok || bad "handoff: merge to the implementer refused ($CODE $OUT)"
+        [ "$CODE" -eq 0 ] && ok || bad "handoff: a merge draft is composed freely (the send gate enforces) ($CODE $OUT)"
         draft '{"machine":"acer-swift","agent_id":"wB:p1","task_ref":"#7","scope":"review and merge","expected_evidence":"e","acceptance":"a","allowed_actions":["merge","comment"]}'
         [ "$CODE" -eq 0 ] && ok || bad "handoff: merge to an independent reviewer drafts ($CODE $OUT)"
         # a merge draft made before its pane implemented the item is refused at the send
@@ -314,6 +320,32 @@
         [ "$CODE" -eq 0 ] && ok || bad "implementation send for #13 ($CODE $OUT)"
         : > "$FAKE_LOG"; run herdr:message --input-json "{\"handoff_id\":\"$ID6\",\"confirm\":\"$H/wF:p1\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: merge to the implementer refused ($CODE $OUT)"
+        # #70: the enforced send gate matches the exact item (authorized_by.issue_url), not the coordinating task_ref.
+        # wF:p1 implements item A (issues/30) under #30; a merge of a DIFFERENT item B (pull/31) under the same #30 -- a PR
+        # wF only reviewed -- is allowed, while a merge of item A is refused. This is wN/wW's counterexample (a review
+        # handoff under the same coordinating number no longer refuses a legitimate reviewer's merge).
+        AIMPL='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/30","label":"assign:implementer"}'
+        BMERGE='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/pull/31","label":"assign:implementer"}'
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#30","scope":"implement item A","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; IDA=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$IDA\",\"confirm\":\"$H/wF:p1\",$AIMPL}"
+        [ "$CODE" -eq 0 ] && ok || bad "#30 implement of item A sends ($CODE $OUT)"
+        : > "$FAKE_LOG"
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#30","scope":"merge item B (only reviewed)","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"]}'; IDB=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$IDB\",\"confirm\":\"$H/wF:p1\",$BMERGE}"
+        [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: merge of a different item under the same task_ref is allowed for a reviewer ($CODE $OUT)"
+        : > "$FAKE_LOG"
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#30","scope":"merge item A (implemented)","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"]}'; IDC=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$IDC\",\"confirm\":\"$H/wF:p1\",$AIMPL}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: merge of the item wF implemented is refused ($CODE $OUT)"
+        # #70: the implementer identity is host-qualified. lenovo/wF:p1 implemented item C (issues/40); a merge of item C
+        # by the SAME agent id on THIS host (which did not implement it) is allowed. Seed lenovo's delivered implement line.
+        printf '%s\n%s\n' \
+          '{"phase":"attempt","audit_id":"aidC70","handoff_id":"abc123abc123","task_ref":"#40","host":"lenovo","agent_id":"wF:p1","allowed_actions":["comment"],"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/40","label":"assign:implementer","verified":true},"at":"2026-11-06T00:00:00Z"}' \
+          '{"phase":"outcome","audit_id":"aidC70","outcome":"delivered"}' >> "$TMP/state/audit.jsonl"
+        : > "$FAKE_LOG"
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#40","scope":"merge item C (lenovo implemented)","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"]}'; IDD=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$IDD\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/40\",\"label\":\"assign:implementer\"}}"
+        [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: merge of an item the same agent id implemented on another host is allowed here ($CODE $OUT)"
         # await by audit id: turn observed (working), then idle; through the same machine
         export FAKE_HERDR_STATE_SEQ="working,idle" ; rm -f "$FAKE_LOG.seq"; : > "$FAKE_LOG"
         run herdr:await --input-json "{\"audit_id\":\"$AID\",\"timeout_s\":5,\"start_timeout_s\":2}"

@@ -145,8 +145,10 @@ in
         limit=$(usage_limit_line "$m" "$agent")
         [ -z "$limit" ] || fail 2 worker_unavailable "agent $host/$agent is at its usage limit ($limit); not sending. Hand the item to another available worker, or have the owner switch its model (/model) first" "$ctx"
         if jq -e 'index("merge")' <<<"$acts" >/dev/null; then
-          impl=$(implementer_of "$audit" "$host/$agent" "$ref" "$id")
-          [ -z "$impl" ] || fail 3 author_merge "$host/$agent implemented $ref (handoff $impl); the implementer never merges its own change. Draft the merge for the independent reviewer" "$ctx"
+          # the enforced gate: match the implementer by the exact item being merged (authorized_by.issue_url),
+          # so a reviewer with only an unrelated handoff under the same coordinating task_ref is not refused (#70)
+          impl=$(implementer_of "$audit" "$host/$agent" "$ref" "$id" "$(jq -r '.issue_url // ""' <<<"$auth")")
+          [ -z "$impl" ] || fail 3 author_merge "$host/$agent implemented that item (handoff $impl); the implementer never merges its own change. Draft the merge for the independent reviewer" "$ctx"
         fi
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then
