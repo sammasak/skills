@@ -164,7 +164,7 @@ in
           else fail 3 invalid_input "a merge handoff must name the PR it merges (pr_url, or the review field when it also reviews)" "$ctx"; fi
           errf=$(mktemp); grc=0
           prs=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$pr_repo" --state all --limit ${toString cfg.ghLimit} \
-            --json number,createdAt,title,body,headRefName,headRefOid,closingIssuesReferences,commits,comments,reviews 2>"$errf" 9>&-) || grc=$?
+            --json number,createdAt,title,body,headRefName,closingIssuesReferences,commits 2>"$errf" 9>&-) || grc=$?
           gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
           # fail closed on a gh error: the implementer is unknown and the merge might go to its author, so retry rather than send
           [ "$grc" -eq 0 ] || fail 2 gh_error "could not read $named to check its implementer: gh pr list exited $grc''${gherr:+: $gherr}; not sending the merge" "$ctx"

@@ -12,7 +12,6 @@ in
     herdrCommand = lib.mkOption { type = t.str; default = "herdr"; description = "Overridable for tests (fake herdr)."; };
     ghCommand = lib.mkOption { type = t.str; default = "gh"; description = "Overridable for tests (fake gh)."; };
     ghLimit = lib.mkOption { type = t.ints.between 1 100; default = 20; description = "Page size for gh list calls and the gh:repos GraphQL query (GitHub caps first at 100)."; };
-    jqLib = lib.mkOption { type = t.path; default = ../agents/coordinator; description = "Directory of the shared jq includes (evidence.jq): pr_implementer reuses its own_grade and grade."; };
     ghOwner = lib.mkOption { type = t.str; default = "sammasak"; description = "GitHub login whose repositories gh:repos lists."; };
     # the owner's delegation of approval (skills#28, 2026-11-04): set in the owner's config, never by the role. With it,
     # gh:label may add an authorizing label to an issue of the owner's repos, citing the decision in the audit log
@@ -84,23 +83,23 @@ in
               print clean[last]
             }' | head -c 300 | tr -d '\000-\037' || true; }
       # pr_implementer <audit-file> <OWNER/REPO of the PR> <pr-number> <pr-json>: every "host/agent_id" whose delivered
-      # non-merge handoff is the one by which correlate.jq attributes the PR, one per line, or nothing. The implementer never
-      # merges its own change, whatever item authorizes the merge.
+      # implement handoff attributes the PR, one per line, or nothing. The implementer never merges its own change, whatever
+      # item authorizes the merge.
       # #70 review (wW/wN): the owner authorizes by labelling the issue, so an item's implement, review and merge handoffs
       # all carry the same authorized_by.issue_url -- keying author-merge on that item is the old coordinating-task_ref key
       # and still refuses an independent reviewer (and, when a merge is authorized by the PR URL, never catches the real
       # author, whose implement handoff is authorized by the issue). So key on authorship of the PR being merged: the merge
-      # handoff names the PR, and this resolves its implementer -- the delivered non-merge handoff whose authorizing issue
-      # the PR references (as #N when the PR is in that repo, or as the qualified OWNER/REPO#N from any repo -- implementation
-      # PRs routinely live in a different repo than their issue, e.g. rf-proto#4 for nixos-config#42) and in whose window
-      # [sent_at, next handoff to that pane) the PR was opened or a commit landed, except a pane that only graded it. Grading
-      # is read with evidence.jq's own_grade (reused via -L), so an author whose comments merely quote others' grades is not
-      # a grader of its own PR. Host-qualified: the same agent id on another host is not it.
-      # The $pr object carries number, createdAt, title, body, headRefName, headRefOid, closingIssuesReferences[].{number,repository},
-      # commits[].committedDate and comments/reviews[].{body,oid}. own_grade/signer come from evidence.jq; keep its include.
+      # handoff names the PR, and this resolves its implementer -- the delivered IMPLEMENT handoff whose authorizing issue the
+      # PR references (as #N when the PR is in that repo, or as the qualified OWNER/REPO#N from any repo -- implementation PRs
+      # routinely live in a different repo than their issue, e.g. rf-proto#4 for nixos-config#42) and in whose window
+      # [sent_at, next handoff to that pane) the PR was opened or a commit landed.
+      # Authorship is structural, never inferred from comment text (wW): a review or merge handoff is excluded because it
+      # carries the merge action or a #77 review field, not because its pane posted or quoted a grade. So an author whose own
+      # comment quotes another reviewer's grade, in any wording, stays an implementer. Host-qualified: the same agent id on
+      # another host is not it. The $pr object carries number, createdAt, title, body, headRefName, closingIssuesReferences[].{number,repository}
+      # and commits[].committedDate.
       pr_implementer() { [ -s "$1" ] || return 0
-        jq -rs -L ${toString cfg.jqLib} --arg prrepo "$2" --argjson n "$3" --argjson pr "$4" '
-          include "evidence";
+        jq -rs --arg prrepo "$2" --argjson n "$3" --argjson pr "$4" '
           # the PR references issue #<num> of <repo>: closes it (same or cross repo), names #num in its own repo, carries num
           # in its branch in its own repo, or names the qualified <repo>#num from any repo
           def pr_refs($repo; $num):
@@ -108,18 +107,15 @@ in
              or (($repo == $prrepo) and ((($pr.title // "") + "\n" + ($pr.body // "")) | test("(^|[^A-Za-z0-9_./#-])#\($num)([^0-9]|$)")))
              or (($repo == $prrepo) and (($pr.headRefName // "") | test("(^|[/_-])\($num)([/_-]|$)")))
              or ((($pr.title // "") + "\n" + ($pr.body // "")) | test("(^|[^A-Za-z0-9_./-])" + ($repo | gsub("\\."; "\\.")) + "#\($num)([^0-9]|$)")));
-          # graders of the PR: evidence.jq own_grade (via notes), so a pane only counts for a grade it actually gave, not one
-          # it quoted. A grader reviewed the PR; a concurrent handoff implemented it.
-          ($pr | [ notes[] | select(.grade != null and .by != null) | .by ] | unique) as $graders
-          | (map(select(type == "object")) | INDEX(.[] | select(.phase == "outcome"); .audit_id)) as $o
+          (map(select(type == "object")) | INDEX(.[] | select(.phase == "outcome"); .audit_id)) as $o
           | [ map(select(type == "object" and .phase == "attempt" and (.handoff_id | type) == "string"))
               | group_by(.handoff_id) | .[] | last
               | (.authorized_by.issue_url // "" | capture("github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/(?<n>[0-9]+)")?) as $cap
               | . + {pane:(.host + "/" + .agent_id), sent_at:.at, delivered:(($o[.audit_id | tostring].outcome // "") == "delivered"),
-                     is_merge:(((.allowed_actions // []) | index("merge")) != null),
+                     is_merge:(((.allowed_actions // []) | index("merge")) != null), is_review:((.review // null) != null),
                      irepo:($cap.r // null), inum:(if $cap then ($cap.n | tonumber) else null end)} ] as $hs
           | [ $hs[] | . as $h | ($hs | map(select(.pane == $h.pane and .sent_at > $h.sent_at) | .sent_at) | min) as $until
-              | select($h.delivered and ($h.is_merge | not) and $h.irepo != null and ($graders | index($h.pane) | not))
+              | select($h.delivered and ($h.is_merge | not) and ($h.is_review | not) and $h.irepo != null)
               | select(pr_refs($h.irepo; $h.inum))
               | select(($pr.createdAt != null and $pr.createdAt >= $h.sent_at and ($until == null or $pr.createdAt < $until))
                   or any(($pr.commits // [])[]; (.committedDate // null) as $c | $c != null and $c >= $h.sent_at and ($until == null or $c < $until)))
