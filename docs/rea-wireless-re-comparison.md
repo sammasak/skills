@@ -50,7 +50,7 @@ Anything not confirmed from a fetched source is marked "(unverified)".
 4. **No unneeded provider setup.** Skills work with the files and CLIs already present. They need no extra network service, LLM provider or daemon.
 5. **Record versions.** Tool name, version and input hashes go into every report so results can be reproduced.
 
-Our three shipped skills already follow these rules: `pcap-evidence-analysis`, `wireless-lab-diagnostics` and `rf-chaos-experiment-review`.
+Our shipped skills follow these rules: `pcap-evidence-analysis`, `wireless-lab-diagnostics`, `rf-chaos-experiment-review` and `device-protocol-investigation` (nixos-config#42).
 
 ## Recommendation summary
 
