@@ -151,27 +151,32 @@ in
           *) fail 2 agent_state_unknown "herdr agent get returned no usable state for $host/$agent; not sending" "$ctx" ;; esac
         limit=$(usage_limit_line "$m" "$agent")
         [ -z "$limit" ] || fail 2 worker_unavailable "agent $host/$agent is at its usage limit ($limit); not sending. Hand the item to another available worker, or have the owner switch its model (/model) first" "$ctx"
+        author_flag=""
         if jq -e 'index("merge")' <<<"$acts" >/dev/null; then
           # the enforced author-merge gate (#70): key on the authorship of the PR being merged, not the authorizing item --
           # the owner labels the issue, so an item's implement, review and merge handoffs share authorized_by.issue_url and
           # it cannot tell author from an independent reviewer. The merge handoff names the PR -- pr_url (a pure merge) or
           # the review handoff's review.pr (OWNER/REPO#N, skills#77) -- and we resolve that PR's implementer from the audit
-          # the way correlate.jq attributes PRs (refs + the handoff window) and refuse only it.
+          # the way correlate.jq attributes PRs (reference + the handoff window, across repos) and refuse only it.
           pr_repo=""; pr_num=""
           if [ -n "$pr" ]; then pr_repo=$(sed -E 's#^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$#\1#' <<<"$pr"); pr_num=$(sed -E 's#.*/pull/([0-9]+)$#\1#' <<<"$pr"); named="$pr"
           elif [ "$review" != null ] && [ -n "$review" ]; then rp=$(jq -r '.pr' <<<"$review"); pr_repo="''${rp%#*}"; pr_num="''${rp##*#}"; named="$rp"
           else fail 3 invalid_input "a merge handoff must name the PR it merges (pr_url, or the review field when it also reviews)" "$ctx"; fi
           errf=$(mktemp); grc=0
           prs=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$pr_repo" --state all --limit ${toString cfg.ghLimit} \
-            --json number,createdAt,title,body,headRefName,closingIssuesReferences,commits,comments,reviews 2>"$errf" 9>&-) || grc=$?
+            --json number,createdAt,title,body,headRefName,headRefOid,closingIssuesReferences,commits,comments,reviews 2>"$errf" 9>&-) || grc=$?
           gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
           # fail closed on a gh error: the implementer is unknown and the merge might go to its author, so retry rather than send
           [ "$grc" -eq 0 ] || fail 2 gh_error "could not read $named to check its implementer: gh pr list exited $grc''${gherr:+: $gherr}; not sending the merge" "$ctx"
           prj=$(jq -c --argjson n "$pr_num" 'if type == "array" then (map(select(.number == $n)) | first) else null end' <<<"$prs" 2>/dev/null)
-          # when the PR is in the list, refuse its implementer; when it is not (closed/merged long ago, or beyond the page),
-          # the audit cannot attribute it -- the independent 9/10 on its head and skills#77's review-once still apply
-          if [ -n "$prj" ] && [ "$prj" != null ] && pr_implementer "$audit" "$pr_repo" "$pr_num" "$prj" | grep -qxF "$host/$agent"; then
-            fail 3 author_merge "$host/$agent implemented $named; the implementer never merges its own change, whatever item authorizes the merge. Draft the merge for the independent reviewer" "$ctx"
+          if [ -n "$prj" ] && [ "$prj" != null ]; then
+            impls=$(pr_implementer "$audit" "$pr_repo" "$pr_num" "$prj")
+            printf '%s\n' "$impls" | grep -qxF "$host/$agent" \
+              && fail 3 author_merge "$host/$agent implemented $named; the implementer never merges its own change, whatever item authorizes the merge. Draft the merge for the independent reviewer" "$ctx"
+            # #70 (wW should-fix 3): a PR the audit attributes to no one is not silently allowed -- flag it so the pass is visible
+            [ -n "$impls" ] || author_flag="the audit attributes $named to no implementer; $host/$agent cannot be confirmed not to have written it (the independent 9/10 on its head still gates)"
+          else
+            author_flag="$named is not in $pr_repo's PR list (closed/merged long ago, or beyond the page); its implementer cannot be attributed from the audit (the independent 9/10 on its head still gates)"
           fi
         fi
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
@@ -213,9 +218,9 @@ in
           case "$code" in agent_blocked|agent_not_found) outcome=$code ;; agent_prompt_stalled) outcome=agent_prompt_stalled ;; *) outcome=unknown_delivery ;; esac
         fi
         rm -f "$errf"
-        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" \
+        rec=$(jq -cn --arg a "$aid" --arg i "$id" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg o "$outcome" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" --arg af "$author_flag" \
           '{schema_version:1, task:"herdr:message", audit_id:$a, handoff_id:$i, host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), sent_at:$at, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q, outcome:$o,
-            receipt:($o == "delivered"), worker_done:false, accepted:false,
+            receipt:($o == "delivered"), worker_done:false, accepted:false, author_check:(if $af == "" then null else $af end),
             error:(if $o == "delivered" then null elif ($o == "unknown_delivery" or $o == "agent_prompt_stalled") then {kind:$o, message:"prompt did not confirm; the text may already sit in the input box of the agent. Inspect the pane; only the owner decides on a resend (audit " + $a + ")"} else {kind:$o, message:"herdr agent prompt refused: " + $o + "; nothing was delivered"} end)}')
         emit "$rec"
         [ "$outcome" = delivered ] || exit 2

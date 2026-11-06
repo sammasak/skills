@@ -323,14 +323,26 @@
         # implemented PR #42. The send attributes a PR from the audit the way correlate.jq does (refs + handoff window),
         # except a pane that only graded it -- so an independent reviewer, who grades, is never taken for the author.
         mkdir -p "$TMP/gh2"
+        # #41 carries wB's real 9/10 and, from wF (the author), a comment that quotes wW's 7/10 and is signed by wF. With a
+        # bare N/10 test wF would count as a grader of its own PR and escape the gate (wW finding 1); evidence.jq own_grade
+        # counts only a pane's own grade (a line naming no pane but its own, or declaring it reviewer), so wF is not a grader.
         jq -cn --arg h "$H" '[
-          {number:40, state:"OPEN", createdAt:"2026-11-06T10:30:00Z", title:"item for #40", body:"closes #7", headRefName:"wB/40", closingIssuesReferences:[{number:7}], commits:[], comments:[], reviews:[]},
-          {number:41, state:"OPEN", createdAt:"2026-11-06T12:00:00Z", title:"item for #41", body:"closes #7", headRefName:"wF/41", closingIssuesReferences:[{number:7}], commits:[],
-           comments:[{body:("Grade: 9/10 on its head. -- " + $h + " wB:p1")}], reviews:[]},
-          {number:42, state:"OPEN", createdAt:"2026-11-06T09:30:00Z", title:"item for #42", body:"closes #7", headRefName:"wF/42", closingIssuesReferences:[{number:7}], commits:[], comments:[], reviews:[]}
+          {number:40, state:"OPEN", createdAt:"2026-11-06T10:30:00Z", title:"item for #40", body:"closes #7", headRefName:"wB/40", headRefOid:"4040404040404040404040404040404040404040", closingIssuesReferences:[{number:7}], commits:[], comments:[], reviews:[]},
+          {number:41, state:"OPEN", createdAt:"2026-11-06T12:00:00Z", title:"item for #41", body:"closes #7", headRefName:"wF/41", headRefOid:"4141414141414141414141414141414141414141", closingIssuesReferences:[{number:7}], commits:[],
+           comments:[{body:("Grade: 9/10 on its head. -- " + $h + " wB:p1")}, {body:("Response to the 7/10 from wW:p1; addressing the findings. -- " + $h + " wF:p1")}], reviews:[]},
+          {number:42, state:"OPEN", createdAt:"2026-11-06T09:30:00Z", title:"item for #42", body:"closes #7", headRefName:"wF/42", headRefOid:"4242424242424242424242424242424242424242", closingIssuesReferences:[{number:7}], commits:[], comments:[], reviews:[]},
+          {number:50, state:"OPEN", createdAt:"2026-11-06T09:30:00Z", title:"orphan", body:"closes #99", headRefName:"x/50", headRefOid:"5050505050505050505050505050505050505050", closingIssuesReferences:[{number:99}], commits:[], comments:[], reviews:[]}
         ]' > "$TMP/gh2/sammasak__skills.prs.json"
+        # cross-repo: an rf-proto PR implementing nixos-config#42 (wW finding 2: the PR's issue is in another repo)
+        jq -cn '[
+          {number:4, state:"OPEN", createdAt:"2026-11-06T12:45:00Z", title:"slice 6", body:"Implements sammasak/nixos-config#42", headRefName:"slice6", headRefOid:"0404040404040404040404040404040404040404", closingIssuesReferences:[], commits:[], comments:[], reviews:[]}
+        ]' > "$TMP/gh2/sammasak__rf-proto.prs.json"
         seed() { jq -cn --arg h "$1" --arg ag "$2" --arg aid "$3" --arg at "$4" '{phase:"attempt",audit_id:$aid,handoff_id:($aid+"hh"),task_ref:"#7",host:$h,agent_id:$ag,allowed_actions:["comment"],authorized_by:{issue_url:"https://github.com/sammasak/skills/issues/7",label:"assign:implementer",verified:true},at:$at}'; echo "{\"phase\":\"outcome\",\"audit_id\":\"$3\",\"outcome\":\"delivered\"}"; }
         { seed "$H" wB:p1 im40 "2026-11-06T10:00:00Z"; seed "$H" wB:p1 rv41 "2026-11-06T11:00:00Z"; seed "$H" wF:p1 im41 "2026-11-06T11:30:00Z"; seed lenovo wF:p1 im42 "2026-11-06T09:00:00Z"; } >> "$TMP/state/audit.jsonl"
+        # wF's implement handoff for nixos-config#42 (a different repo than the rf-proto PR it produced), window opens 12:30
+        printf '%s\n%s\n' \
+          "$(jq -cn --arg h "$H" '{phase:"attempt",audit_id:"ncim42",handoff_id:"ncim42hhhh",task_ref:"#28",host:$h,agent_id:"wF:p1",allowed_actions:["comment"],authorized_by:{issue_url:"https://github.com/sammasak/nixos-config/issues/42",label:"assign:implementer",verified:true},at:"2026-11-06T12:30:00Z"}')" \
+          '{"phase":"outcome","audit_id":"ncim42","outcome":"delivered"}' >> "$TMP/state/audit.jsonl"
         export FAKE_GH_DIR="$TMP/gh2"
         MERGE41='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"deployment-ready"}'
         PRMERGE41='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/pull/41","label":"deployment-ready"}'
@@ -340,11 +352,13 @@
         draft '{"agent_id":"wB:p1","session_id":"sess-1","task_ref":"#7","scope":"merge #41","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/41"}'; IDA=$(jqr .handoff_id)
         run herdr:message --input-json "{\"handoff_id\":\"$IDA\",\"confirm\":\"$H/wB:p1\",$MERGE41}"
         [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: an independent reviewer merges the PR it did not implement ($CODE $OUT)"
-        # (b) the PR's author -- wF:p1 implemented #41 -- is refused, the merge authorized by the issue
+        # (b) the PR's author -- wF:p1 implemented #41 -- is refused, the merge authorized by the issue. wF also left a comment
+        # on #41 quoting wW's 7/10 (signed by wF): with the bare N/10 grader test wF would be excluded and this would pass the
+        # gate; evidence.jq own_grade keeps wF an implementer, so this is the regression guard for wW finding 1.
         : > "$FAKE_LOG"
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#7","scope":"merge #41","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/41"}'; IDB=$(jqr .handoff_id)
         run herdr:message --input-json "{\"handoff_id\":\"$IDB\",\"confirm\":\"$H/wF:p1\",$MERGE41}"
-        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: the PR's author is refused its own merge (issue-authorized) ($CODE $OUT)"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: the PR's author (who only quoted a grade) is still refused -- own_grade, not a bare N/10 ($CODE $OUT)"
         # (c) the author is refused even when the merge is authorized by the PR URL -- the authorizing item cannot excuse it
         : > "$FAKE_LOG"
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#7","scope":"merge #41 by pr url","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/41"}'; IDC=$(jqr .handoff_id)
@@ -355,16 +369,34 @@
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#7","scope":"merge #42","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/42"}'; IDD=$(jqr .handoff_id)
         run herdr:message --input-json "{\"handoff_id\":\"$IDD\",\"confirm\":\"$H/wF:p1\",$MERGE41}"
         [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: the same agent id on another host did not implement it here, so the merge is allowed ($CODE $OUT)"
+        # cross-repo (wW finding 2): rf-proto PR #4 implements nixos-config#42; wF:p1's implement handoff is authorized by the
+        # nixos-config issue, in a different repo than the PR. Attribution matches the handoff because the PR names the
+        # qualified sammasak/nixos-config#42, so the author wF is refused...
+        NCMERGE='"authorized_by":{"issue_url":"https://github.com/sammasak/nixos-config/issues/42","label":"deployment-ready"}'
+        : > "$FAKE_LOG"
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#28","scope":"merge rf-proto#4 (implements nixos-config#42)","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/rf-proto/pull/4"}'; IDX=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$IDX\",\"confirm\":\"$H/wF:p1\",$NCMERGE}"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: a cross-repo PR's author is refused (PR names OWNER/REPO#N of the handoff's issue) ($CODE $OUT)"
+        # ...and an unrelated reviewer (wB:p1 has no nixos-config#42 handoff) may merge the same cross-repo PR
+        : > "$FAKE_LOG"
+        draft '{"agent_id":"wB:p1","session_id":"sess-1","task_ref":"#28","scope":"merge rf-proto#4","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/rf-proto/pull/4"}'; IDY=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$IDY\",\"confirm\":\"$H/wB:p1\",$NCMERGE}"
+        [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: an unrelated reviewer may merge the cross-repo PR ($CODE $OUT)"
         # a merge whose PR gh cannot read at all fails closed (implementer unknown, might be the author): nothing is sent
         : > "$FAKE_LOG"
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#7","scope":"merge gh down","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/41"}'; IDE=$(jqr .handoff_id)
         FAKE_GH_LIST_EXIT=1 run herdr:message --input-json "{\"handoff_id\":\"$IDE\",\"confirm\":\"$H/wF:p1\",$MERGE41}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = gh_error ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: a merge whose PR gh cannot read fails closed ($CODE $OUT)"
-        # a PR not in the repo's list cannot be attributed from the audit: the check is skipped (the independent 9/10 still gates)
+        # (wW should-fix 3) a PR the audit attributes to no implementer is not silently allowed: it sends but flags author_check,
+        # whether the PR is absent from the list (#999) or present but orphan (#50 closes #99, which no handoff references)
         : > "$FAKE_LOG"
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#7","scope":"merge unlisted","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/999"}'; IDF=$(jqr .handoff_id)
         run herdr:message --input-json "{\"handoff_id\":\"$IDF\",\"confirm\":\"$H/wF:p1\",$MERGE41}"
-        [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: a merge for a PR absent from the list is allowed (cannot attribute) ($CODE $OUT)"
+        [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && [ "$(jqr .author_check)" != null ] && jqr .author_check | grep -q 'not in' && ok || bad "send: a merge for a PR absent from the list is allowed but flagged ($CODE $(jqr .author_check))"
+        : > "$FAKE_LOG"
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#7","scope":"merge orphan #50","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/50"}'; IDG=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$IDG\",\"confirm\":\"$H/wF:p1\",$MERGE41}"
+        [ "$CODE" -eq 0 ] && grep -q 'agent prompt' "$FAKE_LOG" && [ "$(jqr .author_check)" != null ] && jqr .author_check | grep -q 'no implementer' && ok || bad "send: a merge for an orphan PR is allowed but flagged ($CODE $(jqr .author_check))"
         export FAKE_GH_DIR="$FX/gh"
         # await by audit id: turn observed (working), then idle; through the same machine
         export FAKE_HERDR_STATE_SEQ="working,idle" ; rm -f "$FAKE_LOG.seq"; : > "$FAKE_LOG"
