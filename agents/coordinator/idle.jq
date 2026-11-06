@@ -19,8 +19,17 @@ $inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev | $w
      # its own grade is a review it did, not an independent one (a handoff older than openHandoffDays is not seen here,
      # so its implementer's self-grade would count: under-wakes only)
      def impl($r): . as $pr | [$hs[] | select(.repo == $r) | (.task_ref | num) as $n | select($n != null and ($pr | refs($n)) and ($pr.createdAt // "") >= (.sent_at // "")) | .host + "/" + .agent_id];
-     {open_prs:[$work | to_entries[] | .key as $r | .value.prs[] | select(.state == "OPEN") | . as $pr | ($pr | impl($r)) as $i
-                 | select(any($pr | passes[]; .by as $b | ($i | index($b)) == null) | not) | $r + "#" + (.number | tostring)],
+     # an open PR's head, by its review state (skills#77): unreviewed is a review to hand out (the head in the key, so a new
+     # head is a new item), findings go back to the implementer, disputed is the owner's, in_review and passed are no work;
+     # a merged or closed PR is never one of them. A review handoff is in review while it is open and not reported yet
+     def in_review($r): . as $pr | [$hs[] | select(.review != null and .review.pr == ($r + "#" + ($pr.number | tostring)) and .review.head == ($pr.headRefOid // ""))
+                                   | select(.handoff_id as $k | ($prev.closed_handoffs // {}) | has($k) | not) | .host + "/" + .agent_id];
+     def head7: (.headRefOid // "") | .[0:7];
+     ([$work | to_entries[] | .key as $r | .value.prs[] | select(.state == "OPEN") | . as $pr
+       | {pr:($r + "#" + (.number | tostring) + "@" + head7)} + ($pr | review_state($pr | impl($r); $pr | in_review($r)))]) as $states
+     | {open_prs:[$states[] | select(.state == "unreviewed") | .pr],
+      pr_findings:[$states[] | select(.state == "findings") | {pr, implementer, grades}],
+      pr_disputed:[$states[] | select(.state == "disputed") | .pr],
       # an approved issue is held only by an open handoff; every worker is idle here, so that is one with an open PR naming
       # the issue: a handoff whose agent settled with no open PR leaves the item to hand out again (skills#28)
       approved_issues:[$work | to_entries[] | .key as $r | .value.prs as $prs | .value.issues[] | .number as $num
@@ -33,8 +42,9 @@ $inv[0] as $inv | $work[0] as $work | $open[0] as $open | $prev[0] as $prev | $w
                  | (if $n == null or .repo == null then false
                     else (($work[.repo].merged // []) | any(.[]; .mergedAt != null and refs($n) and ((.createdAt // "") >= ($h.sent_at // "")))) end) as $verified
                  | select($verified | not) | .handoff_id + ":" + (.task_ref // "-")]}
-     | map_values(sort)
+     | map_values(sort_by(if type == "object" then .pr else . end))
    else null end) as $w
-| (if $w == null then null else {agents:([$agents[].id] | sort), work:([($w.open_prs[] | "pr:" + .), ($w.approved_issues[] | "issue:" + .), ($w.unverified_handoffs[] | "handoff:" + .)] | sort)} end) as $fp
+| (if $w == null then null else {agents:([$agents[].id] | sort), work:([($w.open_prs[] | "pr:" + .), ($w.pr_findings[] | "fix:" + .pr), ($w.pr_disputed[] | "disputed:" + .),
+                                                                  ($w.approved_issues[] | "issue:" + .), ($w.unverified_handoffs[] | "handoff:" + .)] | sort)} end) as $fp
 | {fleet_idle:$idle, agents:($agents | length), non_workers:(($all | length) - ($agents | length)), hosts:($inv.hosts | length), evaluated:($w != null), skipped:$skipped, work:$w, fingerprint:$fp,
    fired:($w != null and ($fp.work | length) > 0 and $fp != $prev.idle_wake.fingerprint)}

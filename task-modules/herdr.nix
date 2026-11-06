@@ -108,9 +108,16 @@ in
         [ -r "$draft" ] || fail 3 invalid_input "no draft with handoff_id $id (run coord:handoff first)" "$ctx"
         host=$(jq -r '.host // empty' "$draft"); m=$(jq -r '.machine // empty' "$draft"); agent=$(jq -r '.agent_id // empty' "$draft"); text=$(jq -r '.text // empty' "$draft"); ref=$(jq -r '.task_ref // empty' "$draft"); want_session=$(jq -r '.session_id // empty' "$draft")
         acts=$(jq -c '.allowed_actions // empty' "$draft"); pr=$(jq -r '.pr_url // empty' "$draft")
+        # a review handoff's key (skills#77) and a merge handoff's PR (#70), each only as the text states it (the text is
+        # what the id covers), so the field cannot be swapped under an owner-confirmed text
+        review=$(jq -c '.review // null' "$draft")
+        [ "$review" = null ] || grep -qxF "Review of: $(jq -r .pr <<<"$review") at head $(jq -r .head <<<"$review")" <<<"$text" \
+          || fail 3 invalid_input "draft $id names a review its text does not state (edited?)" "$ctx"
+        [ -z "$pr" ] || grep -qxF "Merge target: $pr" <<<"$text" \
+          || fail 3 invalid_input "draft $id names a merge target its text does not state (edited?)" "$ctx"
         [ -n "$host" ] && [ -n "$agent" ] && [ -n "$text" ] && [ -n "$acts" ] || fail 3 invalid_input "draft $id is incomplete (a draft without allowed_actions predates this version: redraft it)" "$ctx"
-        # the id is content-addressed: re-derive it so the text, actions and merge target sent are the ones the owner confirmed
-        [ "$(printf '%s|%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$acts" "$pr" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
+        # the id is content-addressed: re-derive it so the text and actions sent are the ones the owner confirmed
+        [ "$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$want_session" "$ref" "$acts" "$text" | sha256sum | cut -c1-12)" = "$id" ] || fail 3 invalid_input "draft $id does not match its content (edited?)" "$ctx"
         [ "$confirm" = "$host/$agent" ] || fail 3 not_confirmed "confirm must equal the draft target '$host/$agent' (got '$confirm')" "$ctx"
         valid_id "$agent" || fail 3 invalid_input "draft agent_id has unsafe characters" "$ctx"
         [ -z "$m" ] || valid_machine "$m" || fail 3 invalid_input "draft machine label has unsafe characters" "$ctx"
@@ -147,21 +154,24 @@ in
         if jq -e 'index("merge")' <<<"$acts" >/dev/null; then
           # the enforced author-merge gate (#70): key on the authorship of the PR being merged, not the authorizing item --
           # the owner labels the issue, so an item's implement, review and merge handoffs share authorized_by.issue_url and
-          # it cannot tell author from an independent reviewer. The merge draft names the PR (pr_url); resolve that PR's
-          # implementer from the audit the way correlate.jq attributes PRs (refs + the handoff window) and refuse only it.
-          [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$ ]] \
-            || fail 3 invalid_input "a merge handoff must name the PR it merges (pr_url); redraft it with pr_url" "$ctx"
-          pr_repo=$(sed -E 's#^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$#\1#' <<<"$pr"); pr_num=$(sed -E 's#.*/pull/([0-9]+)$#\1#' <<<"$pr")
+          # it cannot tell author from an independent reviewer. The merge handoff names the PR -- pr_url (a pure merge) or
+          # the review handoff's review.pr (OWNER/REPO#N, skills#77) -- and we resolve that PR's implementer from the audit
+          # the way correlate.jq attributes PRs (refs + the handoff window) and refuse only it.
+          pr_repo=""; pr_num=""
+          if [ -n "$pr" ]; then pr_repo=$(sed -E 's#^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$#\1#' <<<"$pr"); pr_num=$(sed -E 's#.*/pull/([0-9]+)$#\1#' <<<"$pr"); named="$pr"
+          elif [ "$review" != null ] && [ -n "$review" ]; then rp=$(jq -r '.pr' <<<"$review"); pr_repo="''${rp%#*}"; pr_num="''${rp##*#}"; named="$rp"
+          else fail 3 invalid_input "a merge handoff must name the PR it merges (pr_url, or the review field when it also reviews)" "$ctx"; fi
           errf=$(mktemp); grc=0
           prs=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$pr_repo" --state all --limit ${toString cfg.ghLimit} \
             --json number,createdAt,title,body,headRefName,closingIssuesReferences,commits,comments,reviews 2>"$errf" 9>&-) || grc=$?
           gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
-          # fail closed: if the PR cannot be read, the implementer is unknown and the merge might go to its author
-          [ "$grc" -eq 0 ] || fail 2 gh_error "could not read $pr to check its implementer: gh pr list exited $grc''${gherr:+: $gherr}; not sending the merge" "$ctx"
+          # fail closed on a gh error: the implementer is unknown and the merge might go to its author, so retry rather than send
+          [ "$grc" -eq 0 ] || fail 2 gh_error "could not read $named to check its implementer: gh pr list exited $grc''${gherr:+: $gherr}; not sending the merge" "$ctx"
           prj=$(jq -c --argjson n "$pr_num" 'if type == "array" then (map(select(.number == $n)) | first) else null end' <<<"$prs" 2>/dev/null)
-          [ -n "$prj" ] && [ "$prj" != null ] || fail 2 gh_error "$pr was not found in $pr_repo (cannot attribute its implementer); not sending the merge" "$ctx"
-          if pr_implementer "$audit" "$pr_repo" "$pr_num" "$prj" | grep -qxF "$host/$agent"; then
-            fail 3 author_merge "$host/$agent implemented $pr; the implementer never merges its own change, whatever item authorizes the merge. Draft the merge for the independent reviewer" "$ctx"
+          # when the PR is in the list, refuse its implementer; when it is not (closed/merged long ago, or beyond the page),
+          # the audit cannot attribute it -- the independent 9/10 on its head and skills#77's review-once still apply
+          if [ -n "$prj" ] && [ "$prj" != null ] && pr_implementer "$audit" "$pr_repo" "$pr_num" "$prj" | grep -qxF "$host/$agent"; then
+            fail 3 author_merge "$host/$agent implemented $named; the implementer never merges its own change, whatever item authorizes the merge. Draft the merge for the independent reviewer" "$ctx"
           fi
         fi
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
@@ -190,8 +200,8 @@ in
           done < <(tac <<<"$attempts")
         fi
         aid=$(printf '%s|%s|%s' "$id" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
-        jq -cn --arg a "$aid" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" --arg from "$sender" \
-          '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"attempt", from:(if $from == "" then null else $from end), host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q}' >> "$audit" \
+        jq -cn --arg a "$aid" --arg i "$id" --arg ref "$ref" --arg h "$host" --arg m "$m" --arg ag "$agent" --arg at "$at" --arg c "$confirm" --arg s "$state" --argjson q "$seq" --arg ses "$session" --argjson acts "$acts" --argjson auth "$auth" --argjson rv "$review" --arg from "$sender" \
+          '{audit_id:$a, handoff_id:$i, task_ref:(if $ref == "" then null else $ref end), phase:"attempt", from:(if $from == "" then null else $from end), host:$h, machine:(if $m == "" then null else $m end), agent_id:$ag, session_id:(if $ses == "" then null else $ses end), at:$at, confirm:$c, allowed_actions:$acts, authorized_by:$auth, state_before:$s, seq_before:$q, review:$rv}' >> "$audit" \
           || fail 2 audit_failed "could not write the attempt record; not sending" "$ctx"
         outcome=interrupted
         trap 'jq -cn --arg a "$aid" --arg i "$id" --arg at "$(now_iso)" --arg o "$outcome" "{audit_id:\$a, handoff_id:\$i, phase:\"outcome\", at:\$at, outcome:\$o}" >> "$audit"' EXIT

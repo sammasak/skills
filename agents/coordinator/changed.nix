@@ -89,7 +89,7 @@ in
             | group_by(.handoff_id) | map(last)
             | map(. as $a | ($byid[$a.audit_id | tostring] // null) as $o | select(($o.outcome // "") == "delivered")
                   | select(((.at // "") | try fromdateiso8601 catch 0) >= $cut)
-                  | {key:.handoff_id, value:{host:.host, agent_id:.agent_id, task_ref:(.task_ref // null), sent_at:(.at // null),
+                  | {key:.handoff_id, value:{host:.host, agent_id:.agent_id, task_ref:(.task_ref // null), sent_at:(.at // null), review:(.review // null),
                                               repo:(((.authorized_by.issue_url // "") | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first) // null)}})
             | from_entries' "$audit" > "$tmpd/open.json" 2>/dev/null; then audit_state=ok; else printf '{}\n' > "$tmpd/open.json"; audit_state=unreadable; fi
       fi
@@ -243,7 +243,11 @@ in
                     + (map(n(.handoff_id) + "→" + n(.host) + "/" + n(.agent_id)) | join(", ")) + "); free worker(s): " + refs3($free))})
            else empty end),
           (if $w.fired then {kind:"idle", line:("idle " + n($w.agents) + " worker(s) idle/done on " + n($w.hosts) + " host(s); work left: "
-             + ([(if ($w.work.open_prs | length) > 0 then n($w.work.open_prs | length) + " open PR(s) without a 9/10 review (" + refs3($w.work.open_prs) + ")" else empty end),
+             + ([(if ($w.work.open_prs | length) > 0 then n($w.work.open_prs | length) + " open PR head(s) to review (" + refs3($w.work.open_prs) + ")" else empty end),
+                 (if ($w.work.pr_findings | length) > 0 then n($w.work.pr_findings | length) + " PR head(s) graded below 9, back to the implementer, not another review ("
+                    + ($w.work.pr_findings[:3] | map(n(.pr) + " → " + (if (.implementer | length) > 0 then (.implementer | map(n(.)) | join("+")) else "implementer unknown" end)) | join(", "))
+                    + (if ($w.work.pr_findings | length) > 3 then ", +" + n(($w.work.pr_findings | length) - 3) + " more" else "" end) + ")" else empty end),
+                 (if ($w.work.pr_disputed | length) > 0 then n($w.work.pr_disputed | length) + " PR head(s) with conflicting grades, an owner decision (" + refs3($w.work.pr_disputed) + ")" else empty end),
                  (if ($w.work.approved_issues | length) > 0 then n($w.work.approved_issues | length) + " approved issue(s) without an open handoff (" + refs3($w.work.approved_issues) + ")" else empty end),
                  (if ($w.work.unverified_handoffs | length) > 0 then n($w.work.unverified_handoffs | length) + " unverified handoff(s) (" + refs3($w.work.unverified_handoffs) + ")" else empty end)] | join(", ")))}
            else empty end)

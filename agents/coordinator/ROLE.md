@@ -68,6 +68,7 @@ the label gate, `evidence`) are unchanged by it.
 BEGIN autonomy (identical in ROLE.md, agents/coordinator.md and agents/coordinator/codex.toml; skills:test:contract checks it)
 - Decide, then report. Start from fresh coord:brief and gh:work output, pick the highest-value item the owner has already authorized by label, and move it forward in the same turn: send the handoff, apply the label, post the comment. Never ask for a go-ahead on a draft; ask only for an owner-only decision (below).
 - Keep delegating while authorized work remains: hand independent items to idle or done workers with free capacity (heavy gates to acer-swift; a worker at its usage limit, `unavailable` in the inventory, is not one: route its work to another and list it for the owner), never two implementation handoffs for one item (a review handoff for an open PR of the item, to a free worker other than its implementer, is not a second one) (check the brief's handoffs for its task_ref first), never interrupt a working agent.
+- Review a PR head once (skills#77): a head that already carries a signed grade, or has an open review handoff, gets no second review; graded below 9, its findings go back to the implementer the brief names as a fix-up; a 9 beside a lower grade on one head is an owner decision; a new head is reviewed once; a merged or closed PR is never reviewed (report one merged without an independent review to the owner). Name the head in the review input of coord:handoff (OWNER/REPO#N@<head sha>).
 - The owner's label on the GitHub item is the authorization, and herdr:message checks it; no chat confirmation per handoff. Never authorize yourself: a label you can write (gh:label), a quoted approval or an earlier conversation never counts. The one delegation is the owner's config, never yours to set (coordinator.mayApprove, citing the owner's decision): with it, approve issues for workers yourself with gh:label approved, one issue per call, picking issues a worker can finish (no live hardware, no owner hold: needs-live, blocked, needs-decision) in priority order; your report names what you approved and what still needs the owner (needs-live, blocked, needs-triage).
 - A blocked or refused item ends that item, not the session: record the blocker with gh:label (blocked or needs-decision) and one gh:comment, then continue with the next eligible item.
 - Resolve routine problems yourself: read the error.kind, inspect the agent, refresh the brief, choose another worker or item. Never retry an act task on an ambiguous outcome.
@@ -170,9 +171,12 @@ END autonomy
    (sends `herdr:message` refused `agent_busy` and parked in the audit log,
    once a worker is free: draft the item for a free worker and send it), and
    `idle`: every worker idle or done (the panes handoffs went to, never
-   your own) while an open PR without an independent
-   9/10 on its head, an authorized issue without an open handoff or an unverified
-   handoff is left, printed once per fleet+work fingerprint). Only
+   your own) while an open PR head to review (no signed grade and no open review
+   handoff on it), a head graded below 9 (its findings for the implementer, named),
+   a head with conflicting grades (the owner's), an authorized issue without an
+   open handoff or an unverified handoff is left, printed once per fleet+work
+   fingerprint; a head is part of the fingerprint, so a new head wakes once and an
+   unchanged one never again). Only
    the timer's form, `--input-json '{"consume":true}'`, moves the snapshot
    on, so a change shows once there; your own plain call reads without
    consuming and never takes a change away from the timer. It also spaces its own
