@@ -1,6 +1,7 @@
 # coord:capacity / coord:spawn (skills #28 W1): per-host worker capacity from herdr:inventory and the configured limits.
-# Inputs: $inv (herdr:inventory, slurped), $cap ({"<host label>": {heavy_jobs, max_workers, spawn}}, matched
-# case-insensitively), $kinds ({"<kind>": {tier, model, heavy}}), $audit (audit.jsonl lines, slurped; [] when none),
+# Inputs: $inv (herdr:inventory, slurped), $cap ({"<host label>": {heavy_jobs, max_workers, spawn, heavy_gates}}, matched
+# case-insensitively; heavy_gates defaults true, false refuses heavy gates on that host -- finding 6, nixos-config#109),
+# $kinds ({"<kind>": {tier, model, heavy}}), $audit (audit.jsonl lines, slurped; [] when none),
 # $usage ({"<host>/<agent_id>": context tokens} for local Claude sessions), $next ({repo, task_ref} or null),
 # $threshold (context tokens that call for /compact or /clear), $at, $now (epoch seconds).
 # Heavy-job slots are held by every worker spawned for a heavy kind (whatever its state: it was started to run heavy
@@ -54,9 +55,11 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null]
    | (if $c == null then 0 else ([$c.heavy_jobs - $heavy_used, 0] | max) end) as $free_h
    | ($hst.reachable != false) as $up
    | ($up and $c != null and $c.spawn == true and $free_w > 0) as $light
-   | ($light and $free_h > 0 and ($c == null or $heavy_queue < $c.heavy_jobs)) as $heavy
+   # heavy gates are refused on a host whose capability says heavy_gates:false (finding 6: lenovo, the control plane, was
+   # OOM-killed twice mid platform:verify, nixos-config#109); unset means true, so existing hosts are unaffected
+   | ($light and ($c.heavy_gates != false) and $free_h > 0 and ($c == null or $heavy_queue < $c.heavy_jobs)) as $heavy
    | {host:$hst.host, machine:($hst.machine // null), reachable:$up, configured:($c != null),
-      limits:(if $c == null then null else {heavy_jobs:$c.heavy_jobs, max_workers:$c.max_workers, spawn:$c.spawn} end),
+      limits:(if $c == null then null else {heavy_jobs:$c.heavy_jobs, max_workers:$c.max_workers, spawn:$c.spawn, heavy_gates:($c.heavy_gates != false)} end),
       workers:{total:($ws | length), idle:$idle, busy:$busy, unavailable:$unavail, unknown:$unknown, spawning:($fly | length), list:$ws},
       free:{workers:$free_w, heavy_jobs:$free_h},
       lock_queue:(if $lq == null then {observed:false, lanes:[]} else {observed:$lq.reachable, error:$lq.error, lanes:$lq.lanes} end),
@@ -66,6 +69,7 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null]
       reasons:([if $up | not then "host did not answer" else empty end,
                 if $unavail > 0 then "\($unavail) worker(s) unavailable (usage limit): " + ([$ws[] | select(.unavailable != null) | .agent_id] | join(", ")) else empty end, if $c == null then "no capacity configured for this host (coordinator.capacity)" else empty end,
                 if $c != null and $c.spawn != true then "spawning is off for this host" else empty end,
+                if $c != null and $c.heavy_gates == false then "this host runs no heavy gates (heavy_gates:false): light assignments only" else empty end,
                 if $c != null and $free_w == 0 then "\($slots_used) of \($c.max_workers) workers in use" else empty end,
                 if $c != null and $free_h == 0 then "\($heavy_used) of \($c.heavy_jobs) heavy-job slots taken" else empty end,
                 if $c != null and $heavy_queue >= $c.heavy_jobs then "heavy-work lane: \($heavy_queue) on the lock (\($heavy_lane.holder.what // "?") for \(($heavy_lane.holder.age_s // 0) / 60 | floor) min)" else empty end])}],
