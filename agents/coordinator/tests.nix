@@ -91,7 +91,7 @@
         # Shipped runtime provenance survives inventory -> work:status -> the human brief.
         export FAKE_HERDR_MACHINES='[{"label":"acer-swift","enabled":true},{"label":"msi-ms7758","enabled":true}]'
         export FAKE_HERDR_LIST_acer_swift="$FX/herdr/runtime.json"
-        jq '.result.agents[0] |= (.title = "sammasak/skills#999 rt=coder tpl=abcdef012345" | .agent_status = "blocked" | .message = "runtime failed: exit 1")' "$FX/herdr/runtime.json" > "$TMP/runtime-msi.json"
+        jq '.result.agents[0] |= (.title = "sammasak/skills#999 rt=coder tpl=abcdef012345" | .agent_status = "blocked" | .tokens.blocked_reason = "runtime failed: exit 1")' "$FX/herdr/runtime.json" > "$TMP/runtime-msi.json"
         export FAKE_HERDR_LIST_msi_ms7758="$TMP/runtime-msi.json"
         runb
         [ "$CODE" -eq 0 ] && [ "$(jqr '[.items[] | select(.runtime_id=="coder")] | length')" = 2 ] && ok || bad "brief retains both runtime hosts ($OUT)"
@@ -101,7 +101,7 @@
         jq '.result.agents[0] |= (.agent_status = "done" | .message = null)' "$TMP/runtime-msi.json" > "$TMP/runtime-msi-done.json"
         export FAKE_HERDR_LIST_msi_ms7758="$TMP/runtime-msi-done.json"
         runb
-        [ "$(jqr '.items[] | select(.machine=="msi-ms7758") | .work_verdict')" = unknown ] && ok || bad "runtime done without GitHub evidence is unknown, never verified"
+        [ "$(jqr '.items[] | select(.machine=="msi-ms7758") | .work_verdict')" = unknown ] && [ "$(jqr '.items[] | select(.machine=="msi-ms7758") | .blocked_reason')" = null ] && ok || bad "runtime done without GitHub evidence is unknown and ignores stale blocked metadata"
         FAKE_HERDR_EXIT_msi_ms7758=1 runb
         [ "$CODE" -eq 0 ] && [ "$(jqr '.partial')" = true ] && grep -q 'msi-ms7758' "$TMP/state/brief/latest.md" && ok || bad "offline runtime host remains explicit in brief"
         export FAKE_HERDR_MACHINES='[{"label":"acer-swift","enabled":true}]' FAKE_HERDR_LIST_acer_swift="$FX/herdr/remote-ok.json"

@@ -26,7 +26,7 @@ in
             | {host:$host, machine:(if $m == "" then null else $m end), agent_id:.pane_id, harness:(.agent // "unknown"),
                session_id:(.agent_session.value? // null), cwd:(.cwd // null), title:$title,
                runtime_id:($runtime.runtime_id // null), template:($runtime.template // null), runtime_task_ref:($runtime.runtime_task_ref // null),
-               blocked_reason:(if .agent_status == "blocked" then .message // null else null end),
+               blocked_reason:(if .agent_status == "blocked" then .tokens.blocked_reason // null else null end),
                observed_state:(.agent_status // "unknown"), observed_at:$at, state_change_seq:(.state_change_seq // null),
                task_ref:($title | capture("(?<r>#[0-9]+)")?.r // null), evidence_ref:null,
                approval_required:(.agent_status == "blocked"), unavailable:null, error:null})' <<<"$3" 2>/dev/null; }

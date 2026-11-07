@@ -116,7 +116,7 @@
         # Runtime titles carry provenance; the same pane/runtime id on two hosts is not one agent.
         export FAKE_HERDR_MACHINES='[{"label":"acer-swift","enabled":true},{"label":"msi-ms7758","enabled":true}]'
         export FAKE_HERDR_LIST_acer_swift="$FX/herdr/runtime.json"
-        jq '.result.agents[0] |= (.title = "sammasak/nixos-config#186 rt=coder tpl=abcdef012345" | .agent_status = "blocked" | .message = "runtime failed: exit 1")' "$FX/herdr/runtime.json" > "$TMP/msi.json"
+        jq '.result.agents[0] |= (.title = "sammasak/nixos-config#186 rt=coder tpl=abcdef012345" | .agent_status = "blocked" | .tokens.blocked_reason = "runtime failed: exit 1")' "$FX/herdr/runtime.json" > "$TMP/msi.json"
         export FAKE_HERDR_LIST_msi_ms7758="$TMP/msi.json"
         run herdr:inventory
         [ "$CODE" -eq 0 ] && [ "$(jqr '[.hosts[] | select(.machine != null) | .agents[] | select(.runtime_id=="coder" and .agent_id=="wR:p1")] | length')" = 2 ] && ok || bad "same runtime/pane ids retain both hosts ($OUT)"

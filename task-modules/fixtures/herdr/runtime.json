@@ -1,1 +1,1 @@
-{"result":{"agents":[{"pane_id":"wR:p1","name":"rt-coder","agent":"agent-runtime","title":"sammasak/skills#42 rt=coder tpl=0123456789ab","terminal_title_stripped":"wrong/repo#999","agent_status":"done","state_change_seq":5,"message":null}]}}
+{"result":{"agents":[{"pane_id":"wR:p1","name":"rt-coder","agent":"agent-runtime","title":"sammasak/skills#42 rt=coder tpl=0123456789ab","terminal_title_stripped":"wrong/repo#999","agent_status":"done","state_change_seq":5,"tokens":{}}]}}
