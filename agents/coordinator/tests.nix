@@ -88,6 +88,24 @@
         [ "$CODE" -eq 0 ] && [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | "\(.needs_owner) \(.unavailable.reason)"')" = "true usage_limit" ] && ok || bad "usage limit: the item needs the owner ($(jqr '.items[] | select(.agent_id=="wT:p1")'))"
         sed -n '/^## Needs you/,/^## /p' "$TMP/state/brief/latest.md" | grep -F 'wT:p1' | grep -F "You've reached your Fable limit" | grep -q '(/model)' \
           && grep -q 'wT:p1 .*| herdr=done | UNAVAILABLE (usage_limit)' "$TMP/state/brief/latest.md" && ok || bad "usage limit: Needs you names it with the switch, the agent line marks it ($(cat "$TMP/state/brief/latest.md"))"
+        # Shipped runtime provenance survives inventory -> work:status -> the human brief.
+        export FAKE_HERDR_MACHINES='[{"label":"acer-swift","enabled":true},{"label":"msi-ms7758","enabled":true}]'
+        export FAKE_HERDR_LIST_acer_swift="$FX/herdr/runtime.json"
+        jq '.result.agents[0] |= (.title = "sammasak/skills#999 rt=coder tpl=abcdef012345" | .agent_status = "blocked" | .tokens.blocked_reason = "runtime failed: exit 1")' "$FX/herdr/runtime.json" > "$TMP/runtime-msi.json"
+        export FAKE_HERDR_LIST_msi_ms7758="$TMP/runtime-msi.json"
+        runb
+        [ "$CODE" -eq 0 ] && [ "$(jqr '[.items[] | select(.runtime_id=="coder")] | length')" = 2 ] && ok || bad "brief retains both runtime hosts ($OUT)"
+        [ "$(jqr '.items[] | select(.machine=="acer-swift") | "\(.runtime_task_ref) \(.template) \(.work_verdict)"')" = 'sammasak/skills#42 0123456789ab verified' ] && ok || bad "runtime done verified from merged GitHub evidence ($OUT)"
+        [ "$(jqr '.items[] | select(.machine=="msi-ms7758") | "\(.work_verdict) \(.blocked_reason)"')" = 'blocked runtime failed: exit 1' ] && ok || bad "runtime blocked reason survives correlation ($OUT)"
+        grep -q 'runtime=msi-ms7758/coder tpl=abcdef012345.*herdr=blocked.*runtime failed: exit 1' "$TMP/state/brief/latest.md" && ok || bad "brief renders runtime identity, template and reason"
+        jq '.result.agents[0] |= (.agent_status = "done" | .message = null)' "$TMP/runtime-msi.json" > "$TMP/runtime-msi-done.json"
+        export FAKE_HERDR_LIST_msi_ms7758="$TMP/runtime-msi-done.json"
+        runb
+        [ "$(jqr '.items[] | select(.machine=="msi-ms7758") | .work_verdict')" = unknown ] && [ "$(jqr '.items[] | select(.machine=="msi-ms7758") | .blocked_reason')" = null ] && ok || bad "runtime done without GitHub evidence is unknown and ignores stale blocked metadata"
+        FAKE_HERDR_EXIT_msi_ms7758=1 runb
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.partial')" = true ] && grep -q 'msi-ms7758' "$TMP/state/brief/latest.md" && ok || bad "offline runtime host remains explicit in brief"
+        export FAKE_HERDR_MACHINES='[{"label":"acer-swift","enabled":true}]' FAKE_HERDR_LIST_acer_swift="$FX/herdr/remote-ok.json"
+        unset FAKE_HERDR_LIST_msi_ms7758
         # gh failing: the brief still succeeds, verdicts become unknown with the reason
         FAKE_GH_EXIT=1 runb
         [ "$CODE" -eq 0 ] && [ "$(jqr '.items[] | select(.agent_id=="wT:p1") | .work_verdict')" = unknown ] && ok || bad "gh down: brief succeeds with unknown verdicts ($CODE)"

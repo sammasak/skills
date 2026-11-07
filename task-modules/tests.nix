@@ -113,6 +113,16 @@
         [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0].agent_id')" = "wA:p2" ] && [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0].machine')" = acer-swift ] && [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0].approval_required')" = true ] && ok || bad "machines: remote blocked agent via --machine"
         [ "$(jqr '.hosts[] | select(.machine=="pi-down") | .reachable')" = false ] && [ "$(jqr '.hosts[] | select(.machine=="pi-down") | .error.kind')" = command_failed ] && [[ "$(jqr '.hosts[] | select(.machine=="pi-down") | .error.message')" == *"failed to connect"* ]] && ok || bad "machines: down machine reported, not hidden"
         grep -q '^herdr(machine=acer-swift) agent list' "$FAKE_LOG" && grep -q '^herdr(machine=pi-down) agent list' "$FAKE_LOG" && ! grep -q 'machine=old' "$FAKE_LOG" && ok || bad "machines: forwarded to enabled machines only"
+        # Runtime titles carry provenance; the same pane/runtime id on two hosts is not one agent.
+        export FAKE_HERDR_MACHINES='[{"label":"acer-swift","enabled":true},{"label":"msi-ms7758","enabled":true}]'
+        export FAKE_HERDR_LIST_acer_swift="$FX/herdr/runtime.json"
+        jq '.result.agents[0] |= (.title = "sammasak/nixos-config#186 rt=coder tpl=abcdef012345" | .agent_status = "blocked" | .tokens.blocked_reason = "runtime failed: exit 1")' "$FX/herdr/runtime.json" > "$TMP/msi.json"
+        export FAKE_HERDR_LIST_msi_ms7758="$TMP/msi.json"
+        run herdr:inventory
+        [ "$CODE" -eq 0 ] && [ "$(jqr '[.hosts[] | select(.machine != null) | .agents[] | select(.runtime_id=="coder" and .agent_id=="wR:p1")] | length')" = 2 ] && ok || bad "same runtime/pane ids retain both hosts ($OUT)"
+        [ "$(jqr '.hosts[] | select(.machine=="acer-swift") | .agents[0] | "\(.task_ref) \(.runtime_task_ref) \(.template)"')" = '#42 sammasak/skills#42 0123456789ab' ] && ok || bad "runtime title beats misleading terminal title ($OUT)"
+        [ "$(jqr '.hosts[] | select(.machine=="msi-ms7758") | .agents[0] | "\(.task_ref) \(.template) \(.blocked_reason)"')" = '#186 abcdef012345 runtime failed: exit 1' ] && ok || bad "MSI runtime provenance and blocked reason ($OUT)"
+        unset FAKE_HERDR_LIST_msi_ms7758
         # 3. herdr machine list itself failing: this host still answers, the failure is data
         : > "$FAKE_LOG"; export FAKE_HERDR_MACHINES_EXIT=1
         run herdr:inventory
