@@ -218,6 +218,48 @@ if command -v jq >/dev/null 2>&1; then
   fi
 fi
 
+# ── check-merge (PreToolUse, worker hosts: skills#28 review gate for gh pr merge) ──
+# a fake gh serves one PR's view from $FAKE_PR (or fails), a fake uname names acer-swift
+FB="$TMP/fakebin"; mkdir -p "$FB"
+printf '#!/bin/sh\n[ -n "${FAKE_GH_FAIL:-}" ] && { echo "gh: HTTP 502" >&2; exit 1; }\ncat "$FAKE_PR"\n' >"$FB/gh"
+printf '#!/bin/sh\necho acer-swift\n' >"$FB/uname"
+chmod +x "$FB/gh" "$FB/uname"
+H=0b436abfc57355f46c1a6d08162e60d62ea5ae69
+pr() { # pr <body> <comment-body>... -> $FAKE_PR
+  jq -n --arg h "$H" --arg b "$1" '{headRefOid: $h, body: $b, comments: ($ARGS.positional | map({body: .}))}' --args "${@:2}" >"$TMP/pr.json"
+  export FAKE_PR="$TMP/pr.json"; }
+mc() { # mc <name> <want_exit> <stderr_pattern> <pane> <command>
+  local name=$1 want=$2 pat=$3 pane=$4 cmd=$5 code err
+  printf '%s' "$(j m1 "$(jq -nc --arg c "$cmd" '{command: $c}')")" \
+    | PATH="$FB:$PATH" HERDR_PANE_ID="$pane" "$HOOKS/check-merge.sh" 2>"$TMP/err"; code=$?
+  err=$(cat "$TMP/err")
+  if [ "$code" -eq "$want" ] && { [ "$pat" = - ] || echo "$err" | grep -q "$pat"; }; then PASS=$((PASS + 1)); else
+    FAIL=$((FAIL + 1)); echo "FAIL: check-merge: $name (exit=$code want=$want; stderr='$err')"; fi; }
+M="gh pr merge 117 -R sammasak/devenv-platform --merge --match-head-commit $H"
+IMPL=$'Closes #92.\n\n-- acer-swift wF:p1'
+pr "$IMPL"
+mc "a command that is not a merge passes" 0 - wW:p1 "gh pr view 117"
+mc "a quoted mention of gh pr merge passes" 0 - wW:p1 "echo 'gh pr merge 117' >notes"
+mc "a merge without a pinned head is refused" 2 "pin the graded head" wW:p1 "gh pr merge 117 --merge"
+mc "a merge naming no PR is refused" 2 "name the PR number" wW:p1 "gh pr merge --merge --match-head-commit $H"
+mc "an unreviewed merge (no grade at all) is refused" 2 "no independent signed" wW:p1 "$M"
+pr "$IMPL" $'Grade: 8/10 (head 0b436ab)\n\n-- acer-swift wW:p1'
+mc "a merge at 8/10 is refused" 2 "no independent signed" wW:p1 "$M"
+pr "$IMPL" $'Grade: 9/10 (head caef8b8)\n\n-- acer-swift wW:p1'
+mc "a 9/10 on an older head does not admit the new head" 2 "no independent signed" wW:p1 "$M"
+pr "$IMPL" $'Grade: 9/10 (head 0b436ab)\n\n-- acer-swift wF:p1'
+mc "the implementer's own 9/10 does not count" 2 "no independent signed" w12:p1 "$M"
+pr "$IMPL" $'Grade: 9/10 (head 0b436abfc57355f46c1a6d08162e60d62ea5ae69)\n\n-- acer-swift wW:p1'
+mc "the independent reviewer merges at 9/10 on the pinned head" 0 - wW:p1 "$M"
+mc "a different pane merges on that reviewer's 9/10" 0 - w12:p1 "$M"
+mc "the implementer is refused even with a reviewer's 9/10" 2 "implementer never merges" wF:p1 "$M"
+pr $'Closes #37.\n\n-- lenovo-21CB001PMX wN:p1' $'Grade: 9/10 (head 0b436ab)\n\n-- lenovo wN:p1'
+mc "a host is its prefix: the implementer lenovo-21CB001PMX wN:p1 grading as 'lenovo wN:p1' does not count" 2 "no independent signed" w12:p1 "$M"
+pr "$IMPL" $'Grade: 9/10 (head 0b436abfc57355f46c1a6d08162e60d62ea5ae69)\n\n-- acer-swift wW:p1'
+mc "a head that moved since the grade is refused" 2 "not the pinned" wW:p1 "gh pr merge 117 --merge --match-head-commit 1111111111111111111111111111111111111111"
+FAKE_GH_FAIL=1 mc "a failed gh pr view blocks (fail closed)" 2 "fail closed" wW:p1 "$M"
+unset FAKE_GH_FAIL
+
 SKIPPED=0
 MISSING=""
 command -v jq >/dev/null 2>&1 || { SKIPPED=$((SKIPPED + 1)); MISSING="$MISSING jq"; }
