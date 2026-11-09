@@ -19,10 +19,16 @@ in
         normalise() { # <host-label> <machine-or-empty> <raw agent list json>
           jq -c --arg host "$1" --arg m "$2" --arg at "$at" '
             .result.agents | select(type == "array") | map(select(type == "object" and (.pane_id | type) == "string")
+            | (if .agent == "agent-runtime" then .title // "" else .terminal_title_stripped // .terminal_title // "" end) as $title
+            | (if .agent == "agent-runtime" then
+                 ($title | capture("^(?<runtime_task_ref>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+) rt=(?<runtime_id>[a-z0-9-]+) tpl=(?<template>[0-9a-f]{12})( |$)")? // {})
+               else {} end) as $runtime
             | {host:$host, machine:(if $m == "" then null else $m end), agent_id:.pane_id, harness:(.agent // "unknown"),
-               session_id:(.agent_session.value? // null), cwd:(.cwd // null), title:(.terminal_title_stripped // .terminal_title // ""),
+               session_id:(.agent_session.value? // null), cwd:(.cwd // null), title:$title,
+               runtime_id:($runtime.runtime_id // null), template:($runtime.template // null), runtime_task_ref:($runtime.runtime_task_ref // null),
+               blocked_reason:(if .agent_status == "blocked" then .tokens.blocked_reason // null else null end),
                observed_state:(.agent_status // "unknown"), observed_at:$at, state_change_seq:(.state_change_seq // null),
-               task_ref:((.terminal_title_stripped // "") | capture("(?<r>#[0-9]+)")?.r // null), evidence_ref:null,
+               task_ref:($title | capture("(?<r>#[0-9]+)")?.r // null), evidence_ref:null,
                approval_required:(.agent_status == "blocked"), unavailable:null, error:null})' <<<"$3" 2>/dev/null; }
         # a worker at its usage limit sits idle at its prompt: unavailable, not free (the owner switches its model or waits)
         mark_unavailable() { # <machine-or-empty> <records json>
