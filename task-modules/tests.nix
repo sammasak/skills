@@ -445,9 +445,9 @@
         sc_send() { : > "$FAKE_LOG"; run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$1}"; }
         # (1) needs-live holds only a live scope: routine actions proceed and the attempt line records the hold decision
         export FAKE_GH_LABELS='["assign:implementer","needs-live"]'
-        sc_draft "routine under needs-live" '["comment","merge"]'; sc_send "$AUTH"
+        sc_draft "routine under needs-live" '["comment","close"]'; sc_send "$AUTH"
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jq -r --arg i "$ID" 'select(.handoff_id == $i and .phase == "attempt") | .authorized_by.hold | "\(.labels | join(",")) \(.decision | test("live scopes only"))"' "$TMP/state/audit.jsonl")" = "needs-live true" ] \
-          && ok || bad "skills#28: needs-live holds no routine handoff (comment, merge); the attempt line records the hold and the decision ($CODE $OUT)"
+          && ok || bad "skills#28: needs-live holds no routine handoff (comment, close); the attempt line records the hold and the decision ($CODE $OUT)"
         sc_draft "deploy under needs-live" '["comment","deploy:acer-swift"]'; sc_send "$AUTH"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q "'needs-live'" && jqr .error.message | grep -q 'deploy:acer-swift' && jqr .error.message | grep -q 'issues/7' && ! grep -q 'agent prompt' "$FAKE_LOG" \
           && ok || bad "skills#28: needs-live holds a live scope (deploy:acer-swift), and the refusal names the label, the issue and the scope ($CODE $OUT)"
