@@ -56,8 +56,8 @@ in
 
   tasks = {
     "gh:label" = {
-      description = "ACT: add or remove one owner-protocol label (needs-decision, blocked, needs-live) on OWNER/REPO#N; audited with the handoff or reason. An authorizing label (approved) only under the owner's delegation (coordinator.mayApprove): added to an issue of the owner's repos that carries no owner hold, never a PR, citing coordinator.approvalDecision in the audit lines.";
-      input = { repo = null; number = null; label = null; action = null; handoff_id = null; reason = null; };
+      description = "ACT: add or remove one owner-protocol label (needs-decision, blocked, needs-live) on OWNER/REPO#N; audited with the handoff or reason. Removing a hold needs evidence (the resolving PR or commit URL) and an earlier gh:label add of that label in the audit: an owner-applied hold is the owner's to lift. An authorizing label (approved) only under the owner's delegation (coordinator.mayApprove): added to an issue of the owner's repos that carries no owner hold, never a PR, citing coordinator.approvalDecision in the audit lines.";
+      input = { repo = null; number = null; label = null; action = null; handoff_id = null; reason = null; evidence = null; };
       exec = ''
         ctx='{"task":"gh:label"}'
         ${ghPrelude}
@@ -85,6 +85,18 @@ in
           delegation=$(jq -cn --arg d "$decision" --arg a "$author" '{owner_delegation:{may_approve:true, decision:$d, author:$a}}')
         else
           case "$label" in needs-decision|blocked|needs-live) ;; *) fail 3 invalid_input "label must be one of needs-decision, blocked, needs-live (an authorizing label only under the owner's delegation, coordinator.mayApprove)" "$ctx" ;; esac
+          if [ "$action" = remove ]; then
+            # skills#28: the coordinator lifts only a hold it put there itself -- an add the audit records with both its attempt
+            # and a done outcome line -- and only citing what resolved it; an owner-applied hold stays the owner's to lift
+            evidence=$(input .evidence)
+            [[ "$evidence" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(pull/[1-9][0-9]*|commit/[0-9a-f]{7,40})$ ]] \
+              || fail 3 invalid_input "removing '$label' from $repo#$num needs evidence: the URL of the PR or commit that resolved it (https://github.com/OWNER/REPO/pull/N or .../commit/SHA)" "$ctx"
+            mine=$(jq -sc --arg r "$repo" --argjson n "$num" --arg l "$label" '
+              [.[] | select(.phase == "gh" and .task == "gh:label" and .action == "add" and .repo == $r and .number == $n and .label == $l)]
+              | group_by(.audit_id) | map(select(any(.[]; .stage == "attempt") and any(.[]; .stage == "outcome" and .outcome == "done"))) | length' "$audit" 2>/dev/null) || mine=0
+            [ "''${mine:-0}" -gt 0 ] || fail 3 owner_hold "'$label' on $repo#$num was not added by the coordinator (no gh:label add with a done outcome in $audit); it is the owner's hold. Required: the owner removes '$label' from $repo#$num" "$ctx"
+            delegation=$(jq -cn --arg e "$evidence" '{evidence:$e}')
+          fi
         fi
         attempt "$delegation"
         errf=$(mktemp); rc=0

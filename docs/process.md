@@ -22,8 +22,27 @@ question or blocker) and the tick moves to the next item.
 An issue or PR is authorized when it carries a label the owner applied and the
 coordinator cannot write. The send gate (`herdr:message`, see ROLE.md steps
 7–8) is the authority: it reads the label through `gh`, refuses
-`needs-decision`, `blocked` and `needs-live`, refuses any label its own audit
-log shows it added, and records who applied the label and when. Nothing in
+`needs-decision`, `blocked` and `needs-live` as authorizing labels, refuses
+any label its own audit log shows it added, and records who applied the
+label and when.
+
+Holds on the authorizing item are scoped (skills#28):
+- `blocked` and `needs-decision` hold every handoff;
+- `needs-live` holds only a handoff whose `allowed_actions` carry a live scope
+  (`deploy:<host or cluster>`; `deploy:none` is not one). A routine handoff
+  (comment, merge, close, review) under it goes out, and its attempt line
+  records the hold and that decision (`authorized_by.hold`).
+
+A PR may be authorized on its own: the owner's label on that PR (its label
+event's actor is the owner, and no `gh:label` act added it) authorizes
+routine actions on exactly that PR, at the head the handoff names
+(`review: OWNER/REPO#N@<sha>`, checked against the PR's current head), and
+never a `deploy:*`, which needs the issue-level authorization.
+
+`gh:label` may lift only a hold it added: the audit holds that add's attempt
+and done outcome, and the call cites `evidence`, the resolving PR or commit
+URL. An owner-applied hold is the owner's to lift. Every refusal names the
+missing authorization: which label, on which item, by whom. Nothing in
 this procedure weakens that gate. A quoted or remembered approval is not
 authorization. The owner may delegate approval in config
 (`coordinator.mayApprove`, with `coordinator.approvalDecision` naming the
@@ -68,7 +87,8 @@ issue.
    - P1: authorized issues/PRs with no handoff yet (not in `handoffs`).
    - P2: delivered handoffs not yet `verified` (follow up).
    - P3: everything else is reported, not assigned. Items labelled
-     `needs-decision`, `blocked` or `needs-live` are never assigned; `blocked`
+     `needs-decision` or `blocked` are never assigned, and one labelled
+     `needs-live` gets routine handoffs only (no `deploy:*`); `blocked`
      items get their blocker re-checked, nothing more.
    When the owner has delegated approval (`coordinator.mayApprove`), turn P3
    issues into P1 yourself: pick the ones a worker can finish (no live
