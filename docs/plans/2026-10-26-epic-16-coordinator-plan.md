@@ -1,3 +1,10 @@
+> **Superseded / archived (2026-11-09, [skills #28](https://github.com/sammasak/skills/issues/28)).**
+> This is the original epic-16 coordinator plan and its loop-framed `/goal` wishlist. It is kept
+> for history only. Coordinator **v2** is event-driven (zero-LLM `coord:changed` ticks, no
+> `coord:loop`/scheduler); the live design and operating docs are **[docs/process.md](../process.md)**
+> and **[docs/coordinator-continuity.md](../coordinator-continuity.md)**. Do not treat the slices or
+> wishlist below as current work — the superseding acceptance is on #28.
+
 # Epic #16 — Harness-agnostic agents + Coordinator: goal and implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This file is the **goal file** for the `/goal` loop driving the epic: the goal condition below must hold, every task box must be ticked with evidence, and the effort log at the bottom is updated after every slice. Durable progress for other sessions lives in [issue #16](https://github.com/sammasak/skills/issues/16) comments; this file is the working plan.
