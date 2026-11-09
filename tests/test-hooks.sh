@@ -218,46 +218,69 @@ if command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-# ── check-merge (PreToolUse, worker hosts: skills#28 review gate for gh pr merge) ──
-# a fake gh serves one PR's view from $FAKE_PR (or fails), a fake uname names acer-swift
+# ── check-merge (PreToolUse, worker hosts: skills#28 review gate for merges) ──
+# A fake gh serves one PR view from $FAKE_PR (or fails); who may merge comes from the session transcript's
+# Coordinator handoffs (as herdr:message delivers them), never from comment signatures.
 FB="$TMP/fakebin"; mkdir -p "$FB"
 printf '#!/bin/sh\n[ -n "${FAKE_GH_FAIL:-}" ] && { echo "gh: HTTP 502" >&2; exit 1; }\ncat "$FAKE_PR"\n' >"$FB/gh"
-printf '#!/bin/sh\necho acer-swift\n' >"$FB/uname"
-chmod +x "$FB/gh" "$FB/uname"
+chmod +x "$FB/gh"
 H=0b436abfc57355f46c1a6d08162e60d62ea5ae69
+URL=https://github.com/sammasak/devenv-platform/pull/117
 pr() { # pr <body> <comment-body>... -> $FAKE_PR
-  jq -n --arg h "$H" --arg b "$1" '{headRefOid: $h, body: $b, comments: ($ARGS.positional | map({body: .}))}' --args "${@:2}" >"$TMP/pr.json"
+  jq -n --arg h "$H" --arg u "$URL" --arg b "$1" '{url: $u, headRefOid: $h, body: $b, comments: ($ARGS.positional | map({body: .}))}' --args "${@:2}" >"$TMP/pr.json"
   export FAKE_PR="$TMP/pr.json"; }
-mc() { # mc <name> <want_exit> <stderr_pattern> <pane> <command>
-  local name=$1 want=$2 pat=$3 pane=$4 cmd=$5 code err
-  printf '%s' "$(j m1 "$(jq -nc --arg c "$cmd" '{command: $c}')")" \
-    | PATH="$FB:$PATH" HERDR_PANE_ID="$pane" "$HOOKS/check-merge.sh" 2>"$TMP/err"; code=$?
+handoff() { # handoff <file> <pane> <allowed> <extra-line>: a transcript with one delivered Coordinator prompt
+  jq -nc --arg t "Assignment #92 for acer-swift/$2"$'\n\nScope: s\n\nAllowed actions: '"$3"$'. Reading, committing and opening a PR are always implied.\n'"${4:+$'\n'$4}" \
+    '{type: "user", message: {role: "user", content: $t}}' >"$1"; }
+handoff "$TMP/t-review" wW:p1 "merge, comment" "Review of: sammasak/devenv-platform#117 at head $H"
+handoff "$TMP/t-merge" w12:p1 "merge, comment" "Merge target: $URL"
+handoff "$TMP/t-impl" wF:p1 "comment, deploy:none" ""
+handoff "$TMP/t-oldhead" wW:p1 "merge, comment" "Review of: sammasak/devenv-platform#117 at head caef8b86d58a5e18c74b81b26ec013d2383ce610"
+handoff "$TMP/t-other" w12:p1 "merge, comment" "Review of: sammasak/devenv-platform#117 at head $H"
+handoff "$TMP/t-nomerge" wW:p1 "comment" "Review of: sammasak/devenv-platform#117 at head $H"
+mc() { # mc <name> <want_exit> <stderr_pattern> <pane> <transcript> <command>
+  local name=$1 want=$2 pat=$3 pane=$4 tr=$5 cmd=$6 code err
+  jq -nc --arg c "$cmd" --arg t "$tr" '{session_id: "hooktest-m1", transcript_path: $t, tool_input: {command: $c}}' \
+    | PATH="$FB:$PATH" HERDR_PANE_ID="$pane" CHECK_MERGE_TEST_HOST=acer-swift "$HOOKS/check-merge.sh" 2>"$TMP/err"; code=$?
   err=$(cat "$TMP/err")
   if [ "$code" -eq "$want" ] && { [ "$pat" = - ] || echo "$err" | grep -q "$pat"; }; then PASS=$((PASS + 1)); else
     FAIL=$((FAIL + 1)); echo "FAIL: check-merge: $name (exit=$code want=$want; stderr='$err')"; fi; }
 M="gh pr merge 117 -R sammasak/devenv-platform --merge --match-head-commit $H"
-IMPL=$'Closes #92.\n\n-- acer-swift wF:p1'
-pr "$IMPL"
-mc "a command that is not a merge passes" 0 - wW:p1 "gh pr view 117"
-mc "a quoted mention of gh pr merge passes" 0 - wW:p1 "echo 'gh pr merge 117' >notes"
-mc "a merge without a pinned head is refused" 2 "pin the graded head" wW:p1 "gh pr merge 117 --merge"
-mc "a merge naming no PR is refused" 2 "name the PR number" wW:p1 "gh pr merge --merge --match-head-commit $H"
-mc "an unreviewed merge (no grade at all) is refused" 2 "no independent signed" wW:p1 "$M"
-pr "$IMPL" $'Grade: 8/10 (head 0b436ab)\n\n-- acer-swift wW:p1'
-mc "a merge at 8/10 is refused" 2 "no independent signed" wW:p1 "$M"
-pr "$IMPL" $'Grade: 9/10 (head caef8b8)\n\n-- acer-swift wW:p1'
-mc "a 9/10 on an older head does not admit the new head" 2 "no independent signed" wW:p1 "$M"
-pr "$IMPL" $'Grade: 9/10 (head 0b436ab)\n\n-- acer-swift wF:p1'
-mc "the implementer's own 9/10 does not count" 2 "no independent signed" w12:p1 "$M"
-pr "$IMPL" $'Grade: 9/10 (head 0b436abfc57355f46c1a6d08162e60d62ea5ae69)\n\n-- acer-swift wW:p1'
-mc "the independent reviewer merges at 9/10 on the pinned head" 0 - wW:p1 "$M"
-mc "a different pane merges on that reviewer's 9/10" 0 - w12:p1 "$M"
-mc "the implementer is refused even with a reviewer's 9/10" 2 "implementer never merges" wF:p1 "$M"
-pr $'Closes #37.\n\n-- lenovo-21CB001PMX wN:p1' $'Grade: 9/10 (head 0b436ab)\n\n-- lenovo wN:p1'
-mc "a host is its prefix: the implementer lenovo-21CB001PMX wN:p1 grading as 'lenovo wN:p1' does not count" 2 "no independent signed" w12:p1 "$M"
-pr "$IMPL" $'Grade: 9/10 (head 0b436abfc57355f46c1a6d08162e60d62ea5ae69)\n\n-- acer-swift wW:p1'
-mc "a head that moved since the grade is refused" 2 "not the pinned" wW:p1 "gh pr merge 117 --merge --match-head-commit 1111111111111111111111111111111111111111"
-FAKE_GH_FAIL=1 mc "a failed gh pr view blocks (fail closed)" 2 "fail closed" wW:p1 "$M"
+G9=$'Grade: 9/10 (head 0b436ab)\n\n-- acer-swift wW:p1'
+pr $'Closes #92.' "$G9"
+mc "a command that is not a merge passes" 0 - wW:p1 "$TMP/t-review" "gh pr view 117"
+mc "a quoted mention (echo) is not a merge" 0 - wW:p1 "$TMP/t-impl" "echo 'gh pr merge 117' >notes"
+mc "a commit message mentioning gh pr merge is not a merge" 0 - wF:p1 "$TMP/t-impl" 'git commit -m "guard gh pr merge 117"'
+mc "a heredoc body mentioning gh pr merge is data, not a merge" 0 - wF:p1 "$TMP/t-impl" $'cat >doc.md <<\'EOF\'\ngh pr merge 117 --merge\nEOF'
+mc "the independent reviewer (review handoff for this head, merge allowed) merges at 9/10" 0 - wW:p1 "$TMP/t-review" "$M"
+mc "a different pane merges on its merge handoff (Merge target) at 9/10" 0 - w12:p1 "$TMP/t-merge" "$M"
+mc "the implementer (no merge or review handoff) is refused even with a reviewer's 9/10" 2 "no Coordinator handoff" wF:p1 "$TMP/t-impl" "$M"
+pr $'Closes #92.' $'Grade: 9/10 (head 0b436ab)\n\n-- acer-swift wW:p1 (typed by wF)'
+mc "a forged signature: the implementer posts a 9/10 signed as wW, still refused" 2 "no Coordinator handoff" wF:p1 "$TMP/t-impl" "$M"
+pr $'Closes #92.' $'Grade: 9/10 (head 0b436ab)\n\n-- acer-swift wF:p1'
+mc "an unsigned PR body and the implementer's own 9/10: refused" 2 "no Coordinator handoff" wF:p1 "$TMP/t-impl" "$M"
+pr $'Closes #92.'
+mc "an unreviewed merge (no grade at all) is refused, handoff or not" 2 "no 'Grade" wW:p1 "$TMP/t-review" "$M"
+pr $'Closes #92.' $'Grade: 8/10 (head 0b436ab)'
+mc "a merge at 8/10 is refused" 2 "no 'Grade" wW:p1 "$TMP/t-review" "$M"
+pr $'Closes #92.' $'Grade: 9/10 (head caef8b8)'
+mc "a 9/10 on an older head does not admit the new head" 2 "no 'Grade" wW:p1 "$TMP/t-review" "$M"
+pr $'Closes #92.' "$G9"
+mc "a review handoff for an older head does not authorize this head" 2 "no Coordinator handoff" wW:p1 "$TMP/t-oldhead" "$M"
+mc "a handoff addressed to another pane does not authorize this one" 2 "no Coordinator handoff" wW:p1 "$TMP/t-other" "$M"
+mc "a handoff without merge in Allowed actions does not authorize a merge" 2 "no Coordinator handoff" wW:p1 "$TMP/t-nomerge" "$M"
+mc "outside a Herdr pane a merge is refused" 2 "not in a Herdr pane" "" "$TMP/t-review" "$M"
+pr $'Closes #92.'
+mc "bypass: an absolute path to gh is the same merge (no grade -> refused)" 2 "no 'Grade" wW:p1 "$TMP/t-review" "/run/current-system/sw/bin/$M"
+mc "bypass: bash -c \"gh pr merge ...\" is the same merge (refused)" 2 "no 'Grade" wW:p1 "$TMP/t-review" "bash -c \"$M\""
+mc "bypass: env/command prefixes and a later line are the same merge (refused)" 2 "no 'Grade" wW:p1 "$TMP/t-review" $'cd /tmp\nenv GH_PAGER= command '"$M"
+mc "bypass: a REST merge (gh api .../pulls/N/merge) is refused" 2 "not through the API" wW:p1 "$TMP/t-review" "gh api -X PUT repos/sammasak/devenv-platform/pulls/117/merge -f merge_method=merge"
+mc "bypass: a GraphQL mergePullRequest is refused" 2 "not through the API" wW:p1 "$TMP/t-review" "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }'"
+mc "a merge without a pinned head is refused" 2 "pin the graded head" wW:p1 "$TMP/t-review" "gh pr merge 117 --merge"
+mc "a merge naming no PR is refused" 2 "name the PR number" wW:p1 "$TMP/t-review" "gh pr merge --merge --match-head-commit $H"
+pr $'Closes #92.' "$G9"
+mc "a head that moved since the grade is refused" 2 "not the pinned" wW:p1 "$TMP/t-review" "gh pr merge 117 --merge --match-head-commit 1111111111111111111111111111111111111111"
+FAKE_GH_FAIL=1 mc "a failed gh pr view blocks (fail closed)" 2 "fail closed" wW:p1 "$TMP/t-review" "$M"
 unset FAKE_GH_FAIL
 
 SKIPPED=0
