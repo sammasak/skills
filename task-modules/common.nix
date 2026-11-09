@@ -140,7 +140,12 @@ in
       # success $auth gains verified, verified_at, who labelled it when, and applied_by (owner, or coordinator-delegated
       # with the gh:label audit_id); otherwise AUTH_EXIT/AUTH_KIND/AUTH_MSG say why and it returns 1.
       gh_authorize() { local what="$1" doing="$2" item="$3" want_label want_url gh_path gh_repo gh_num errf rc=0 labels gherr events ev added line delegated=true applied_by=owner deleg='null' deleg_aid=null hold issue
+        local holds full live scope_acts hold_rec='null' pr_scoped=false pr_head prj
         AUTH_EXIT=2; AUTH_KIND=""; AUTH_MSG=""
+        # skills#28: the scope a hold is judged against is the handoff's allowed_actions (herdr:message's $acts; a spawn
+        # has none). A live scope is deploy:<host or cluster>; deploy:none is not one.
+        scope_acts=''${acts:-[]}
+        live=$(jq -c '[.[] | select(type == "string" and startswith("deploy:") and . != "deploy:none")]' <<<"$scope_acts" 2>/dev/null) || live='[]'
         want_label=$(jq -r .label <<<"$auth"); want_url=$(jq -r .issue_url <<<"$auth")
         case "$want_label" in needs-decision|blocked|needs-live) AUTH_KIND=authorization_missing; AUTH_MSG="label '$want_label' is one the coordinator writes itself (gh:label); it cannot authorize a $what. The owner applies the authorizing label"; return 1 ;; esac
         gh_path=$(jq -r '.issue_url | sub("^https://github\\.com/"; "repos/") | sub("/pull/(?<n>[0-9]+)\\z"; "/issues/\(.n)")' <<<"$auth")
@@ -175,10 +180,43 @@ in
           if [ "$(jq -r '.user.login // ""' <<<"$issue" 2>/dev/null)" != ${lib.escapeShellArg cfg.ghOwner} ]; then
             AUTH_KIND=not_delegated; AUTH_MSG="$want_url is not the owner's issue (written by $(jq -r '.user.login // "?"' <<<"$issue" 2>/dev/null)); a delegated '$want_label' never authorizes it, not $doing"; return 1; fi
         fi
+        # skills#28, scope-aware holds on the owner's authorization: blocked and needs-decision hold everything; needs-live
+        # holds only a live scope (a deploy:<host or cluster> in allowed_actions), so routine work under it proceeds and the
+        # audit line records the hold and that decision (authorized_by.hold). A delegated approval keeps the stricter brake above.
+        holds=$(jq -c '[.[] | .name // empty | select(. == "needs-live" or . == "blocked" or . == "needs-decision")] | unique' <<<"$labels")
+        full=$(jq -r '[.[] | select(. == "blocked" or . == "needs-decision")] | first // empty' <<<"$holds")
+        if [ -n "$full" ]; then AUTH_KIND=owner_hold
+          AUTH_MSG="$want_url carries '$full', a full hold: no $what proceeds under it. Missing: the owner removing '$full' from $want_url (or, for a hold the coordinator added, gh:label remove citing the resolving PR or commit)"; return 1; fi
+        if jq -e 'index("needs-live")' <<<"$holds" >/dev/null; then
+          if [ "$(jq length <<<"$live")" -gt 0 ]; then AUTH_KIND=owner_hold
+            AUTH_MSG="$want_url carries 'needs-live', which holds live scopes: allowed_actions $(jq -r 'join(", ")' <<<"$live") need the owner's live authorization. Missing: the owner removing 'needs-live' from $want_url once the live step is approved; routine actions (comment, merge, close, review) are not held"; return 1; fi
+          hold_rec=$(jq -cn --argjson h "$holds" --argjson a "$scope_acts" '{labels:$h, decision:"needs-live holds live scopes only; allowed_actions \($a | join(",")) carry none: proceeding"}')
+        fi
         # who applied it and when, from the issue's label events (best effort: a missing or paginated-away event is null, not a refusal)
         events=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} api "$gh_path/events?per_page=100" 2>/dev/null 9>&-) || events="[]"
         ev=$(jq -c --arg l "$want_label" 'if type == "array" then ([.[] | select(.event == "labeled" and (.label.name // "") == $l)] | last // null) else null end | if . == null then {labeled_at:null, labeled_by:null} else {labeled_at:(.created_at // null), labeled_by:(.actor.login // null)} end' <<<"$events" 2>/dev/null) || ev='{"labeled_at":null,"labeled_by":null}'
-        auth=$(jq -c --arg at "$(now_iso)" --argjson ev "$ev" --arg ab "$applied_by" --argjson da "$deleg_aid" --argjson d "$deleg" '. + {verified:true, verified_at:$at} + $ev + {applied_by:$ab, delegation_audit_id:$da, owner_delegation:$d}' <<<"$auth"); }
+        # skills#28, PR-scoped authorization: the owner's label on a PR authorizes routine actions on exactly that PR at its
+        # current head, nothing live. The owner must have applied it (the event's actor is the repo owner, and no gh:label
+        # act added it -- every agent posts as the owner, so the audit is what tells them apart; gh:label never approves a PR).
+        if [[ "$want_url" =~ /pull/[0-9]+$ ]]; then pr_scoped=true
+          [ "$applied_by" = owner ] || { AUTH_KIND=not_delegated; AUTH_MSG="'$want_label' on PR $want_url is coordinator-applied; a PR is authorized only by the owner's own label. Missing: the owner applying '$want_label' to $want_url"; return 1; }
+          if [ "$(jq -r .labeled_by <<<"$ev")" != ${lib.escapeShellArg cfg.ghOwner} ]; then AUTH_KIND=authorization_missing
+            AUTH_MSG="cannot confirm ${cfg.ghOwner} applied '$want_label' to PR $want_url (labeled_by: $(jq -r '.labeled_by // "unknown"' <<<"$ev")). Missing: '$want_label' applied by ${cfg.ghOwner} on $want_url"; return 1; fi
+          if [ "$(jq length <<<"$live")" -gt 0 ]; then AUTH_KIND=authorization_missing
+            AUTH_MSG="a PR-scoped '$want_label' on $want_url authorizes routine actions on that PR only; allowed_actions $(jq -r 'join(", ")' <<<"$live") need an issue-level live authorization. Missing: the owner's authorizing label on the linked issue, without 'needs-live'"; return 1; fi
+          if jq -e '[.[] | select(. != "comment" and . != "merge" and . != "close" and . != "review" and . != "deploy:none")] | length > 0' <<<"$scope_acts" >/dev/null; then AUTH_KIND=authorization_missing
+            AUTH_MSG="a PR-scoped '$want_label' on $want_url authorizes only comment, merge, close and review; allowed_actions $(jq -r 'join(", ")' <<<"$scope_acts") go beyond that. Missing: an issue-level authorization from the owner"; return 1; fi
+          if [ "''${review:-null}" = null ] || [ "$(jq -r .pr <<<"$review")" != "$gh_repo#$gh_num" ] || { [ -n "''${pr:-}" ] && [ "$pr" != "$want_url" ]; }; then AUTH_KIND=authorization_missing
+            AUTH_MSG="a PR-scoped '$want_label' on $want_url covers only a handoff naming that PR and its head. Missing: the draft's review field $gh_repo#$gh_num@<head sha> (coord:handoff review)"; return 1; fi
+          errf=$(mktemp); rc=0; prj=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} api "repos/$gh_repo/pulls/$gh_num" 2>"$errf" 9>&-) || rc=$?
+          gherr=$(head -c 300 "$errf" | head -n 1 | tr -d '\000-\037'); rm -f "$errf"
+          if [ "$rc" -ne 0 ]; then AUTH_KIND=gh_error; AUTH_MSG="could not read PR $want_url to check its head: gh api exited $rc''${gherr:+: $gherr}; not $doing"; return 1; fi
+          pr_head=$(jq -r '.head.sha // ""' <<<"$prj" 2>/dev/null)
+          if [ -z "$pr_head" ] || [ "''${pr_head#"$(jq -r .head <<<"$review")"}" = "$pr_head" ]; then AUTH_KIND=authorization_missing
+            AUTH_MSG="PR $want_url is at head ''${pr_head:-unknown}, not the handoff's $(jq -r .head <<<"$review"); the owner's '$want_label' covers the head it names. Missing: a handoff for the current head"; return 1; fi
+        fi
+        auth=$(jq -c --arg at "$(now_iso)" --argjson ev "$ev" --arg ab "$applied_by" --argjson da "$deleg_aid" --argjson d "$deleg" --argjson hr "$hold_rec" --argjson ps "$pr_scoped" \
+          '. + {verified:true, verified_at:$at} + $ev + {applied_by:$ab, delegation_audit_id:$da, owner_delegation:$d, hold:$hr, pr_scoped:$ps}' <<<"$auth"); }
       # gh_work_json <OWNER/REPO>: the gh:work record (open issues, open+merged PRs, truncation) or an error record;
       # never exits, so coord:brief can call it per active repo and gh:work can emit it
       gh_work_json() { local gh="$1" ctx at rc=0 issues open_prs merged_prs prs trunc fields out errf msg

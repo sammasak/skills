@@ -108,6 +108,8 @@
           case "$method $path" in
             "GET "*/labels) printf '%s\n' "''${FAKE_GH_LABELS:-[]}" | jq 'map({name:.})' ;;
             "GET "*/events) printf '%s\n' "''${FAKE_GH_EVENTS:-[]}" ;;
+            # `gh api repos/O/R/pulls/N`: a PR whose head is FAKE_GH_PR_HEAD (skills#28, the PR-scoped authorization)
+            "GET "repos/*/pulls/[0-9]*) jq -cn --arg h "''${FAKE_GH_PR_HEAD:-}" '{head:{sha:$h}}' ;;
             # `gh api repos/O/R/issues/N`: the issue with FAKE_GH_LABELS; FAKE_GH_ISSUE_IS_PR makes it a pull request
             "GET "repos/*/issues/[0-9]*) printf '%s\n' "''${FAKE_GH_LABELS:-[]}" | jq --arg n "''${path##*/}" --arg pr "''${FAKE_GH_ISSUE_IS_PR:-}" --arg u "''${FAKE_GH_ISSUE_USER:-sammasak}" --arg st "''${FAKE_GH_ISSUE_STATE:-open}" '{number:($n|tonumber), state:$st, user:{login:$u}, author_association:(if $u == "sammasak" then "OWNER" else "NONE" end), labels:map({name:.})} + (if $pr == "" then {} else {pull_request:{url:"x"}} end)' ;;
             "POST "*/labels) jq -c --argjson have "''${FAKE_GH_LABELS:-[]}" '($have + .labels) | unique | map({name:.})' <<<"$body" ;;

@@ -219,7 +219,7 @@
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
 
         export FAKE_HERDR_MACHINES='[{"id":"e236150c763f9ca38a989be19feb0934","label":"acer-swift","target":"acer-swift","enabled":true}]' FAKE_HERDR_SESSION=sess-1 FAKE_PROMPT_OUT="$TMP/prompt.txt"
-        export FAKE_GH_LABELS='["epic","assign:implementer","deployment-ready","blocked"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"assign:implementer"},"actor":{"login":"sammasak"},"created_at":"2026-10-27T20:00:00Z"},{"event":"labeled","label":{"name":"epic"},"actor":{"login":"x"},"created_at":"2026-10-01T00:00:00Z"}]'
+        export FAKE_GH_LABELS='["epic","assign:implementer","deployment-ready"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"assign:implementer"},"actor":{"login":"sammasak"},"created_at":"2026-10-27T20:00:00Z"},{"event":"labeled","label":{"name":"epic"},"actor":{"login":"x"},"created_at":"2026-10-01T00:00:00Z"}]'
         draft() { run coord:handoff --input-json "$1"; ID=$(jqr .handoff_id); }
         AUTH='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/issues/7","label":"assign:implementer"}'
         # a draft for a remote agent, sent through --machine, audited, duplicate refused
@@ -303,14 +303,18 @@
         export FAKE_HERDR_STATE=idle; : > "$FAKE_LOG"
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#9","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment","deploy:acer-swift"]}'; ID3=$(jqr .handoff_id); H=$(jqr .host)
         [ "$H" = "$(hostname -s 2>/dev/null || hostname)" ] && [ "$(jqr .machine)" = null ] && ok || bad "local draft host/machine"
-        run herdr:message --input-json "{\"handoff_id\":\"$ID3\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/pull/9\",\"label\":\"deployment-ready\"}}"
+        run herdr:message --input-json "{\"handoff_id\":\"$ID3\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/9\",\"label\":\"deployment-ready\"}}"
         [ "$CODE" -eq 0 ] && grep -q '^herdr agent prompt wF:p1' "$FAKE_LOG" && ! grep -q 'machine=' "$FAKE_LOG" && [ "$(jqr .authorized_by.label)" = deployment-ready ] && ok || bad "local send without --machine ($CODE)"
-        grep -q '^gh api repos/sammasak/skills/issues/9/labels' "$FAKE_LOG" && ok || bad "a PR URL is checked through the issues labels path"
+        # a PR URL reads its labels through the issues path; a deploy:* is never PR-scoped (skills#28), so this one is refused
+        : > "$FAKE_LOG"
+        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#9","scope":"s via PR","expected_evidence":"e","acceptance":"a","allowed_actions":["comment","deploy:acer-swift"]}'; ID3P=$(jqr .handoff_id)
+        run herdr:message --input-json "{\"handoff_id\":\"$ID3P\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/pull/9\",\"label\":\"deployment-ready\"}}"
+        grep -q '^gh api repos/sammasak/skills/issues/9/labels' "$FAKE_LOG" && [ "$CODE" -ne 0 ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "a PR URL is checked through the issues labels path, and a PR-scoped deploy is refused ($CODE $OUT)"
         # only the trailing /pull/N is mapped: an owner or repo named pull keeps its name
         : > "$FAKE_LOG"
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#11","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; ID4=$(jqr .handoff_id)
         run herdr:message --input-json "{\"handoff_id\":\"$ID4\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/pull/pull/pull/11\",\"label\":\"deployment-ready\"}}"
-        [ "$CODE" -eq 0 ] && grep -q '^gh api repos/pull/pull/issues/11/labels' "$FAKE_LOG" && ok || bad "pull-named owner and repo survive the URL mapping ($(grep '^gh' "$FAKE_LOG"))"
+        grep -q '^gh api repos/pull/pull/issues/11/labels' "$FAKE_LOG" && [ "$(jqr .error.kind)" = authorization_missing ] && ok || bad "pull-named owner and repo survive the URL mapping; PR-scoped, it is then refused for naming no head ($(grep '^gh' "$FAKE_LOG"))"
         # a worker at its usage limit is refused (worker_unavailable) before any attempt line or prompt
         : > "$FAKE_LOG"; draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#12","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; ID5=$(jqr .handoff_id)
         FAKE_HERDR_READ_wF_p1="$FX/herdr/read-fable-limit.txt" run herdr:message --input-json "{\"handoff_id\":\"$ID5\",\"confirm\":\"$H/wF:p1\",$AUTH}"
@@ -373,8 +377,11 @@
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: the PR's author, whose own comment quotes another reviewer's grade (lenovo wN form), is still refused ($CODE $OUT)"
         # (c) the author is refused even when the merge is authorized by the PR URL -- the authorizing item cannot excuse it
         : > "$FAKE_LOG"
-        draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#7","scope":"merge #41 by pr url","expected_evidence":"e","acceptance":"a","allowed_actions":["merge"],"pr_url":"https://github.com/sammasak/skills/pull/41"}'; IDC=$(jqr .handoff_id)
-        run herdr:message --input-json "{\"handoff_id\":\"$IDC\",\"confirm\":\"$H/wF:p1\",$PRMERGE41}"
+        # (skills#28: a PR-scoped authorization is the owner's label on that PR, for a handoff naming it at its head)
+        H41=4141414141414141414141414141414141414141
+        draft "{\"agent_id\":\"wF:p1\",\"session_id\":\"sess-1\",\"task_ref\":\"#7\",\"scope\":\"merge #41 by pr url\",\"expected_evidence\":\"e\",\"acceptance\":\"a\",\"allowed_actions\":[\"merge\"],\"review\":\"sammasak/skills#41@$H41\"}"; IDC=$(jqr .handoff_id)
+        FAKE_GH_PR_HEAD=$H41 FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"deployment-ready"},"actor":{"login":"sammasak"},"created_at":"2026-11-09T10:00:00Z"}]' \
+          run herdr:message --input-json "{\"handoff_id\":\"$IDC\",\"confirm\":\"$H/wF:p1\",$PRMERGE41}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = author_merge ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "send: the author is refused even when the merge is authorized by the PR URL ($CODE $OUT)"
         # host-qualified: lenovo/wF:p1 implemented PR #42; the same agent id on THIS host, which did not, may merge it
         : > "$FAKE_LOG"
@@ -432,6 +439,54 @@
         : > "$FAKE_LOG"
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'review its text does not state' && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "skills#77: an edited review key is refused ($OUT)"
+        # ── skills#28: scope-aware holds and PR-scoped authorization ──
+        export FAKE_HERDR_STATE=idle FAKE_HERDR_SEQ=60
+        sc_draft() { draft "{\"machine\":\"acer-swift\",\"agent_id\":\"wA:p2\",\"session_id\":\"sess-1\",\"task_ref\":\"#7\",\"scope\":\"$1\",\"expected_evidence\":\"e\",\"acceptance\":\"a\",\"allowed_actions\":$2''${3:-}}"; }
+        sc_send() { : > "$FAKE_LOG"; run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$1}"; }
+        # (1) needs-live holds only a live scope: routine actions proceed and the attempt line records the hold decision
+        export FAKE_GH_LABELS='["assign:implementer","needs-live"]'
+        sc_draft "routine under needs-live" '["comment","merge"]'; sc_send "$AUTH"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jq -r --arg i "$ID" 'select(.handoff_id == $i and .phase == "attempt") | .authorized_by.hold | "\(.labels | join(",")) \(.decision | test("live scopes only"))"' "$TMP/state/audit.jsonl")" = "needs-live true" ] \
+          && ok || bad "skills#28: needs-live holds no routine handoff (comment, merge); the attempt line records the hold and the decision ($CODE $OUT)"
+        sc_draft "deploy under needs-live" '["comment","deploy:acer-swift"]'; sc_send "$AUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q "'needs-live'" && jqr .error.message | grep -q 'deploy:acer-swift' && jqr .error.message | grep -q 'issues/7' && ! grep -q 'agent prompt' "$FAKE_LOG" \
+          && ok || bad "skills#28: needs-live holds a live scope (deploy:acer-swift), and the refusal names the label, the issue and the scope ($CODE $OUT)"
+        sc_draft "deploy:none under needs-live" '["comment","deploy:none"]'; sc_send "$AUTH"
+        [ "$CODE" -eq 0 ] && ok || bad "skills#28: deploy:none is not a live scope ($CODE $OUT)"
+        # blocked and needs-decision stay full holds, even for routine actions
+        for hold in blocked needs-decision; do
+          export FAKE_GH_LABELS="[\"assign:implementer\",\"$hold\"]"
+          sc_draft "routine under $hold" '["comment"]'; sc_send "$AUTH"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q "'$hold', a full hold" && jqr .error.message | grep -q 'owner removing' && ! grep -q 'agent prompt' "$FAKE_LOG" \
+            && ok || bad "skills#28: $hold is a full hold, routine actions too; the refusal names the owner's action ($CODE $OUT)"
+        done
+        # (2) PR-scoped authorization: the owner's label on the PR authorizes routine actions on exactly that PR at its head
+        HEAD28=2828282828282828282828282828282828282828
+        PRAUTH='"authorized_by":{"issue_url":"https://github.com/sammasak/skills/pull/90","label":"approved"}'
+        export FAKE_GH_LABELS='["approved"]' FAKE_GH_PR_HEAD=$HEAD28
+        export FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"approved"},"actor":{"login":"sammasak"},"created_at":"2026-11-09T10:00:00Z"}]'
+        sc_draft "review+merge #90" '["comment","merge"]' ",\"review\":\"sammasak/skills#90@$HEAD28\""; sc_send "$PRAUTH"
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && [ "$(jqr .authorized_by.pr_scoped)" = true ] && [ "$(jqr .authorized_by.labeled_by)" = sammasak ] && grep -q '^gh api repos/sammasak/skills/pulls/90$' "$FAKE_LOG" \
+          && ok || bad "skills#28: the owner's approved on a PR authorizes a review+merge handoff naming that PR at its head ($CODE $OUT)"
+        sc_draft "deploy via PR auth" '["comment","deploy:acer-swift"]' ",\"review\":\"sammasak/skills#90@$HEAD28\""; sc_send "$PRAUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'issue-level live authorization' && ! grep -q 'agent prompt' "$FAKE_LOG" \
+          && ok || bad "skills#28: a PR-scoped approval refuses deploy:*, naming the missing issue-level live authorization ($CODE $OUT)"
+        sc_draft "label via PR auth" '["comment","label"]' ",\"review\":\"sammasak/skills#90@$HEAD28\""; sc_send "$PRAUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'only comment, merge, close and review' && ok || bad "skills#28: a PR-scoped approval authorizes routine actions only ($CODE $OUT)"
+        sc_draft "other PR" '["comment"]' ",\"review\":\"sammasak/skills#91@$HEAD28\""; sc_send "$PRAUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'naming that PR and its head' && ok || bad "skills#28: a PR-scoped approval covers exactly that PR ($CODE $OUT)"
+        sc_draft "no head named" '["comment"]'; sc_send "$PRAUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'sammasak/skills#90@<head sha>' && ok || bad "skills#28: a PR-scoped approval needs the handoff to name the PR's head ($CODE $OUT)"
+        sc_draft "moved head" '["comment"]' ",\"review\":\"sammasak/skills#90@$HEAD77\""; sc_send "$PRAUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q "at head $HEAD28, not the handoff's $HEAD77" && ok || bad "skills#28: a PR whose head moved is not covered ($CODE $OUT)"
+        sc_draft "not the owner's label" '["comment"]' ",\"review\":\"sammasak/skills#90@$HEAD28\""
+        FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"approved"},"actor":{"login":"someone-else"},"created_at":"2026-11-09T10:00:00Z"}]' sc_send "$PRAUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q "applied by sammasak" && jqr .error.message | grep -q 'someone-else' && ok || bad "skills#28: a PR label not applied by the owner never authorizes, naming who did ($CODE $OUT)"
+        jq -cn '{audit_id:"dddddddddddd", phase:"gh", stage:"outcome", task:"gh:label", repo:"sammasak/skills", number:90, label:"approved", action:"add", outcome:"done", at:"2026-11-09T09:00:00Z"}' >> "$TMP/state/audit.jsonl"
+        sc_send "$PRAUTH"
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'added by the coordinator' && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "skills#28: an approved on a PR that the coordinator added never authorizes (no self-authorization) ($CODE $OUT)"
+        unset FAKE_GH_PR_HEAD
+        export FAKE_GH_LABELS='["epic","assign:implementer","deployment-ready"]'
         summary
       '';
     };
@@ -474,10 +529,20 @@
           && [ "$(jq -r 'select(.audit_id == "'"$AID"'" and .stage == "outcome") | .task + " " + .label + " " + .outcome' "$AUDIT")" = "gh:label blocked done" ] && ok || bad "attempt then outcome audit lines for the label add ($(cat "$AUDIT"))"
         # the attempt line precedes the GitHub write: it is already there when gh runs (gh's call is logged after it was written)
         [ "$(head -1 "$AUDIT" | jq -r .stage)" = attempt ] && ok || bad "attempt line first"
-        # gh:label remove with a reason: DELETE path names the label
-        : > "$FAKE_LOG"
-        run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"needs-live","action":"remove","reason":"live check recorded in #43"}'
-        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr .reason)" = "live check recorded in #43" ] && [ "$(jqr .handoff_id)" = null ] && grep -q '^gh api -X DELETE repos/sammasak/skills/issues/43/labels/needs-live$' "$FAKE_LOG" && [ "$(audit_lines)" = 4 ] && ok || bad "label remove with reason ($CODE $OUT)"
+        # skills#28 (3): the coordinator lifts only a hold it added (the add above: attempt + done outcome), citing the evidence
+        : > "$FAKE_LOG"; before=$(audit_lines)
+        run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"needs-live","action":"remove","reason":"live check done","evidence":"https://github.com/sammasak/skills/pull/80"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q "the owner removes 'needs-live' from sammasak/skills#43" && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] \
+          && ok || bad "skills#28: an owner-applied hold (no gh:label add in the audit) is not removed; the refusal names the owner's action ($CODE $OUT)"
+        for ev in "" '"evidence":"https://github.com/sammasak/skills/issues/43",' '"evidence":"https://example.com/x/pull/1",'; do
+          run gh:label --input-json "{\"repo\":\"sammasak/skills\",\"number\":43,\"label\":\"blocked\",\"action\":\"remove\",$ev\"reason\":\"resolved\"}"
+          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'needs evidence' && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] \
+            && ok || bad "skills#28: removing a hold without a PR/commit evidence URL is refused (${ev:-none}) ($CODE $OUT)"
+        done
+        run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"remove","reason":"resolved by the merged fix","evidence":"https://github.com/sammasak/skills/commit/0123abc"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr .evidence)" = "https://github.com/sammasak/skills/commit/0123abc" ] && grep -q '^gh api -X DELETE repos/sammasak/skills/issues/43/labels/blocked$' "$FAKE_LOG" \
+          && [ "$(jq -r 'select(.action == "remove" and .stage == "attempt") | .evidence' "$AUDIT")" = "https://github.com/sammasak/skills/commit/0123abc" ] \
+          && ok || bad "skills#28: the coordinator removes a hold it added, citing the resolving commit; the audit records the evidence ($CODE $OUT)"
         # refusals before any gh call or audit line: a label outside the three (approved without delegation is its own case below), unknown action, bad target,
         # dot segments, both or neither of handoff_id/reason, unknown draft, long reason
         for bad_in in '{"repo":"sammasak/skills","number":43,"label":"assign:implementer","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"wontfix","action":"add","reason":"r"}' '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"toggle","reason":"r"}' \
@@ -495,6 +560,10 @@
         before=$(audit_lines)
         FAKE_GH_SLEEP=5 run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"needs-decision","action":"add","reason":"r"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr .outcome)" = timeout ] && [ "$(audit_lines)" = $((before + 2)) ] && [ "$(tail -1 "$AUDIT" | jq -r .outcome)" = timeout ] && ok || bad "gh hang => timeout recorded ($CODE $OUT)"
+        # a failed or timed-out add is no proof the coordinator put the hold there
+        : > "$FAKE_LOG"
+        run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"needs-decision","action":"remove","reason":"r","evidence":"https://github.com/sammasak/skills/pull/80"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && [ ! -s "$FAKE_LOG" ] && ok || bad "skills#28: an add that failed (command_failed/timeout) does not let the coordinator remove the hold ($CODE $OUT)"
         # gh:comment: body delivered with the Coordinator signature, url in the record and the audit line
         : > "$FAKE_LOG"; rm -f "$FAKE_GH_COMMENT_OUT"
         run gh:comment --input-json "{\"repo\":\"sammasak/skills\",\"number\":43,\"body\":\"Status: wF:p1 is idle; the owner has not decided yet.\",\"handoff_id\":\"$HID\"}"
@@ -566,7 +635,7 @@
         echo '{"audit_id":"aaaaaaaaaaaa","phase":"gh","stage":"outcome","task":"gh:label","repo":"sammasak/skills","number":43,"label":"approved","action":"add","outcome":"done","at":"2026-10-27T00:00:00Z"}' >> "$AUDIT"
         run herdr:message --input-json "{\"handoff_id\":\"$HID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/43\",\"label\":\"approved\"}}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'added by the coordinator' && [ ! -s "$FAKE_LOG" ] && ok || bad "a label the audit log shows the coordinator added cannot authorize ($OUT)"
-        run herdr:message --input-json "{\"handoff_id\":\"$HID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/43\",\"label\":\"assign:implementer\"}}"
+        FAKE_GH_LABELS='["approved","assign:implementer"]' run herdr:message --input-json "{\"handoff_id\":\"$HID\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/43\",\"label\":\"assign:implementer\"}}"
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = delivered ] && ok || bad "herdr:message accepts an audit log with gh lines ($CODE $OUT)"
         # --- delegated approval (the owner's decision, skills#28 comment 6629911996): approved is writable only under
         #     coordinator.mayApprove, on an issue of the owner's repos that carries no owner hold, never on a PR; the act cites
@@ -630,7 +699,7 @@
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'writes itself' && [ ! -s "$FAKE_LOG" ] && ok || bad "send: a delegated needs-decision is still refused ($OUT)"
         run herdr:message --input-json "{\"handoff_id\":\"$H45\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/45\",\"label\":\"approved\"}}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'added by the coordinator' && [ ! -s "$FAKE_LOG" ] && ok || bad "send: a coordinator-added approved whose delegation lacks the decision is refused ($OUT)"
-        run herdr:message --input-json "{\"handoff_id\":\"$H45\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/45\",\"label\":\"epic\"}}"
+        FAKE_GH_LABELS='["epic","approved"]' run herdr:message --input-json "{\"handoff_id\":\"$H45\",\"confirm\":\"$H/wF:p1\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/45\",\"label\":\"epic\"}}"
         [ "$CODE" -eq 0 ] && [ "$(jqr '.authorized_by | "\(.applied_by) \(.delegation_audit_id)"')" = "owner null" ] && ok || bad "send: an owner-applied label reads applied_by owner ($CODE $OUT)"
         run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#46","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
         H46=$(jqr .handoff_id)
