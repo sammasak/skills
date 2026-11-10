@@ -250,5 +250,54 @@ in
         emit "$(jq -c '.' "$dir/$id.json")"
       '';
     };
+
+    "coord:report" = {
+      description = "Read-only engineering-effectiveness report (skills #85, M0a) over a window (default last 7 days) of the audit log and the GitHub PR record: issue→handoff→reviewed PR→merge correlation, verified deliveries per day/week (merged with a signed independent ≥9 on the merged head), authorization→merge lead time, review pass/rework/repeated counts, and blocked time by bounded reason. Every metric carries {value, coverage_pct, observed_from, unknown_reason}; aggregates and source refs only, never scope text, bodies, prompts or commands. Token, skill-invocation and runtime-resource metrics are marked unavailable in this slice.";
+      input = { since = null; until = null; days = null; limit = null; };
+      exec = ''
+        ${cfg.prelude}
+        at=$(now_iso)
+        since=$(input .since); until=$(input .until); days=$(input .days); limit=$(input .limit)
+        [ -n "$days" ] || days=7
+        [[ "$days" =~ ^[0-9]+$ ]] || fail 3 invalid_input "days must be a non-negative integer" '{"task":"coord:report"}'
+        [ -n "$limit" ] || limit=100
+        [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -ge 1 ] && [ "$limit" -le 100 ] || fail 3 invalid_input "limit must be 1..100 (GitHub's page cap)" '{"task":"coord:report"}'
+        [ -n "$until" ] || until="$at"
+        [ -n "$since" ] || since=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || fail 3 invalid_input "could not compute the window start" '{"task":"coord:report"}'
+        # a since/until the owner passed must be ISO-8601 Z; a bad one is rejected, never silently widened
+        for v in "$since" "$until"; do [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail 3 invalid_input "since/until must be YYYY-MM-DDTHH:MM:SSZ" '{"task":"coord:report"}'; done
+        tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT
+        # the audit window: object rows in [since, until). A log that is not JSON lines is a failed source, never "no evidence"
+        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"
+        printf '[]\n' > "$tmpd/audit.json"
+        if [ -s "$audit" ]; then
+          jq -s --arg s "$since" --arg u "$until" 'map(select(type == "object" and (.at // "") >= $s and (.at // "") < $u))' "$audit" > "$tmpd/audit.json" 2>/dev/null \
+            || { printf '[]\n' > "$tmpd/audit.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines")}'); }
+        fi
+        # repos the window names (a handoff's authorized_by.issue_url, or a gh:* row's repo); GitHub PRs fetched once each,
+        # the same list path work:status uses. A failed or truncated list is recorded, not hidden.
+        : > "$tmpd/repos.jsonl"
+        while IFS= read -r repo; do
+          [ -n "$repo" ] || continue
+          rc=0
+          # only the fields report.jq reads (evidence.jq needs comments+reviews); commits/title/body/statusCheckRollup are
+          # left out so a larger page does not blow GitHub's GraphQL node budget (the authors connection caps at 500k)
+          timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$repo" --state all --limit "$limit" \
+            --json number,state,mergedAt,createdAt,url,headRefOid,closingIssuesReferences,comments,reviews > "$tmpd/p.json" 2>/dev/null || rc=$?
+          if [ "$rc" -ne 0 ]; then jq -cn --arg r "$repo" --arg e "gh exited $rc" '{repo:$r, error:$e}'
+          else jq -cn --arg r "$repo" --slurpfile p "$tmpd/p.json" --argjson l "$limit" \
+              'if ($p | length) == 1 and ($p[0] | type) == "array" then {repo:$r, error:null, limit:$l, prs:$p[0]} else error end' 2>/dev/null \
+            || jq -cn --arg r "$repo" '{repo:$r, error:"gh returned unexpected JSON"}'; fi >> "$tmpd/repos.jsonl"
+        done < <(jq -r '[.[]
+            | (.authorized_by.issue_url // "" | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first // empty),
+              (if (.phase == "gh" and (.repo // null) != null) then .repo else empty end)]
+            | unique[] | select(test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))' "$tmpd/audit.json")
+        jq -sc 'INDEX(.repo)' "$tmpd/repos.jsonl" > "$tmpd/repos.json"
+        rep=$(jq -nc -L ${./.} --slurpfile audit "$tmpd/audit.json" --slurpfile repos "$tmpd/repos.json" \
+          --argjson window "$(jq -cn --arg s "$since" --arg u "$until" --argjson d "$days" '{since:$s, until:$u, days:$d}')" \
+          --arg at "$at" -f ${./.}/report.jq) || fail 2 internal "coord:report aggregation failed" '{"task":"coord:report"}'
+        emit "$(jq -c --argjson e "$audit_err" '. + {audit_path:"'"$audit"'", handoffs_error:$e}' <<<"$rep")"
+      '';
+    };
   };
 }

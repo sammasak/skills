@@ -1,0 +1,12 @@
+{"phase":"gh","task":"gh:label","action":"add","label":"approved","stage":"attempt","repo":"sammasak/demo","number":90,"at":"2026-10-02T09:00:00Z"}
+{"phase":"attempt","handoff_id":"hf90","audit_id":"a90","host":"acer-swift","agent_id":"wW:p1","session_id":"s1","at":"2026-10-02T09:05:00Z","authorized_by":{"issue_url":"https://github.com/sammasak/demo/issues/90","label":"approved","labeled_at":"2026-10-02T09:00:00Z"},"task_ref":"#90"}
+{"phase":"outcome","audit_id":"a90","outcome":"delivered","at":"2026-10-02T09:06:00Z"}
+{"phase":"gh","task":"gh:label","action":"add","label":"needs-decision","stage":"attempt","repo":"sammasak/demo","number":91,"at":"2026-10-02T10:00:00Z"}
+{"phase":"gh","task":"gh:label","action":"remove","label":"needs-decision","stage":"attempt","repo":"sammasak/demo","number":91,"at":"2026-10-02T12:00:00Z"}
+{"phase":"attempt","handoff_id":"hf91","audit_id":"a91","host":"acer-swift","agent_id":"wW:p1","session_id":"s1","at":"2026-10-02T10:05:00Z","authorized_by":{"issue_url":"https://github.com/sammasak/demo/issues/91","label":"approved","labeled_at":"2026-10-02T10:00:00Z"},"task_ref":"#91"}
+{"phase":"outcome","audit_id":"a91","outcome":"delivered","at":"2026-10-02T10:06:00Z"}
+{"phase":"attempt","handoff_id":"hf92","audit_id":"a92","host":"acer-swift","agent_id":"wW:p1","session_id":"s1","at":"2026-10-03T08:00:00Z","authorized_by":{"issue_url":"https://github.com/sammasak/demo/issues/92","label":"approved","labeled_at":"2026-10-03T07:55:00Z"},"task_ref":"#92"}
+{"phase":"attempt","handoff_id":"hf93","audit_id":"a93","host":"acer-swift","agent_id":"wW:p1","session_id":"s1","at":"2026-10-05T08:00:00Z","authorized_by":{"issue_url":"https://github.com/sammasak/demo/issues/93","label":"approved","labeled_at":"2026-10-05T07:55:00Z"},"task_ref":"#93"}
+{"phase":"outcome","audit_id":"a93","outcome":"delivered","at":"2026-10-05T08:01:00Z"}
+{"phase":"parked","reason":"agent_busy","host":"lenovo-21CB001PMX","agent_id":"wN:p1","task_ref":"#90","handoff_id":"hp1","at":"2026-10-02T11:00:00Z"}
+{"phase":"parked","reason":"agent_busy","host":"acer-swift","agent_id":"wW:p1","task_ref":"#91","handoff_id":"hp2","at":"2026-10-02T11:30:00Z"}

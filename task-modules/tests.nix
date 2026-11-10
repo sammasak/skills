@@ -841,5 +841,57 @@
         summary
       '';
     };
+    "skills:test:tasks:report" = {
+      description = "coord:report M0a (skills #85) over a synthetic 7-day audit fixture and fake PRs: verified deliveries (independent >=9 on the merged head), authorization->merge lead time, review pass/rework/repeated, blocked-time spans, review independence, a partial record that must not count, missing-source -> unknown (never 0), and a privacy assertion.";
+      exec = ''
+        set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0
+        devenv() { command devenv "$1" "$2" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" "''${@:3}"; }
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log"
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
+        run() { # <task> [args]
+          local task="$1"; shift
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
+            --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+
+        mkdir -p "$TMP/state"; cp "$FX/report/audit.jsonl" "$TMP/state/audit.jsonl"
+        export FAKE_GH_DIR="$FX/report/gh"
+        WIN='{"since":"2026-10-01T00:00:00Z","until":"2026-10-08T00:00:00Z"}'
+
+        run coord:report --input-json "$WIN"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.metrics.verified_deliveries.value.total')" = 1 ] && ok || bad "verified total ($CODE $(jqr '.metrics.verified_deliveries'))"
+        [ "$(jqr '[.metrics.verified_deliveries.refs[].issue] | join(",")')" = 90 ] && ok || bad "verified refs only #90 ($(jqr '.metrics.verified_deliveries.refs'))"
+        [ "$(jqr '.metrics.verified_deliveries.value.per_day["2026-10-05"]')" = 1 ] && [ "$(jqr '.metrics.verified_deliveries.value.per_week | keys[0]')" = "2026-W41" ] && ok || bad "delivery buckets ($(jqr '.metrics.verified_deliveries.value'))"
+        [ "$(jqr '.metrics.verified_deliveries.coverage_pct')" = 100 ] && [ "$(jqr '.metrics.verified_deliveries.unknown_reason')" = null ] && ok || bad "full coverage, no unknown reason ($(jqr '.metrics.verified_deliveries'))"
+        [ "$(jqr '[.metrics.verified_deliveries.refs[].issue] | index(93)')" = null ] && ok || bad "independence: self-graded #93 must not be a verified delivery"
+        [ "$(jqr '[.metrics.verified_deliveries.refs[].issue] | index(92)')" = null ] && ok || bad "partial #92 must not count"
+        [ "$(jqr '.metrics.authorization_to_merge.value.n')" = 1 ] && [ "$(jqr '.metrics.authorization_to_merge.value.median_seconds')" = 259200 ] && ok || bad "lead time ($(jqr '.metrics.authorization_to_merge.value'))"
+        [ "$(jqr '.metrics.review.value.prs_reviewed')" = 3 ] && [ "$(jqr '.metrics.review.value.passes')" = 1 ] && [ "$(jqr '.metrics.review.value.rework_rounds')" = 1 ] && [ "$(jqr '.metrics.review.value.repeated_reviews')" = 1 ] && ok || bad "review ($(jqr '.metrics.review.value'))"
+        [ "$(jqr '.metrics.blocked_time.value.by_reason["needs-decision"].seconds')" = 7200 ] && [ "$(jqr '.metrics.blocked_time.value.by_reason["needs-decision"].count')" = 1 ] && ok || bad "needs-decision span ($(jqr '.metrics.blocked_time.value.by_reason'))"
+        [ "$(jqr '.metrics.blocked_time.value.by_reason.agent_busy.count')" = 2 ] && [ "$(jqr '.metrics.blocked_time.value.parked_events')" = 2 ] && ok || bad "agent_busy parks ($(jqr '.metrics.blocked_time.value'))"
+        [ "$(jqr '.metrics.tokens.value')" = null ] && [ "$(jqr '.metrics.tokens.coverage_pct')" = 0 ] && [ "$(jqr '.metrics.tokens.unknown_reason')" != null ] && ok || bad "tokens unavailable ($(jqr '.metrics.tokens'))"
+        [ "$(jqr '.metrics.skill_invocations.value')" = null ] && [ "$(jqr '.metrics.runtime_resources.value')" = null ] && ok || bad "skills/runtime unavailable"
+        ! grep -q SECRETSCOPE <<<"$OUT" && ok || bad "privacy: PR body text leaked into the report"
+        [ "$(jq -r '[paths | last] | map(select(. == "body" or . == "scope" or . == "text" or . == "prompt")) | length' <<<"$OUT")" = 0 ] && ok || bad "privacy: a forbidden key is present in the output"
+
+        FAKE_GH_LIST_EXIT=1 run coord:report --input-json "$WIN"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.metrics.verified_deliveries.value')" = null ] && [ "$(jqr '.metrics.verified_deliveries.coverage_pct')" = 0 ] && [ "$(jqr '.metrics.review.value')" = null ] && ok || bad "missing source -> unknown not 0 ($CODE $(jqr '.metrics.verified_deliveries'))"
+        [ "$(jqr '.metrics.blocked_time.value.parked_events')" = 2 ] && ok || bad "blocked-time from the audit survives a GitHub outage"
+
+        run coord:report --input-json '{"since":"last week"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "bad since rejected ($CODE $OUT)"
+
+        summary
+      '';
+    };
   };
 }
