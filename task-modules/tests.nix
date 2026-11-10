@@ -238,7 +238,9 @@
         # the GitHub gate: the label must be on the issue; absent => authorization_missing, unreadable => gh_error, no herdr call either way
         : > "$FAKE_LOG"
         run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/7\",\"label\":\"approved\"}}"
-        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'assign:implementer' && ! grep -q '^herdr' "$FAKE_LOG" && grep -q '^gh api repos/sammasak/skills/issues/7/labels' "$FAKE_LOG" && [ ! -s "$TMP/state/audit.jsonl" ] && ok || bad "label absent => authorization_missing, nothing sent, no audit attempt ($OUT)"
+        # #85 M0b: an authorization_missing send is not sent (no herdr, no attempt row) but now leaves one phase:"refused" row, refs only
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = authorization_missing ] && jqr .error.message | grep -q 'assign:implementer' && ! grep -q '^herdr' "$FAKE_LOG" && grep -q '^gh api repos/sammasak/skills/issues/7/labels' "$FAKE_LOG" \
+          && ! grep -q '"phase":"attempt"' "$TMP/state/audit.jsonl" && jq -e 'select(.phase == "refused" and .task == "herdr:message" and .kind == "authorization_missing")' "$TMP/state/audit.jsonl" >/dev/null && ok || bad "label absent => authorization_missing, nothing sent, a refused row but no attempt ($OUT)"
         : > "$FAKE_LOG"
         FAKE_GH_API_EXIT=1 run herdr:message --input-json "{\"handoff_id\":\"$ID\",\"confirm\":\"acer-swift/wA:p2\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = gh_error ] && ! grep -q '^herdr' "$FAKE_LOG" && ok || bad "gh failure => gh_error, nothing sent ($OUT)"
@@ -299,6 +301,8 @@
         draft '{"machine":"acer-swift","agent_id":"wA:p3","task_ref":"#8","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'; ID2=$(jqr .handoff_id)
         run herdr:message --input-json "{\"handoff_id\":\"$ID2\",\"confirm\":\"acer-swift/wA:p3\",$AUTH}"
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = agent_blocked ] && ! grep -q 'agent prompt' "$FAKE_LOG" && ok || bad "blocked agent not prompted"
+        # #85 M0b: the refused send leaves a phase:"refused" row, evidence refs only (the authorizing issue+label, no scope/text/body)
+        jq -e --arg i "$ID2" 'select(.phase == "refused" and .task == "herdr:message" and .kind == "agent_blocked" and .handoff_id == $i and (.authorized_by.issue_url | type) == "string" and ([keys[] | select(. == "scope" or . == "text" or . == "body" or . == "prompt")] | length) == 0)' "$TMP/state/audit.jsonl" >/dev/null && ok || bad "a refused agent_blocked send leaves one phase:refused audit row with refs only"
         # a local agent: no --machine prefix
         export FAKE_HERDR_STATE=idle; : > "$FAKE_LOG"
         draft '{"agent_id":"wF:p1","session_id":"sess-1","task_ref":"#9","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment","deploy:acer-swift"]}'; ID3=$(jqr .handoff_id); H=$(jqr .host)
@@ -516,6 +520,8 @@
         summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
         AUDIT="$TMP/state/audit.jsonl"
         audit_lines() { [ -s "$AUDIT" ] && grep -c . "$AUDIT" || echo 0; }
+        gh_stage_lines() { [ -s "$AUDIT" ] && grep -c '"stage":"' "$AUDIT" || echo 0; }
+        refused_count() { [ -s "$AUDIT" ] && grep -c '"phase":"refused"' "$AUDIT" || echo 0; }
 
         # a draft to serve: gh acts may name it instead of a reason
         run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#43","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
@@ -530,14 +536,19 @@
         # the attempt line precedes the GitHub write: it is already there when gh runs (gh's call is logged after it was written)
         [ "$(head -1 "$AUDIT" | jq -r .stage)" = attempt ] && ok || bad "attempt line first"
         # skills#28 (3): the coordinator lifts only a hold it added (the add above: attempt + done outcome), citing the evidence
-        : > "$FAKE_LOG"; before=$(audit_lines)
+        : > "$FAKE_LOG"; before=$(audit_lines); before_stage=$(gh_stage_lines); before_ref=$(refused_count)
         run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"needs-live","action":"remove","reason":"live check done","evidence":"https://github.com/sammasak/skills/pull/80"}'
-        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && jqr .error.message | grep -q "the owner removes 'needs-live' from sammasak/skills#43" && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] \
-          && ok || bad "skills#28: an owner-applied hold (no gh:label add in the audit) is not removed; the refusal names the owner's action ($CODE $OUT)"
+        # #85 M0b: a failed lift leaves a phase:"refused" row (owner_hold here) but never a gh stage row and never a GitHub call.
+        # grep is kept out of the && chain (grep -q closes the pipe and SIGPIPEs jq, which pipefail would surface as failure)
+        msg_has() { jqr .error.message > "$TMP/.msg" 2>/dev/null; grep -qF "$1" "$TMP/.msg"; }
+        refrow() { jq -e "select(.phase == \"refused\" and .task == \"gh:label\" and .number == $1 and .kind == \"$2\" and (has(\"body\") | not) and (has(\"evidence\") | not))" "$AUDIT" >/dev/null 2>&1; }
+        { [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && msg_has "the owner removes 'needs-live' from sammasak/skills#43" && [ ! -s "$FAKE_LOG" ] && [ "$(gh_stage_lines)" = "$before_stage" ] && refrow 43 owner_hold; } \
+          && ok || bad "skills#28: an owner-applied hold (no gh:label add in the audit) is not removed; it leaves a refused row (refs only) ($CODE $OUT)"
         for ev in "" '"evidence":"https://github.com/sammasak/skills/issues/43",' '"evidence":"https://example.com/x/pull/1",'; do
+          before_stage=$(gh_stage_lines)
           run gh:label --input-json "{\"repo\":\"sammasak/skills\",\"number\":43,\"label\":\"blocked\",\"action\":\"remove\",$ev\"reason\":\"resolved\"}"
-          [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'needs evidence' && [ ! -s "$FAKE_LOG" ] && [ "$(audit_lines)" = "$before" ] \
-            && ok || bad "skills#28: removing a hold without a PR/commit evidence URL is refused (${ev:-none}) ($CODE $OUT)"
+          { [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && msg_has 'needs evidence' && [ ! -s "$FAKE_LOG" ] && [ "$(gh_stage_lines)" = "$before_stage" ] && refrow 43 invalid_input; } \
+            && ok || bad "skills#28: removing a hold without a PR/commit evidence URL is refused, leaving a refused row (${ev:-none}) ($CODE $OUT)"
         done
         run gh:label --input-json '{"repo":"sammasak/skills","number":43,"label":"blocked","action":"remove","reason":"resolved by the merged fix","evidence":"https://github.com/sammasak/skills/commit/0123abc"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr .outcome)" = done ] && [ "$(jqr .evidence)" = "https://github.com/sammasak/skills/commit/0123abc" ] && grep -q '^gh api -X DELETE repos/sammasak/skills/issues/43/labels/blocked$' "$FAKE_LOG" \
@@ -889,6 +900,94 @@
 
         run coord:report --input-json '{"since":"last week"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "bad since rejected ($CODE $OUT)"
+
+        summary
+      '';
+    };
+
+    "skills:test:tasks:report-m0b" = {
+      description = "coord:report M0b (skills #85): refused-row and feedback instrumentation, coord:report:daily idempotency + audit line/hash provenance, a partial record that must not count, missing-source -> unknown (never 0), the gh:label failed-lift refused row, coord:feedback taxonomy/privacy, and coord:report:weekly render with aggregates, feedback taxonomy, three ranked improvements, an experiment, and privacy on the rendered markdown.";
+      exec = ''
+        set +e -uo pipefail
+        ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
+        export HERDR_PANE_ID=coord:p0
+        devenv() { command devenv "$1" "$2" --option coordinator.mayApprove:bool false --option coordinator.approvalDecision:string "" --option coordinator.panes:string "" "''${@:3}"; }
+        FX="$ROOT/task-modules/fixtures"; FAKES="${config.coordinator.fakes}/bin"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        export FAKE_LOG="$TMP/calls.log"
+        PASS=0; FAIL=0
+        ok() { PASS=$((PASS+1)); }
+        bad() { FAIL=$((FAIL+1)); echo "FAIL: $*"; }
+        run() { # <task> [args]
+          local task="$1"; shift
+          devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.ghCommand:string "$FAKES/gh" \
+            --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.messageTimeoutSeconds:int 3 --show-output "$@" > "$TMP/run.log" 2>&1; CODE=$?
+          OUT=$(grep -E "^\s*\{\"(schema_version\":1|task\":\"$task\")" "$TMP/run.log" | grep -F "\"task\":\"$task\"" | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        }
+        jqr() { jq -r "$1" <<<"$OUT"; }
+        summary() { echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]; }
+
+        mkdir -p "$TMP/state"; cp "$FX/report/m0b/audit.jsonl" "$TMP/state/audit.jsonl"
+        export FAKE_GH_DIR="$FX/report/m0b/gh"
+        AUD="$TMP/state/audit.jsonl"
+
+        # --- coord:report:daily: a delivery day, idempotent, with audit line/hash provenance -----------------------------
+        run coord:report:daily --input-json '{"date":"2026-10-06"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.metrics.verified_deliveries.value.total')" = 1 ] && [ "$(jqr '[.metrics.verified_deliveries.refs[].issue]|join(",")')" = 90 ] && ok || bad "daily 10-06 one verified delivery ($CODE $(jqr '.metrics.verified_deliveries'))"
+        [ "$(jqr '.sources.audit.present')" = true ] && [ "$(jqr '.sources.audit.sha256')" != null ] && [ "$(jqr '.sources.audit.line_first')" != null ] && [ "$(jqr '.sources.audit.line_last')" != null ] && [ "$(jqr '.sources.audit.lines_total')" = 11 ] && ok || bad "daily sources.audit line/hash provenance ($(jqr '.sources.audit'))"
+        [ "$(jqr '.observed_at')" = "2026-10-06T00:00:00Z" ] && ok || bad "daily observed_at pinned to the day, not the wall clock ($(jqr '.observed_at'))"
+        cp "$TMP/state/report/daily/2026-10-06.json" "$TMP/first.json"
+        run coord:report:daily --input-json '{"date":"2026-10-06"}'
+        diff -q "$TMP/first.json" "$TMP/state/report/daily/2026-10-06.json" >/dev/null && ok || bad "daily idempotent: a re-run over unchanged sources is byte-identical"
+        # refusals counted in the day they fall (10-08 has owner_hold + duplicate)
+        run coord:report:daily --input-json '{"date":"2026-10-08"}'
+        [ "$(jqr '.metrics.refusals.value.total')" = 2 ] && [ "$(jqr '.metrics.refusals.value.by_kind.owner_hold')" = 1 ] && [ "$(jqr '.metrics.refusals.value.by_kind.duplicate')" = 1 ] && ok || bad "daily refusals from phase:refused rows ($(jqr '.metrics.refusals.value'))"
+        # a partial record (hf92 sent on 10-07, no outcome, PR #92 unmerged) is never a verified delivery, and GitHub answered so it is 0, not null
+        run coord:report:daily --input-json '{"date":"2026-10-07"}'
+        [ "$(jqr '.metrics.verified_deliveries.value.total')" = 0 ] && [ "$(jqr '.metrics.verified_deliveries.value')" != null ] && [ "$(jqr '[.metrics.verified_deliveries.refs[].issue]|index(92)')" = null ] && ok || bad "partial record must not count, 0 not null ($(jqr '.metrics.verified_deliveries'))"
+        # privacy on the daily JSON: no PR body text, no forbidden keys
+        ! grep -q SECRETSCOPE "$TMP/state/report/daily/2026-10-07.json" && ok || bad "privacy: PR body leaked into the daily JSON"
+        [ "$(jq -r '[paths|last]|map(select(.=="body" or .=="scope" or .=="text" or .=="prompt"))|length' "$TMP/state/report/daily/2026-10-07.json")" = 0 ] && ok || bad "privacy: a forbidden key is present in the daily JSON"
+        # missing source -> unknown (null), never 0
+        FAKE_GH_LIST_EXIT=1 run coord:report:daily --input-json '{"date":"2026-10-06"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.metrics.verified_deliveries.value')" = null ] && [ "$(jqr '.metrics.verified_deliveries.coverage_pct')" = 0 ] && ok || bad "daily missing source -> unknown not 0 ($CODE $(jqr '.metrics.verified_deliveries'))"
+        # that outage overwrote the 10-06 daily with an unknown; recompute it green for the weekly below
+        run coord:report:daily --input-json '{"date":"2026-10-06"}'
+        [ "$CODE" -eq 0 ] && ok || bad "recompute 10-06 after the outage test"
+        run coord:report:daily --input-json '{"date":"last-week"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "daily bad date rejected ($CODE $OUT)"
+
+        # --- gh:label failed-lift leaves a refused row (evidence refs only) ---------------------------------------------
+        before=$(jq -s '[.[]|select(.phase=="refused")]|length' "$AUD")
+        run gh:label --input-json '{"repo":"sammasak/demo","number":77,"label":"blocked","action":"remove","reason":"testing the failed-lift refusal"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "gh:label remove without evidence is refused ($CODE $OUT)"
+        jq -e --argjson b "$before" '[.[]|select(.phase=="refused" and .task=="gh:label" and .kind=="invalid_input" and .number==77 and .action=="remove")]|length == 1' <(jq -s . "$AUD") >/dev/null && ok || bad "a failed gh:label lift leaves one phase:refused row"
+        [ "$(jq -s '[.[]|select(.phase=="refused" and .number==77)]|.[0]|[keys[]|select(.=="body" or .=="scope" or .=="text" or .=="evidence")]|length' "$AUD")" = 0 ] && ok || bad "privacy: the gh:label refused row carries refs only, no body/scope/evidence"
+        run gh:label --input-json '{"repo":"sammasak/demo","number":78,"label":"blocked","action":"remove","evidence":"https://github.com/sammasak/demo/pull/5","reason":"a lift of a hold the coordinator never added"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = owner_hold ] && jq -e '[.[]|select(.phase=="refused" and .task=="gh:label" and .kind=="owner_hold" and .number==78)]|length == 1' <(jq -s . "$AUD") >/dev/null && ok || bad "an owner-hold lift is refused and leaves an owner_hold refused row ($CODE $OUT)"
+
+        # --- coord:feedback: taxonomy + evidence refs only --------------------------------------------------------------
+        run coord:feedback --input-json '{"taxonomy":"review_deadlock","evidence":["https://github.com/sammasak/skills/issues/85","a1b2c3d4e5f6"]}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.taxonomy')" = review_deadlock ] && jq -e '[.[]|select(.phase=="feedback" and .taxonomy=="review_deadlock")]|length >= 1' <(jq -s . "$AUD") >/dev/null && ok || bad "coord:feedback writes a feedback row ($CODE $OUT)"
+        run coord:feedback --input-json '{"taxonomy":"not_a_kind","evidence":["https://github.com/sammasak/skills/issues/85"]}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "coord:feedback rejects an unknown taxonomy ($CODE $OUT)"
+        run coord:feedback --input-json '{"taxonomy":"missing_tool","evidence":["see the scope text in the handoff draft"]}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "coord:feedback rejects free-text evidence (privacy: refs only) ($CODE $OUT)"
+
+        # --- coord:report:weekly: build the 7 dailies, render, aggregate, privacy --------------------------------------
+        for i in 0 1 2 3 4 5 6; do d=$(date -u -d "2026-10-05 +$i days" +%Y-%m-%d); run coord:report:daily --input-json "{\"date\":\"$d\"}"; [ "$CODE" -eq 0 ] || bad "seed daily $d ($CODE)"; done
+        run coord:report:weekly --input-json '{"anchor":"2026-10-07"}'
+        MD="$TMP/state/report/weekly/2026-W41.md"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.iso_week')" = "2026-W41" ] && [ "$(jqr '.dailies_present')" = 7 ] && [ "$(jqr '.feedback_records')" = 3 ] && ok || bad "weekly renders W41 with 7 dailies and 3 feedback records ($CODE $OUT)"
+        [ -r "$MD" ] && grep -q "Verified deliveries: \*\*1\*\*" "$MD" && ok || bad "weekly aggregates the verified total across the dailies"
+        grep -q "stale_lock_or_orphan: 2" "$MD" && ok || bad "weekly ranks the recurring failures from the feedback taxonomy ($(grep -i stale "$MD" || true))"
+        [ "$(grep -cE '^[123]\. ' "$MD")" = 3 ] && ok || bad "weekly lists exactly three ranked improvements"
+        grep -q "Success criterion:" "$MD" && grep -q ">=50%" "$MD" && ok || bad "weekly states one experiment with a measurable success criterion"
+        ! grep -q SECRETSCOPE "$MD" && ! grep -qiE '\b(scope|prompt|body)\b *:' "$MD" && ok || bad "privacy: the weekly markdown leaked PR body or scope text"
+        # the feedback section carries only GitHub refs, no free text
+        grep -q "https://github.com/sammasak/factum/issues/8" "$MD" && ok || bad "weekly feedback section cites the evidence refs"
+        run coord:report:weekly --input-json '{"anchor":"nope"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "weekly bad anchor rejected ($CODE $OUT)"
 
         summary
       '';

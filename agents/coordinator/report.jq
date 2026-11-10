@@ -113,13 +113,21 @@ $audit[0] as $audit | $repos[0] as $repos | $window as $w | $at as $now
      | { reason:$add.reason,
          seconds:(if $rm != null then (($rm | fromdateiso8601) - ($add.at | fromdateiso8601)) else null end) } ]) as $label_spans
 | ([ $audit[] | select(.phase == "parked" and .reason == "agent_busy") ]) as $parks
+# refusals (#85 M0b): phase:"refused" rows herdr:message and gh:label now write, counted by bounded kind. A refusal is a
+# point event (work the coordinator declined to start or a lift it declined to make), not a span: counts only.
+| (["owner_hold","authorization_missing","agent_blocked","agent_changed","duplicate","invalid_input"]) as $refusal_kinds
+| ([ $audit[] | select(.phase == "refused") ]) as $refused
+| ({ total:($refused | length),
+     by_kind:(reduce $refusal_kinds[] as $k ({}; .[$k] = ([ $refused[] | select(.kind == $k) ] | length))),
+     by_task:(reduce ["herdr:message","gh:label"][] as $t ({}; .[$t] = ([ $refused[] | select(.task == $t) ] | length))) }) as $refused_val
 | ({ by_reason:(reduce $reasons[] as $r ({}; .[$r] =
        ( if $r == "agent_busy"
          then { count:($parks | length), seconds:null }
          else { count:([ $label_spans[] | select(.reason == $r) ] | length),
                 seconds:([ $label_spans[] | select(.reason == $r and .seconds != null) | .seconds ] | if length == 0 then 0 else add end),
                 open_spans:([ $label_spans[] | select(.reason == $r and .seconds == null) ] | length) } end))),
-     parked_events:($parks | length) }) as $blocked_val
+     parked_events:($parks | length),
+     refused_total:($refused_val.total) }) as $blocked_val
 
 # --- assemble, with honest coverage ----------------------------------------------------------------------------------
 | ($repo_cov_pct) as $cov
@@ -153,6 +161,8 @@ def na($reason): {value:null, coverage_pct:0, observed_from:null, unknown_reason
       blocked_time:(metric($blocked_val; $cov;
                     "audit:parked(agent_busy) counts + gh:label add/remove spans for needs-decision|blocked|needs-live";
                     "agent_busy is a park count, not a measured wait, in M0a; label spans still open at window end are counted separately")),
+      refusals:(metric($refused_val; 100; "audit:phase=refused rows (herdr:message, gh:label) by bounded kind";
+                    "counts of refused sends and failed lifts; a point event, not a span; depends on M0b instrumentation being deployed, so a window before it was deployed reads 0")),
       tokens:na("out of M0a scope; local harness-session message.usage lands in a later slice (#85 deliverable 1.7); gateway tokens unavailable (llm-gateway #69)"),
       skill_invocations:na("out of M0a scope; tool_use counts from harness sessions land in a later slice (#85 deliverable 1.8)"),
       runtime_resources:na("out of M0a scope; export run.log peaks/failure-class need the runtime-host field audit (#85 deliverable 1.9)")
