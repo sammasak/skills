@@ -441,7 +441,7 @@ in
               refused_total:([ $rf[].total ] | add // 0),
               refused_by_kind:(reduce ($rf[] | .by_kind | to_entries[]) as $e ({}; .[$e.key] = ((.[$e.key] // 0) + $e.value))) } as $agg
           | ([ $fb[] | .taxonomy ] | group_by(.) | map({kind:.[0], n:length}) | sort_by(-.n)) as $fb_ranked
-          | ([ $fb_ranked[] | {kind, n, remedy:($remedy[.kind] // .kind), evidence:[ $fb[] | select(.taxonomy == .kind) | .evidence_refs[] ] | unique} ]) as $improvements_fb
+          | ([ $fb_ranked[] | .kind as $k | {kind:$k, n, remedy:($remedy[$k] // $k), evidence:([ $fb[] | select(.taxonomy == $k) | .evidence_refs[] ] | unique)} ]) as $improvements_fb
           # pad to at least three with standing engineering-backlog improvements (coverage-driven), so the report always ranks three
           | ([ {kind:"authorization_join_coverage", n:0, remedy:"Widen the authorization->merge join so lead time covers most deliveries, not the few whose handoff names the delivered issue (M0a reported ~2% coverage).", evidence:["https://github.com/sammasak/skills/issues/85"]},
                {kind:"deploy_m0b_instrumentation", n:0, remedy:"Deploy the M0b refused/state instrumentation fleet-wide so refusals and idle/blocked spans are observed, not inferred.", evidence:["https://github.com/sammasak/skills/issues/85"]},
