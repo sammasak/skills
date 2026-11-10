@@ -1,7 +1,7 @@
 { pkgs, lib, config, ... }:
 
 let
-  taskSuites = [ "evidence" "harness-session-summary" "herdr-inspect" "herdr-inventory" "host-locks" "herdr-message-await" "gh-act" "coord-brief" "coord-capacity" "coord-correlation" "coord-changed" "coord-retry" "coord-idle" "coord-handoff" "coord-recovery" "coord-evidence" "quality" ];
+  taskSuites = [ "evidence" "harness-session-summary" "herdr-inspect" "herdr-inventory" "host-locks" "herdr-message-await" "gh-act" "report" "coord-brief" "coord-capacity" "coord-correlation" "coord-changed" "coord-retry" "coord-idle" "coord-handoff" "coord-recovery" "coord-evidence" "quality" ];
 in
 {
   imports = [
