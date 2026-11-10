@@ -457,7 +457,7 @@ in
             + (($agg.per_day | to_entries | sort_by(.key) | map("  - \(.key): \(.value)") | join("\n")) + "\n")
             + "\n## Review\n- PRs reviewed: \($agg.reviewed); passes: \($agg.passes); rework rounds: \($agg.rework); repeated reviews: \($agg.repeated)\n"
             + "\n## Waste / retries\n- Parked (agent_busy) events: \($agg.parked)\n- Blocked span seconds (needs-decision/blocked/needs-live): \($agg.blocked_seconds)\n- Refused sends + failed lifts: \($agg.refused_total)"
-            + (if ($agg.refused_by_kind | length) > 0 then " (" + ($agg.refused_by_kind | to_entries | map(select(.value > 0)) | map("\(.key)=\(.value)") | join(", ")) + ")" else "" end) + "\n"
+            + (($agg.refused_by_kind | to_entries | map(select(.value > 0)) | map("\(.key)=\(.value)")) as $rk | if ($rk | length) > 0 then " (" + ($rk | join(", ")) + ")" else "" end) + "\n"
             + "\n## Recurring failures (feedback taxonomy)\n"
             + (if ($fb_ranked | length) == 0 then "- none recorded this week\n" else (($fb_ranked | map("- \(.kind): \(.n)") | join("\n")) + "\n") end)
             + "\n## Feedback records (evidence refs only)\n"
@@ -466,7 +466,7 @@ in
             + ([ range(0; ($top3 | length)) as $i | "\($i + 1). **\($top3[$i].kind)** — \($top3[$i].remedy) Evidence: \($top3[$i].evidence | join(", "))" ] | join("\n")) + "\n"
             + "\n## Experiment (one, measurable)\n"
             + "- Hypothesis: acting on **\($exp_kind)** reduces its recurrence. Intervention: apply the ranked-#1 remedy for one week.\n"
-            + "- Success criterion: the \($exp_kind) feedback count for the following ISO week drops by >=50% at the same or higher verified-delivery total; measured by coord:report:weekly over that next week.\n")
+            + "- Success criterion (paired: a hand-entered count AND an observed signal, so it cannot be met by simply not recording): the \($exp_kind) feedback count for the following ISO week drops by >=50%, AND the observed waste signal (parked + refused events that week, read from the audit by coord:report, not hand-entered) does not rise, at the same or higher verified-delivery total; measured by coord:report:weekly over that next week.\n")
           ' > "$tmpd/md" || fail 2 internal "coord:report:weekly render failed" "$ctx"
         mv "$tmpd/md" "$md"
         emit "$(jq -cn --arg w "$isoweek" --arg p "$md" --slurpfile days "$tmpd/days.jsonl" --slurpfile fb "$tmpd/fb.json" \

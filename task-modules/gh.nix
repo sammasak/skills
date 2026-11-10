@@ -50,9 +50,12 @@ let
     # phase:"refused" row for coord:report, under the audit lock this prelude already holds. Evidence refs only (the
     # ctx: task, repo, number, label, action; the handoff id or reason) -- never a body, scope or command. Bounded kinds.
     refuse() { # <exit> <kind> <message>
+      # #85 M0b finding A (privacy): the refused row carries refs only -- the ctx (task, repo, number, label, action),
+      # the handoff id, and reason_chars (a count, like body_chars), never the caller's free-text reason, which can
+      # carry names, paths or scope text.
       case " invalid_input owner_hold " in *" $2 "*)
         jq -cn --arg a "$aid" --arg at "$(now_iso)" --argjson c "$ctx" --argjson w "$why" --arg k "$2" \
-          '{audit_id:$a, phase:"refused"} + $c + $w + {at:$at, kind:$k}' >> "$audit" || true ;;
+          '{audit_id:$a, phase:"refused"} + $c + {handoff_id:$w.handoff_id, reason_chars:($w.reason | if . == null then null else length end)} + {at:$at, kind:$k}' >> "$audit" || true ;;
       esac
       fail "$1" "$2" "$3" "$ctx"; }
   '';

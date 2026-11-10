@@ -541,7 +541,7 @@
         # #85 M0b: a failed lift leaves a phase:"refused" row (owner_hold here) but never a gh stage row and never a GitHub call.
         # grep is kept out of the && chain (grep -q closes the pipe and SIGPIPEs jq, which pipefail would surface as failure)
         msg_has() { jqr .error.message > "$TMP/.msg" 2>/dev/null; grep -qF "$1" "$TMP/.msg"; }
-        refrow() { jq -e "select(.phase == \"refused\" and .task == \"gh:label\" and .number == $1 and .kind == \"$2\" and (has(\"body\") | not) and (has(\"evidence\") | not))" "$AUDIT" >/dev/null 2>&1; }
+        refrow() { jq -e "select(.phase == \"refused\" and .task == \"gh:label\" and .number == $1 and .kind == \"$2\" and (has(\"body\") | not) and (has(\"evidence\") | not) and (has(\"reason\") | not))" "$AUDIT" >/dev/null 2>&1; }
         { [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = owner_hold ] && msg_has "the owner removes 'needs-live' from sammasak/skills#43" && [ ! -s "$FAKE_LOG" ] && [ "$(gh_stage_lines)" = "$before_stage" ] && refrow 43 owner_hold; } \
           && ok || bad "skills#28: an owner-applied hold (no gh:label add in the audit) is not removed; it leaves a refused row (refs only) ($CODE $OUT)"
         for ev in "" '"evidence":"https://github.com/sammasak/skills/issues/43",' '"evidence":"https://example.com/x/pull/1",'; do
@@ -958,11 +958,17 @@
         [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "daily bad date rejected ($CODE $OUT)"
 
         # --- gh:label failed-lift leaves a refused row (evidence refs only) ---------------------------------------------
+        # #85 M0b finding A: the caller's free-text reason must NOT reach the audit row or any report output; only a count
         before=$(jq -s '[.[]|select(.phase=="refused")]|length' "$AUD")
-        run gh:label --input-json '{"repo":"sammasak/demo","number":77,"label":"blocked","action":"remove","reason":"testing the failed-lift refusal"}'
+        run gh:label --input-json '{"repo":"sammasak/demo","number":77,"label":"blocked","action":"remove","reason":"SENTINEL-SCOPE-TEXT do the secret thing /home/lukas/x"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = invalid_input ] && ok || bad "gh:label remove without evidence is refused ($CODE $OUT)"
         jq -e --argjson b "$before" '[.[]|select(.phase=="refused" and .task=="gh:label" and .kind=="invalid_input" and .number==77 and .action=="remove")]|length == 1' <(jq -s . "$AUD") >/dev/null && ok || bad "a failed gh:label lift leaves one phase:refused row"
-        [ "$(jq -s '[.[]|select(.phase=="refused" and .number==77)]|.[0]|[keys[]|select(.=="body" or .=="scope" or .=="text" or .=="evidence")]|length' "$AUD")" = 0 ] && ok || bad "privacy: the gh:label refused row carries refs only, no body/scope/evidence"
+        [ "$(jq -s '[.[]|select(.phase=="refused" and .number==77)]|.[0]|[keys[]|select(.=="body" or .=="scope" or .=="text" or .=="evidence" or .=="reason")]|length' "$AUD")" = 0 ] && ok || bad "privacy: the gh:label refused row carries refs only, no body/scope/evidence/reason"
+        # the free-text reason reaches no audit row at all, and reason_chars (a count) is kept instead
+        ! grep -q SENTINEL-SCOPE-TEXT "$AUD" && [ "$(jq -s '[.[]|select(.phase=="refused" and .number==77)]|.[0].reason_chars' "$AUD")" != null ] && ok || bad "privacy: the free-text reason leaked into the audit, or reason_chars is missing"
+        # and it reaches no report output: a window that includes the refused row counts it, but emits no reason text
+        run coord:report --input-json '{"days":1}'
+        [ "$CODE" -eq 0 ] && ! grep -q SENTINEL-SCOPE-TEXT "$TMP/run.log" && ok || bad "privacy: a refused row's free-text reason reached coord:report output ($CODE)"
         run gh:label --input-json '{"repo":"sammasak/demo","number":78,"label":"blocked","action":"remove","evidence":"https://github.com/sammasak/demo/pull/5","reason":"a lift of a hold the coordinator never added"}'
         [ "$CODE" -ne 0 ] && [ "$(jqr '.error.kind')" = owner_hold ] && jq -e '[.[]|select(.phase=="refused" and .task=="gh:label" and .kind=="owner_hold" and .number==78)]|length == 1' <(jq -s . "$AUD") >/dev/null && ok || bad "an owner-hold lift is refused and leaves an owner_hold refused row ($CODE $OUT)"
 
@@ -982,7 +988,7 @@
         [ -r "$MD" ] && grep -q "Verified deliveries: \*\*1\*\*" "$MD" && ok || bad "weekly aggregates the verified total across the dailies"
         grep -q "stale_lock_or_orphan: 2" "$MD" && ok || bad "weekly ranks the recurring failures from the feedback taxonomy ($(grep -i stale "$MD" || true))"
         [ "$(grep -cE '^[123]\. ' "$MD")" = 3 ] && ok || bad "weekly lists exactly three ranked improvements"
-        grep -q "Success criterion:" "$MD" && grep -q ">=50%" "$MD" && ok || bad "weekly states one experiment with a measurable success criterion"
+        grep -q "Success criterion" "$MD" && grep -q ">=50%" "$MD" && grep -q "observed waste signal" "$MD" && ok || bad "weekly states one experiment with a measurable, observed-signal-paired success criterion"
         ! grep -q SECRETSCOPE "$MD" && ! grep -qiE '\b(scope|prompt|body)\b *:' "$MD" && ok || bad "privacy: the weekly markdown leaked PR body or scope text"
         # the feedback section carries only GitHub refs, no free text
         grep -q "https://github.com/sammasak/factum/issues/8" "$MD" && ok || bad "weekly feedback section cites the evidence refs"
