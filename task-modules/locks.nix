@@ -45,7 +45,7 @@ in
         jq -Rs --arg host "$1" --argjson now "$now" '
           split("\n") | map(select(length > 0) | split("\t") | select(length >= 5))
           | map({lane:.[0], role:.[1], pid:(.[2] | tonumber? // null), age_s:(.[3] | tonumber? // 0),
-                 what:(.[4:] | join("\t") | sub("^flock [^ ]+ "; "") | .[0:160])})
+                 what:(.[4:] | join("\t") | sub("^flock .*?\\.lock +"; "") | .[0:160])})
           | group_by(.lane) | map(. as $g | {
               lane:$g[0].lane, lock:("/tmp/" + $host + "-" + $g[0].lane + ".lock"),
               holder:(($g | map(select(.role == "holder")) | first) // null

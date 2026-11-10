@@ -70,11 +70,14 @@ issue.
    repository an outstanding handoff names. When `gh:repos` or `gh:work` says
    `truncated: true`, say so in the report and work the visible items;
    raising `coordinator.ghLimit` is the owner's call.
-   Gates on a worker host run in two lock lanes (skills#28): `flock
-   /tmp/$(hostname)-heavy-work.lock` for anything that builds or compiles
-   (`nixos:qa`, `platform:verify`, `sdlc:done`, `rust:ci`, `cargo`, `nix build`)
-   and `flock -w 900 /tmp/$(hostname)-light-work.lock` for eval-only and
-   script gates (`skills:test*`, `nix eval`, `nix flake check` without builds,
+   Gates on a worker host run in two lock lanes (skills#28), always with
+   `flock -o` (`--close`), so the lock fd is closed before the command runs and a
+   child it spawns (a `cargo-mutants` mutant, a lane test child, a `devenv processes`
+   daemon) can never inherit the fd and keep the lane held after its parent exits
+   (skills#85): `flock -o /tmp/$(hostname)-heavy-work.lock` for anything that builds
+   or compiles (`nixos:qa`, `platform:verify`, `sdlc:done`, `rust:ci`, `cargo`,
+   `nix build`) and `flock -o -w 900 /tmp/$(hostname)-light-work.lock` for eval-only
+   and script gates (`skills:test*`, `nix eval`, `nix flake check` without builds,
    jq/bash suites), so a short gate never queues behind a long one. `coord:capacity`
    shows each lane (`lock_queue`) and refuses a heavy spawn while the heavy lane
    holds `heavy_jobs` or more jobs. A green gate on a clean head is recorded once
