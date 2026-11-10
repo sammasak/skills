@@ -38,6 +38,11 @@
         [ "$(lane "$H" heavy-work .holder.what)" = "devenv tasks run platform:verify" ] && ok || bad "the flock prefix is stripped from what ($(lane "$H" heavy-work .holder.what))"
         [ "$(lane "$H" heavy-work .lock)" = "/tmp/$H-heavy-work.lock" ] && lane "$H" heavy-work .holder.since | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' && ok || bad "lock path and ISO since"
         [ "$(lane "$H" light-work '"\(.queue_depth) \(.waiters | length) \(.holder.age_s)"')" = "1 0 30" ] && ok || bad "light lane: one holder, no waiters ($(lane "$H" light-work .))"
+        # skills#85: the fd-safe lock form (flock -o, and flock -o -w 900) strips just as cleanly as the bare form
+        export FAKE_LOCKS_OUT="$FX/locks/fdsafe.tsv"
+        run
+        [ "$(lane "$H" heavy-work .holder.what)" = "devenv tasks run rust:ci" ] && [ "$(lane "$H" light-work .holder.what)" = "devenv tasks run skills:test" ] && ok || bad "the flock -o/--close prefix is stripped from what (heavy=$(lane "$H" heavy-work .holder.what) light=$(lane "$H" light-work .holder.what))"
+        export FAKE_LOCKS_OUT="$FX/locks/busy.tsv"
         # 3. saved machines: worker-a (busy) over its ssh target, down-b unreachable, an unsafe target refused and never passed to ssh
         : > "$FAKE_LOG"; export FAKE_LOCKS_OUT="$FX/locks/idle.tsv" FAKE_SSH_OUT_lukas_worker_a="$FX/locks/busy.tsv"
         export FAKE_HERDR_MACHINES='[{"id":"a","label":"worker-a","target":"lukas@worker-a","enabled":true},{"id":"b","label":"down-b","target":"down-b","enabled":true},{"id":"c","label":"bad","target":"x;rm -rf /","enabled":true}]'

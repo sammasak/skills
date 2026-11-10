@@ -24,7 +24,7 @@ Installed only where nixos-config enables it (Lenovo); the pinned build may pred
 Inventory only (no scanners, no root, no vulnerability claim): `nix-audit scan /run/current-system --no-scan`. Full scans download databases and vulnix needs network: run them only when asked, under the host lock, with the same binary, scanners and policy (absolute path) on both sides.
 
 ```sh
-L="flock /tmp/$(hostname)-heavy-work.lock"; P=/abs/path/policy.toml
+L="flock -o /tmp/$(hostname)-heavy-work.lock"   # -o/--close: a child cannot keep the lock after the parent exits; P=/abs/path/policy.toml
 rm -f current.json candidate.json                  # a usage error (exit 2) leaves an old file; the dir must be writable
 $L nix-audit scan /run/current-system --policy "$P" --json-out current.json
 $L nix-audit scan "$candidate"        --policy "$P" --json-out candidate.json

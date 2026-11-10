@@ -21,7 +21,7 @@ devenv is the full dev environment (packages, tasks, git hooks); central policy 
 
 Repos with `platform.sdlc` are driven by the `sdlc-pipeline` skill. Toolchain is pinned stable via `rust-toolchain.toml`; no nightly.
 
-On a shared worker host every cargo or nix build takes the heavy lane, `flock /tmp/$(hostname)-heavy-work.lock <command>`; a jq or shell-only check takes the light lane, `flock -w 900 /tmp/$(hostname)-light-work.lock`. A reviewer checks the author's green run for the exact head first, `devenv tasks run gate:verify --input gate=rust:ci` (or `sdlc:done`), and reruns targeted mutants or probes rather than the whole gate.
+On a shared worker host every cargo or nix build takes the heavy lane, `flock -o /tmp/$(hostname)-heavy-work.lock <command>` (`-o`/`--close` closes the lock fd before the command runs, so a child it spawns cannot keep the lane held after it exits); a jq or shell-only check takes the light lane, `flock -o -w 900 /tmp/$(hostname)-light-work.lock`. A reviewer checks the author's green run for the exact head first, `devenv tasks run gate:verify --input gate=rust:ci` (or `sdlc:done`), and reruns targeted mutants or probes rather than the whole gate.
 
 ## Factum evidence (optional, advisory)
 

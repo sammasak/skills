@@ -134,6 +134,25 @@
         [ "$(grep -c '^| [A-Z]' "$doc" 2>/dev/null)" -ge 10 ] && ok || bad "$doc: the capability and criteria tables lost rows"
         ! tr '\n' ' ' < docs/process.md | grep -qE 'cron re-arm or background poll' && grep -qF 'docs/coordinator-continuity.md' docs/process.md && ok || bad "docs/process.md still says there is no re-arm, or does not point at the continuity doc"
 
+        # skills#85 P3: the heavy/light lock convention is fd-safe (flock -o / --close). Prove a child of a locked
+        # command does not inherit the lock fd: spawn a backgrounded sleeper under the fd-safe form, let the parent
+        # exit, and assert the lock is free; with a negative control (bare flock) where the child DOES keep it, so the
+        # positive case cannot pass vacuously. This is the convention the incidents on factum#8 / skills#28 / skills#85 hit.
+        if command -v flock >/dev/null 2>&1; then
+          LKT=$(mktemp -d)
+          # fd-safe: -o closes the lock fd before exec, so neither the shell nor its backgrounded sleeper ever holds it
+          flock -o "$LKT/safe.lock" sh -c 'sleep 10 & echo $! > "'"$LKT"'/safe.pid"; exit 0'
+          if flock -n "$LKT/safe.lock" true; then ok; else bad "fd-safe lock: a child kept the lock after the parent exited (flock -o did not close the fd)"; fi
+          # negative control: without -o the backgrounded child inherits the fd and keeps the lock held
+          flock "$LKT/ctrl.lock" sh -c 'sleep 10 & echo $! > "'"$LKT"'/ctrl.pid"; exit 0'
+          if flock -n "$LKT/ctrl.lock" true; then bad "negative control: a bare-flock child did not hold the lock, so the fd-safe test would be vacuous"; else ok; fi
+          for p in safe ctrl; do [ -f "$LKT/$p.pid" ] && kill "$(cat "$LKT/$p.pid")" 2>/dev/null || true; done
+          rm -rf "$LKT"
+        else bad "flock is not available to test the lock convention"; fi
+        # the canonical convention doc names the fd-safe form for both lanes
+        grep -qF 'flock -o /tmp/$(hostname)-heavy-work.lock' docs/process.md && ok || bad "docs/process.md does not document the fd-safe heavy-lane form (flock -o)"
+        grep -qF 'flock -o -w 900 /tmp/$(hostname)-light-work.lock' docs/process.md && ok || bad "docs/process.md does not document the fd-safe light-lane form (flock -o -w 900)"
+
         echo "passed=$PASS failed=$FAIL"; [ "$FAIL" -eq 0 ]
       '';
     };
