@@ -46,6 +46,18 @@ let
       emit "$(jq -cn --arg a "$aid" --arg at "$at" --argjson c "$ctx" --argjson w "$why" --arg o "$1" --argjson x "$2" \
         '{schema_version:1} + $c + {audit_id:$a} + $w + {at:$at, outcome:$o} + ($x | del(.message)) + {error:(if $o == "done" then null else {kind:$o, message:($x.message // "gh failed")} end)}')"
       [ "$1" = done ] || exit 2; }
+    # refused-row instrumentation (#85 M0b): a gh act refused before it reaches GitHub (no attempt line) leaves a
+    # phase:"refused" row for coord:report, under the audit lock this prelude already holds. Evidence refs only (the
+    # ctx: task, repo, number, label, action; the handoff id or reason) -- never a body, scope or command. Bounded kinds.
+    refuse() { # <exit> <kind> <message>
+      # #85 M0b finding A (privacy): the refused row carries refs only -- the ctx (task, repo, number, label, action),
+      # the handoff id, and reason_chars (a count, like body_chars), never the caller's free-text reason, which can
+      # carry names, paths or scope text.
+      case " invalid_input owner_hold " in *" $2 "*)
+        jq -cn --arg a "$aid" --arg at "$(now_iso)" --argjson c "$ctx" --argjson w "$why" --arg k "$2" \
+          '{audit_id:$a, phase:"refused"} + $c + {handoff_id:$w.handoff_id, reason_chars:($w.reason | if . == null then null else length end)} + {at:$at, kind:$k}' >> "$audit" || true ;;
+      esac
+      fail "$1" "$2" "$3" "$ctx"; }
   '';
   ghPrelude = ghPreludeFor true;
   # labels a new issue may carry: the owner-protocol ones and enhancement, never one that authorizes a send
@@ -90,11 +102,11 @@ in
             # and a done outcome line -- and only citing what resolved it; an owner-applied hold stays the owner's to lift
             evidence=$(input .evidence)
             [[ "$evidence" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(pull/[1-9][0-9]*|commit/[0-9a-f]{7,40})$ ]] \
-              || fail 3 invalid_input "removing '$label' from $repo#$num needs evidence: the URL of the PR or commit that resolved it (https://github.com/OWNER/REPO/pull/N or .../commit/SHA)" "$ctx"
+              || refuse 3 invalid_input "removing '$label' from $repo#$num needs evidence: the URL of the PR or commit that resolved it (https://github.com/OWNER/REPO/pull/N or .../commit/SHA)"
             mine=$(jq -sc --arg r "$repo" --argjson n "$num" --arg l "$label" '
               [.[] | select(.phase == "gh" and .task == "gh:label" and .action == "add" and .repo == $r and .number == $n and .label == $l)]
               | group_by(.audit_id) | map(select(any(.[]; .stage == "attempt") and any(.[]; .stage == "outcome" and .outcome == "done"))) | length' "$audit" 2>/dev/null) || mine=0
-            [ "''${mine:-0}" -gt 0 ] || fail 3 owner_hold "'$label' on $repo#$num was not added by the coordinator (no gh:label add with a done outcome in $audit); it is the owner's hold. Required: the owner removes '$label' from $repo#$num" "$ctx"
+            [ "''${mine:-0}" -gt 0 ] || refuse 3 owner_hold "'$label' on $repo#$num was not added by the coordinator (no gh:label add with a done outcome in $audit); it is the owner's hold. Required: the owner removes '$label' from $repo#$num"
             delegation=$(jq -cn --arg e "$evidence" '{evidence:$e}')
           fi
         fi

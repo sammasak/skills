@@ -6,6 +6,30 @@
 let
   cfg = config.coordinator;
   handoffsKept = 50;
+  feedbackTaxonomy = [ "auth_contradiction" "wrong_assignment" "review_deadlock" "repeated_build" "stale_lock_or_orphan" "false_success" "misleading_skill" "missing_tool" ];
+  # shared by coord:report and coord:report:daily: fetch the PRs of the repos the audit window names (the same gh pr list
+  # path work:status uses, only the fields report.jq reads) and run report.jq. Assumes $tmpd/audit.json, $since, $until,
+  # $days, $at, $limit and $aggctx are set; leaves the aggregate in $rep. A failed or truncated list is data, not fatal.
+  reportAggregate = ''
+    : > "$tmpd/repos.jsonl"
+    while IFS= read -r repo; do
+      [ -n "$repo" ] || continue
+      rc=0
+      timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$repo" --state all --limit "$limit" \
+        --json number,state,mergedAt,createdAt,url,headRefOid,closingIssuesReferences,comments,reviews > "$tmpd/p.json" 2>/dev/null || rc=$?
+      if [ "$rc" -ne 0 ]; then jq -cn --arg r "$repo" --arg e "gh exited $rc" '{repo:$r, error:$e}'
+      else jq -cn --arg r "$repo" --slurpfile p "$tmpd/p.json" --argjson l "$limit" \
+          'if ($p | length) == 1 and ($p[0] | type) == "array" then {repo:$r, error:null, limit:$l, prs:$p[0]} else error end' 2>/dev/null \
+        || jq -cn --arg r "$repo" '{repo:$r, error:"gh returned unexpected JSON"}'; fi >> "$tmpd/repos.jsonl"
+    done < <(jq -r '[.[]
+        | (.authorized_by.issue_url // "" | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first // empty),
+          (if (.phase == "gh" and (.repo // null) != null) then .repo else empty end)]
+        | unique[] | select(test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))' "$tmpd/audit.json")
+    jq -sc 'INDEX(.repo)' "$tmpd/repos.jsonl" > "$tmpd/repos.json"
+    rep=$(jq -nc -L ${./.} --slurpfile audit "$tmpd/audit.json" --slurpfile repos "$tmpd/repos.json" \
+      --argjson window "$(jq -cn --arg s "$since" --arg u "$until" --argjson d "$days" '{since:$s, until:$u, days:$d}')" \
+      --arg at "$at" -f ${./.}/report.jq) || fail 2 internal "report aggregation failed" "$aggctx"
+  '';
 in
 {
   imports = [ ../../task-modules/common.nix ];
@@ -81,6 +105,14 @@ in
         dir="${cfg.stateDir}/brief"; mkdir -p "$dir"; rm -f "$dir/latest.md"
         ws=$(upstream "work:status")
         [ "$ws" != null ] || fail 2 missing "work:status produced no output" '{"task":"coord:brief"}'
+        # state timeline (#85 M0b): each observed pane state, host/pane/state/at only, appended to states.jsonl so
+        # coord:report can measure blocked and idle spans from the sparse brief snapshots. No title, task_ref, scope or
+        # session text -- a pane identity and its herdr_state at an instant, nothing more. Best effort: a write failure
+        # never fails the brief. Under its own lock so a concurrent brief does not interleave a half-written line.
+        sdir="${cfg.stateDir}/herdr"; mkdir -p "$sdir"
+        ( exec 8>>"$sdir/states.lock"; flock -w 5 8 2>/dev/null || true
+          jq -c '.items[]? | {host, pane:.agent_id, state:(.herdr_state // null), at:(.observed_at // null)}
+                 | select(.host != null and .pane != null)' <<<"$ws" >> "$sdir/states.jsonl" ) 2>/dev/null || true
         # portfolio: gh:repos names the owner's repositories; gh:work runs only for the active ones (an open PR or an
         # issue with an authorizing label), newest push first, at most portfolioActive of them; the rest are named, not
         # fetched. GitHub being down leaves the agent part of the brief whole: the portfolio carries its own error and
@@ -275,28 +307,173 @@ in
             || { printf '[]\n' > "$tmpd/audit.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines")}'); }
         fi
         # repos the window names (a handoff's authorized_by.issue_url, or a gh:* row's repo); GitHub PRs fetched once each,
-        # the same list path work:status uses. A failed or truncated list is recorded, not hidden.
-        : > "$tmpd/repos.jsonl"
-        while IFS= read -r repo; do
-          [ -n "$repo" ] || continue
-          rc=0
-          # only the fields report.jq reads (evidence.jq needs comments+reviews); commits/title/body/statusCheckRollup are
-          # left out so a larger page does not blow GitHub's GraphQL node budget (the authors connection caps at 500k)
-          timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.ghCommand} pr list -R "$repo" --state all --limit "$limit" \
-            --json number,state,mergedAt,createdAt,url,headRefOid,closingIssuesReferences,comments,reviews > "$tmpd/p.json" 2>/dev/null || rc=$?
-          if [ "$rc" -ne 0 ]; then jq -cn --arg r "$repo" --arg e "gh exited $rc" '{repo:$r, error:$e}'
-          else jq -cn --arg r "$repo" --slurpfile p "$tmpd/p.json" --argjson l "$limit" \
-              'if ($p | length) == 1 and ($p[0] | type) == "array" then {repo:$r, error:null, limit:$l, prs:$p[0]} else error end' 2>/dev/null \
-            || jq -cn --arg r "$repo" '{repo:$r, error:"gh returned unexpected JSON"}'; fi >> "$tmpd/repos.jsonl"
-        done < <(jq -r '[.[]
-            | (.authorized_by.issue_url // "" | [capture("^https://github\\.com/(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(issues|pull)/[0-9]+").r] | first // empty),
-              (if (.phase == "gh" and (.repo // null) != null) then .repo else empty end)]
-            | unique[] | select(test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))' "$tmpd/audit.json")
-        jq -sc 'INDEX(.repo)' "$tmpd/repos.jsonl" > "$tmpd/repos.json"
-        rep=$(jq -nc -L ${./.} --slurpfile audit "$tmpd/audit.json" --slurpfile repos "$tmpd/repos.json" \
-          --argjson window "$(jq -cn --arg s "$since" --arg u "$until" --argjson d "$days" '{since:$s, until:$u, days:$d}')" \
-          --arg at "$at" -f ${./.}/report.jq) || fail 2 internal "coord:report aggregation failed" '{"task":"coord:report"}'
+        # the same list path work:status uses. A failed or truncated list is recorded, not hidden. Only the fields report.jq
+        # reads are requested, so a larger page does not blow GitHub's GraphQL node budget (shared with coord:report:daily).
+        aggctx='{"task":"coord:report"}'
+        ${reportAggregate}
         emit "$(jq -c --argjson e "$audit_err" '. + {audit_path:"'"$audit"'", handoffs_error:$e}' <<<"$rep")"
+      '';
+    };
+
+    "coord:feedback" = {
+      description = "Record one engineering-effectiveness feedback item (skills #85 M0b, Deliverable B) as a phase:\"feedback\" audit row: a bounded taxonomy kind (${lib.concatStringsSep ", " feedbackTaxonomy}) and evidence references only -- GitHub issue/PR URLs or 12-hex audit ids -- never scope text, bodies, prompts or commands. Surfaced in coord:report:weekly.";
+      input = { taxonomy = null; evidence = null; host = null; };
+      exec = ''
+        ${cfg.prelude}
+        ctx='{"task":"coord:feedback"}'
+        tax=$(input .taxonomy); host=$(input .host)
+        ev=$(jq -c '.evidence // []' <<<"''${DEVENV_TASK_INPUT:-{\}}")
+        case "$tax" in ${lib.concatStringsSep "|" feedbackTaxonomy}) ;; *) fail 3 invalid_input "taxonomy must be one of ${lib.concatStringsSep ", " feedbackTaxonomy}" "$ctx" ;; esac
+        jq -e 'type == "array" and length >= 1 and length <= 20 and all(.[]; type == "string" and (test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[1-9][0-9]*(#issuecomment-[0-9]+)?$") or test("^[a-f0-9]{12}$")))' <<<"$ev" >/dev/null 2>&1 \
+          || fail 3 invalid_input "evidence must be a non-empty list (at most 20) of GitHub issue/PR URLs or 12-hex audit ids; nothing else, so no scope text can enter" "$ctx"
+        [ -z "$host" ] || valid_machine "$host" || fail 3 invalid_input "host has unsafe characters" "$ctx"
+        audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
+        exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another act holds the audit lock" "$ctx"
+        aid=$(printf 'feedback|%s|%s' "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12); at=$(now_iso)
+        row=$(jq -cn --arg a "$aid" --arg t "$tax" --argjson e "$ev" --arg h "$host" --arg at "$at" \
+          '{audit_id:$a, phase:"feedback", task:"coord:feedback", taxonomy:$t, evidence_refs:$e, host:(if $h == "" then null else $h end), at:$at}')
+        printf '%s\n' "$row" >> "$audit" || fail 2 audit_failed "could not write the feedback row" "$ctx"
+        emit "$(jq -cn --argjson r "$row" '{schema_version:1} + $r + {error:null}')"
+      '';
+    };
+
+    "coord:report:daily" = {
+      description = "Write ${cfg.stateDir}/report/daily/YYYY-MM-DD.json: coord:report's aggregates for one UTC day ([date,date+1)), recomputed from the sources and overwritten each run so a re-run over unchanged sources yields an identical file (observed_at is pinned to the day, not the wall clock). A sources.audit block records the matching audit line range and a sha256 of exactly those lines, so a partial or changed input is visible. Aggregates and source refs only.";
+      input = { date = null; limit = null; };
+      exec = ''
+        ${cfg.prelude}
+        at=$(now_iso)
+        date=$(input .date); limit=$(input .limit)
+        [ -n "$date" ] || date=$(date -u -d "yesterday" +%Y-%m-%d 2>/dev/null) || fail 3 invalid_input "could not compute yesterday's date" '{"task":"coord:report:daily"}'
+        [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail 3 invalid_input "date must be YYYY-MM-DD" '{"task":"coord:report:daily"}'
+        [ -n "$limit" ] || limit=100
+        [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -ge 1 ] && [ "$limit" -le 100 ] || fail 3 invalid_input "limit must be 1..100 (GitHub's page cap)" '{"task":"coord:report:daily"}'
+        since="''${date}T00:00:00Z"; days=1
+        until=$(date -u -d "$date +1 day" +%Y-%m-%dT00:00:00Z 2>/dev/null) || fail 3 invalid_input "could not compute the day end from $date" '{"task":"coord:report:daily"}'
+        tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT
+        audit="${cfg.stateDir}/audit.jsonl"; audit_err="null"
+        printf '[]\n' > "$tmpd/audit.json"
+        # line provenance: the file's total lines, and the 1-based line numbers of the object rows whose .at falls in the
+        # window, with a sha256 over exactly those raw lines (file order). A changed or partially-written log changes the hash.
+        lines_total=0; line_first=null; line_last=null; sha=""; rows_in_window=0
+        if [ -s "$audit" ]; then
+          lines_total=$(wc -l < "$audit" | tr -d ' ')
+          jq -s --arg s "$since" --arg u "$until" 'map(select(type == "object" and (.at // "") >= $s and (.at // "") < $u))' "$audit" > "$tmpd/audit.json" 2>/dev/null \
+            || { printf '[]\n' > "$tmpd/audit.json"; audit_err=$(jq -cn --arg a "$audit" '{kind:"audit_corrupt", message:("audit log " + $a + " is not valid JSON lines")}'); }
+          if [ "$audit_err" = null ]; then
+            jq -rc --arg s "$since" --arg u "$until" 'select(type == "object" and (.at // "") >= $s and (.at // "") < $u) | input_line_number' "$audit" > "$tmpd/lines" 2>/dev/null || : > "$tmpd/lines"
+            rows_in_window=$(grep -c . "$tmpd/lines" || true)
+            if [ "''${rows_in_window:-0}" -gt 0 ]; then
+              line_first=$(head -1 "$tmpd/lines"); line_last=$(tail -1 "$tmpd/lines")
+              sha=$(awk 'NR==FNR{want[$1]=1;next} (FNR in want)' "$tmpd/lines" "$audit" | sha256sum | cut -d' ' -f1)
+            fi
+          fi
+        fi
+        src_audit=$(jq -cn --arg p "$audit" --argjson lt "''${lines_total:-0}" --argjson rw "''${rows_in_window:-0}" --argjson lf "''${line_first:-null}" --argjson ll "''${line_last:-null}" --arg sha "$sha" \
+          '{path:$p, present:($lt > 0), lines_total:$lt, rows_in_window:$rw, line_first:$lf, line_last:$ll, sha256:(if $sha == "" then null else $sha end)}')
+        aggctx='{"task":"coord:report:daily"}'
+        ${reportAggregate}
+        daily="${cfg.stateDir}/report/daily"; mkdir -p "$daily"
+        # pin observed_at to the day and fold the line provenance into sources.audit, so a re-run over unchanged sources is
+        # byte-identical; carry audit_err and the daily path as refs
+        out=$(jq -c --argjson sa "$src_audit" --argjson e "$audit_err" --arg d "$date" --arg a "$audit" \
+          '.task = "coord:report:daily" | .observed_at = ($d + "T00:00:00Z") | .generated_for = $d
+           | .sources.audit = (.sources.audit + $sa) | . + {audit_path:$a, handoffs_error:$e, daily_path:"'"$daily"'/'"$date"'.json"}' <<<"$rep") \
+          || fail 2 internal "coord:report:daily could not assemble the daily record" "$aggctx"
+        printf '%s\n' "$out" > "$daily/$date.json.tmp" && mv "$daily/$date.json.tmp" "$daily/$date.json" \
+          || fail 2 write_failed "could not write $daily/$date.json" "$aggctx"
+        emit "$out"
+      '';
+    };
+
+    "coord:report:weekly" = {
+      description = "Render ${cfg.stateDir}/report/weekly/<ISO-week>.md from the dailies of the ISO week containing the anchor date (default today): delivered and verified, review stats, blocked/waste (parks, blocked spans, refusals), recurring failures and the feedback taxonomy, three ranked improvements with their evidence, and one experiment with a measurable success criterion. Reads daily files and the feedback rows of the audit; aggregates and source refs only, never scope text.";
+      input = { anchor = null; };
+      exec = ''
+        ${cfg.prelude}
+        ctx='{"task":"coord:report:weekly"}'
+        anchor=$(input .anchor); [ -n "$anchor" ] || anchor=$(date -u +%Y-%m-%d)
+        [[ "$anchor" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail 3 invalid_input "anchor must be YYYY-MM-DD" "$ctx"
+        isoweek=$(date -u -d "$anchor" +%G-W%V 2>/dev/null) || fail 3 invalid_input "could not parse anchor $anchor" "$ctx"
+        dow=$(date -u -d "$anchor" +%u); monday=$(date -u -d "$anchor -$((dow-1)) days" +%Y-%m-%d)
+        sunday=$(date -u -d "$monday +6 days" +%Y-%m-%d); weekend=$(date -u -d "$monday +7 days" +%Y-%m-%dT00:00:00Z)
+        since="''${monday}T00:00:00Z"
+        daily="${cfg.stateDir}/report/daily"; tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT
+        # gather the dailies present for the seven days; a missing day is a coverage gap, never a zero
+        : > "$tmpd/days.jsonl"
+        for i in 0 1 2 3 4 5 6; do
+          d=$(date -u -d "$monday +$i days" +%Y-%m-%d); f="$daily/$d.json"
+          if [ -r "$f" ] && jq -e 'type == "object"' "$f" >/dev/null 2>&1; then jq -c --arg d "$d" '{date:$d, present:true, report:.}' "$f"
+          else jq -cn --arg d "$d" '{date:$d, present:false, report:null}'; fi >> "$tmpd/days.jsonl"
+        done
+        # feedback rows of the week, from the audit (phase:"feedback"); evidence refs only
+        audit="${cfg.stateDir}/audit.jsonl"; printf '[]\n' > "$tmpd/fb.json"
+        [ ! -s "$audit" ] || jq -s --arg s "$since" --arg u "$weekend" 'map(select(type == "object" and .phase == "feedback" and (.at // "") >= $s and (.at // "") < $u) | {taxonomy, evidence_refs, host, at})' "$audit" > "$tmpd/fb.json" 2>/dev/null || printf '[]\n' > "$tmpd/fb.json"
+        weekly="${cfg.stateDir}/report/weekly"; mkdir -p "$weekly"; md="$weekly/$isoweek.md"
+        # a static taxonomy -> remediation map (engineering judgement, not leaked data) so the ranked improvements read as
+        # actions; the ranking is by observed frequency, the evidence is each taxonomy's own feedback refs
+        remedy=$(jq -cn '{
+          auth_contradiction:"Make the authorization/merge rule single-sourced and self-checking so an item cannot both authorize and be refused.",
+          wrong_assignment:"Tighten coord:handoff target selection (capability + current state) so a handoff cannot reach the wrong pane.",
+          review_deadlock:"Add a review-recovery path that re-offers a head when a review yields no grade, so a PR cannot stall unreviewed.",
+          repeated_build:"Cache or gate heavy builds (one per changed tree) so the same closure is not rebuilt across sessions.",
+          stale_lock_or_orphan:"Bound and sweep scratch dirs and stale flocks (age-based cleanup) so orphans cannot fill a disk or hold a lock.",
+          false_success:"Require independent evidence (exit code + head sha) before a delivery counts, so a worker-asserted pass cannot stand alone.",
+          misleading_skill:"Pin and test skill commands against the installed binary so a stale skill command is caught, not followed.",
+          missing_tool:"Make a suite skip with a named reason when its environment is absent, and count the run as unsupported_environment, not a failure."}')
+        jq -rn --slurpfile days "$tmpd/days.jsonl" --slurpfile fb "$tmpd/fb.json" --argjson remedy "$remedy" \
+          --arg week "$isoweek" --arg monday "$monday" --arg sunday "$sunday" --arg at "$(now_iso)" '
+          ($days) as $days | ($fb[0] // []) as $fb
+          | [ $days[] | select(.present) | .report ] as $present
+          | ([ $days[] | select(.present | not) | .date ]) as $missing
+          | def msum(path): [ $present[] | (path // 0) ] | add // 0;
+          # delivery and review summed across the present dailies; a metric is counted only where coverage was full that day
+          ($present | map(.metrics.verified_deliveries) | map(select(.value != null)) ) as $vd
+          | ($present | map(.metrics.review) | map(select(.value != null)) ) as $rv
+          | ($present | map(.metrics.blocked_time.value) | map(select(. != null)) ) as $bt
+          | ($present | map(.metrics.refusals.value) | map(select(. != null)) ) as $rf
+          | { verified_total:([ $vd[].value.total ] | add // 0),
+              per_day:(reduce ($present[] | {k:(.generated_for // .window.since[0:10]), v:(.metrics.verified_deliveries.value.total // 0)}) as $x ({}; .[$x.k] = $x.v)),
+              reviewed:([ $rv[].value.prs_reviewed ] | add // 0), passes:([ $rv[].value.passes ] | add // 0),
+              rework:([ $rv[].value.rework_rounds ] | add // 0), repeated:([ $rv[].value.repeated_reviews ] | add // 0),
+              parked:([ $bt[].parked_events ] | add // 0),
+              blocked_seconds:([ $bt[] | (.by_reason | to_entries[] | .value.seconds // 0) ] | add // 0),
+              refused_total:([ $rf[].total ] | add // 0),
+              refused_by_kind:(reduce ($rf[] | .by_kind | to_entries[]) as $e ({}; .[$e.key] = ((.[$e.key] // 0) + $e.value))) } as $agg
+          | ([ $fb[] | .taxonomy ] | group_by(.) | map({kind:.[0], n:length}) | sort_by(-.n)) as $fb_ranked
+          | ([ $fb_ranked[] | .kind as $k | {kind:$k, n, remedy:($remedy[$k] // $k), evidence:([ $fb[] | select(.taxonomy == $k) | .evidence_refs[] ] | unique)} ]) as $improvements_fb
+          # pad to at least three with standing engineering-backlog improvements (coverage-driven), so the report always ranks three
+          | ([ {kind:"authorization_join_coverage", n:0, remedy:"Widen the authorization->merge join so lead time covers most deliveries, not the few whose handoff names the delivered issue (M0a reported ~2% coverage).", evidence:["https://github.com/sammasak/skills/issues/85"]},
+               {kind:"deploy_m0b_instrumentation", n:0, remedy:"Deploy the M0b refused/state instrumentation fleet-wide so refusals and idle/blocked spans are observed, not inferred.", evidence:["https://github.com/sammasak/skills/issues/85"]},
+               {kind:"token_runtime_coverage", n:0, remedy:"Project harness-session message.usage and export run.log peaks so token and runtime metrics stop reading unavailable.", evidence:["https://github.com/sammasak/skills/issues/85"]} ]) as $backlog
+          | (($improvements_fb + $backlog)[0:3]) as $top3
+          | ($fb_ranked[0].kind // "stale_lock_or_orphan") as $exp_kind
+          | ("# Engineering-effectiveness weekly — \($week)\n"
+            + "\nWindow: \($monday) .. \($sunday) (UTC, ISO week \($week)). Generated \($at). Aggregates and source refs only.\n"
+            + "\n## Coverage\n"
+            + "- Dailies present: \(($days | map(select(.present)) | length))/7"
+            + (if ($missing | length) > 0 then "; missing (gap, not zero): \($missing | join(", "))" else "" end) + "\n"
+            + "\n## Delivery\n- Verified deliveries: **\($agg.verified_total)**\n"
+            + (($agg.per_day | to_entries | sort_by(.key) | map("  - \(.key): \(.value)") | join("\n")) + "\n")
+            + "\n## Review\n- PRs reviewed: \($agg.reviewed); passes: \($agg.passes); rework rounds: \($agg.rework); repeated reviews: \($agg.repeated)\n"
+            + "\n## Waste / retries\n- Parked (agent_busy) events: \($agg.parked)\n- Blocked span seconds (needs-decision/blocked/needs-live): \($agg.blocked_seconds)\n- Refused sends + failed lifts: \($agg.refused_total)"
+            + (($agg.refused_by_kind | to_entries | map(select(.value > 0)) | map("\(.key)=\(.value)")) as $rk | if ($rk | length) > 0 then " (" + ($rk | join(", ")) + ")" else "" end) + "\n"
+            + "\n## Recurring failures (feedback taxonomy)\n"
+            + (if ($fb_ranked | length) == 0 then "- none recorded this week\n" else (($fb_ranked | map("- \(.kind): \(.n)") | join("\n")) + "\n") end)
+            + "\n## Feedback records (evidence refs only)\n"
+            + (if ($fb | length) == 0 then "- none\n" else (($fb | map("- \(.taxonomy)\(if .host then " [" + .host + "]" else "" end): \(.evidence_refs | join(", "))") | join("\n")) + "\n") end)
+            + "\n## Three improvements (ranked by expected engineering impact)\n"
+            + ([ range(0; ($top3 | length)) as $i | "\($i + 1). **\($top3[$i].kind)** — \($top3[$i].remedy) Evidence: \($top3[$i].evidence | join(", "))" ] | join("\n")) + "\n"
+            + "\n## Experiment (one, measurable)\n"
+            + "- Hypothesis: acting on **\($exp_kind)** reduces its recurrence. Intervention: apply the ranked-#1 remedy for one week.\n"
+            + "- Success criterion (paired: a hand-entered count AND an observed signal, so it cannot be met by simply not recording): the \($exp_kind) feedback count for the following ISO week drops by >=50%, AND the observed waste signal (parked + refused events that week, read from the audit by coord:report, not hand-entered) does not rise, at the same or higher verified-delivery total; measured by coord:report:weekly over that next week.\n")
+          ' > "$tmpd/md" || fail 2 internal "coord:report:weekly render failed" "$ctx"
+        mv "$tmpd/md" "$md"
+        emit "$(jq -cn --arg w "$isoweek" --arg p "$md" --slurpfile days "$tmpd/days.jsonl" --slurpfile fb "$tmpd/fb.json" \
+          '{schema_version:1, task:"coord:report:weekly", iso_week:$w, weekly_path:$p,
+            dailies_present:([ $days[] | select(.present) ] | length), dailies_missing:([ $days[] | select(.present | not) | .date ]),
+            feedback_records:($fb[0] | length), error:null}')"
+        cat "$md"
       '';
     };
   };

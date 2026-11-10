@@ -101,6 +101,27 @@ in
       input = { handoff_id = null; confirm = null; authorized_by = null; resend = null; };
       exec = ''
         ${cfg.prelude}
+        # refused-row instrumentation (#85 M0b): a bounded set of refusals leaves a phase:"refused" audit row so blocked
+        # and refused time is visible to coord:report. Evidence refs only -- the handoff id, the target pane and the
+        # authorizing issue+label -- never the scope text, prompt, body or command. Written under the audit lock: directly
+        # when this task already holds it (HELD_LOCK), else by briefly taking it. A kind outside the set leaves no row.
+        REFUSE_KINDS=" owner_hold authorization_missing agent_blocked agent_changed duplicate "
+        HELD_LOCK=false
+        refuse() { # <exit> <kind> <message>: write the refused row (if the kind is in the set) then fail with $ctx
+          local rk="$2"
+          case "$REFUSE_KINDS" in *" $rk "*)
+            local raid row; raid=$(printf '%s|%s|refused|%s' "''${id:-}" "$(now_iso)" "$RANDOM$RANDOM" | sha256sum | cut -c1-12)
+            row=$(jq -cn --arg a "$raid" --arg i "''${id:-}" --arg k "$rk" --arg h "''${host:-}" --arg m "''${m:-}" --arg ag "''${agent:-}" --arg at "$(now_iso)" --argjson auth "''${auth:-null}" \
+              '{audit_id:$a, handoff_id:(if $i == "" then null else $i end), phase:"refused", task:"herdr:message", kind:$k,
+                host:(if $h == "" then null else $h end), machine:(if $m == "" then null else $m end), agent_id:(if $ag == "" then null else $ag end),
+                at:$at, authorized_by:(if ($auth | type) == "object" then ($auth | {issue_url, label}) else null end)}') || row=""
+            if [ -n "$row" ]; then
+              if [ "$HELD_LOCK" = true ]; then printf '%s\n' "$row" >> "''${audit:-/dev/null}" || true
+              else ( exec 9>>"''${audit:-/dev/null}.lock"; flock -w 10 9 2>/dev/null || true; printf '%s\n' "$row" >> "''${audit:-/dev/null}" ) || true; fi
+            fi ;;
+          esac
+          fail "$1" "$2" "$3" "$ctx"
+        }
         id=$(input .handoff_id); confirm=$(input .confirm); resend=$(input .resend)
         auth=$(jq -c '.authorized_by // empty' <<<"''${DEVENV_TASK_INPUT:-{\}}")
         ctx=$(jq -cn --arg i "$id" '{task:"herdr:message",handoff_id:$i}')
@@ -135,8 +156,9 @@ in
         jq -e --arg t "$host/$agent" 'index($t) | not' <<<"$(coordinator_panes "$audit")" >/dev/null \
           || fail 3 invalid_input "$host/$agent is a Coordinator pane (coordinator.panes, the pane running this task, or a past sender in the audit log); not sending" "$ctx"
         sender=""; [ -z "''${HERDR_PANE_ID:-}" ] || sender="$(local_host)/$HERDR_PANE_ID"
-        gh_authorize send sending handoff || fail "$AUTH_EXIT" "$AUTH_KIND" "$AUTH_MSG" "$ctx"
+        gh_authorize send sending handoff || refuse "$AUTH_EXIT" "$AUTH_KIND" "$AUTH_MSG"
         exec 9>"$audit.lock"; flock -w 10 9 || fail 2 busy "another herdr:message holds the audit lock" "$ctx"
+        HELD_LOCK=true
         [ ! -s "$audit" ] || jq -n -e 'all(inputs; type == "object" and (.audit_id|type) == "string" and (.phase|type) == "string")' "$audit" >/dev/null 2>&1 \
           || fail 2 audit_corrupt "audit log is not valid JSON lines; refusing to send until the owner inspects $audit" "$ctx"
         attempts=$(jq -c --arg i "$id" 'select(.handoff_id == $i and .phase == "attempt")' "$audit") || fail 2 audit_corrupt "audit lookup failed" "$ctx"
@@ -145,7 +167,7 @@ in
         code=$(jq -rs 'if length == 1 then (.[0].error.code // empty) else empty end' "$errf" 2>/dev/null || true); rm -f "$errf"
         [ "$rc" -eq 0 ] || fail 2 "''${code:-$(rc_kind $rc)}" "herdr agent get failed for $host/$agent: ''${code:-$(rc_kind $rc)} (exit $rc)" "$ctx"
         state=$(jq -r '.result.agent.agent_status // empty' <<<"$st" 2>/dev/null || true); seq=$(jq -r '.result.agent.state_change_seq // empty' <<<"$st" 2>/dev/null || true); session=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
-        case "$state" in idle|done) ;; blocked) fail 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" "$ctx" ;;
+        case "$state" in idle|done) ;; blocked) refuse 2 agent_blocked "agent $host/$agent is blocked (needs a human at its prompt); not sending" ;;
           # parked, not dropped (skills#28: the 06:19Z wake lost two drafts this way): a parked line in the audit log keeps the
           # authorized send, and coord:changed prints a retry line once a worker is free; nothing else reads phase parked
           # a handoff already attempted is not parked: its resend is the owner's call (duplicate rule below), never a retry line
@@ -187,12 +209,12 @@ in
         fi
         [[ "$seq" =~ ^[0-9]+$ ]] || fail 2 agent_state_unknown "herdr agent get returned no state_change_seq; not sending" "$ctx"
         if [ -n "$want_session" ] && [ "$session" != "$want_session" ]; then
-          fail 2 agent_changed "pane $host/$agent now runs session ''${session:-?} (draft was for $want_session); the agent restarted or the pane was reused" "$ctx"
+          refuse 2 agent_changed "pane $host/$agent now runs session ''${session:-?} (draft was for $want_session); the agent restarted or the pane was reused"
         fi
         if [ -n "$prior" ]; then
           pid=$(jq -r .audit_id <<<"$prior")
           poutcome=$(jq -r --arg a "$pid" 'select(.audit_id == $a and .phase == "outcome") | .outcome' "$audit" | tail -1)
-          [ "$resend" = "$pid" ] || fail 3 duplicate "handoff $id was already sent (audit $pid, outcome ''${poutcome:-interrupted}); inspect the pane first (herdr:inspect); only the owner can decide to send it again (resend=\"$pid\")" "$ctx"
+          [ "$resend" = "$pid" ] || refuse 3 duplicate "handoff $id was already sent (audit $pid, outcome ''${poutcome:-interrupted}); inspect the pane first (herdr:inspect); only the owner can decide to send it again (resend=\"$pid\")"
           # any earlier attempt whose delivery is unconfirmed, and not superseded by a LATER delivered one, still counts:
           # if the agent's state advanced since it, the text probably arrived. Newest first, so the flag means "a later attempt was delivered".
           delivered_later=false
