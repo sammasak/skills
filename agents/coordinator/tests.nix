@@ -366,10 +366,10 @@
         [ "$(hq box-n '"\(.limits.slots) \(.workers.total) \(.free.workers) \(.free_slot.container) \(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "2 0 2 worker-1 true true" ] && ok || bad "box-n: two free slots ($(hq box-n '{limits,free,free_slot,spawn_ok}' | jq -c .))"
         : > "$FAKE_LOG"; spawnn mechanical
         SP1=$(jqr .audit_id); W1="Wbox_n-worker-1:p1"
-        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.outcome) \(.worker) \(.machine) \(.slot) \(.agent_id) \(.model_applied) \(.session_id)"')" = "started nspawn box-n worker-1 $W1 false sess-box" ] && ok || bad "nspawn spawn started ($CODE $OUT)"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.outcome) \(.worker) \(.machine) \(.slot) \(.agent_id) \(.model_applied) \(.session_id)"')" = "started nspawn box-n worker-1 $W1 true sess-box" ] && grep -qF "box-n mkdir -p .config/workers && printf 'WORKER_MODEL=%s\n' 'claude-haiku-5-5' > .config/workers/worker-1.env" "$FAKE_LOG" && ok || bad "nspawn spawn started ($CODE $OUT)"
         grep -q '^ssh -o BatchMode=yes -o ConnectTimeout=5 box-n systemctl start container@worker-1$' "$FAKE_LOG" && grep -q '^herdr(machine=box-n) workspace list' "$FAKE_LOG" \
           && ! grep -qE 'workspace create|agent start|dangerously|machine add' "$FAKE_LOG" && [ "$(unit worker-1) $(wss)" = "active worker-1" ] && ok || bad "unit start, then the hook's workspace; no workspace create or agent start ($(grep -E '^(ssh|herdr)' "$FAKE_LOG" | tr '\n' '|'))"
-        [ "$(jq -sr --arg a "$SP1" '[.[] | select(.audit_id == $a)] | "\(.[0].worker) \(.[0].slot) \(.[0].unit) \(.[0].cwd) \(.[1].outcome) \(.[1].agent_id) \(.[1].model_applied)"' "$A")" = "nspawn worker-1 container@worker-1 null started $W1 false" ] && ok || bad "nspawn spawn audited ($(grep -F "$SP1" "$A" | tr '\n' ' '))"
+        [ "$(jq -sr --arg a "$SP1" '[.[] | select(.audit_id == $a)] | "\(.[0].worker) \(.[0].slot) \(.[0].unit) \(.[0].cwd) \(.[1].outcome) \(.[1].agent_id) \(.[1].model_applied)"' "$A")" = "nspawn worker-1 container@worker-1 null started $W1 true" ] && ok || bad "nspawn spawn audited ($(grep -F "$SP1" "$A" | tr '\n' ' '))"
         n=$(lines); spawnn mechanical ',"cwd":"/home/lukas"'
         [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ "$(lines)" = "$n" ] && ok || bad "a cwd on an nspawn host is invalid_input, unaudited ($OUT)"
         # failures after the unit started: each stops the unit again (its workspace closes), audited with cleanup
@@ -396,7 +396,7 @@
         jq -c --arg w "$W1" 'if .pane_id == $w then .agent_status = "idle" else . end' "$FAKE_HERDR_STARTED" > "$TMP/st.tmp" && mv "$TMP/st.tmp" "$FAKE_HERDR_STARTED"
         : > "$FAKE_LOG"; reap '{"machine":"box-n","slot":"worker-1"}'
         [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.outcome) \(.unit_stopped) \(.host) \(.unit)"')" = "reaped true box-n container@worker-1" ] && [ "$(unit worker-1) $(wss)" = "inactive worker-2" ] \
-          && grep -q 'box-n systemctl stop container@worker-1$' "$FAKE_LOG" && [ "$(tail -n 1 "$A" | jq -r '"\(.phase) \(.outcome) \(.slot)"')" = "reap reaped worker-1" ] && ok || bad "reap stops the unit ($CODE $OUT)"
+          && grep -q 'box-n systemctl stop container@worker-1$' "$FAKE_LOG" && grep -qF 'box-n rm -f .config/workers/worker-1.env' "$FAKE_LOG" && [ "$(tail -n 1 "$A" | jq -r '"\(.phase) \(.outcome) \(.slot)"')" = "reap reaped worker-1" ] && ok || bad "reap stops the unit ($CODE $OUT)"
         # by the spawn's audit id, with force
         reap "{\"audit_id\":\"$SP2\",\"force\":true}"
         [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.slot) \(.outcome)"')" = "worker-2 reaped" ] && [ "$(unit worker-2) $(wss)" = "inactive " ] && ok || bad "reap by audit_id ($CODE $OUT)"

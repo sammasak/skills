@@ -31,7 +31,8 @@ let
   # nspawn workers over ssh (units) and the host's Herdr (their workspaces), shared by coord:capacity, coord:spawn, coord:reap
   workerFns = ''
     capj=${lib.escapeShellArg capJSON}
-    ssh_at() { local tmo="$1"; shift; timeout -k 1 "$tmo" ${cfg.sshCommand} -o BatchMode=yes -o ConnectTimeout=5 "$@" 9>&-; }
+    # stdin is /dev/null: inside a `while read` loop ssh would otherwise swallow the loop's remaining lines
+    ssh_at() { local tmo="$1"; shift; timeout -k 1 "$tmo" ${cfg.sshCommand} -o BatchMode=yes -o ConnectTimeout=5 "$@" 9>&- </dev/null; }
     # slots_probe [host]: {"<host>": {reachable, error, units:{"<unit>": state}, workspaces:{"<label>": "<workspace_id>"}}}
     # for every nspawn host (or the one named): one `systemctl is-active` over ssh (it exits 3 when a unit is inactive;
     # ssh's own failure is 255) and one `workspace list` on the host's saved Herdr machine
@@ -53,9 +54,13 @@ let
       [ -n "$wsid" ] || return 0
       al=$(herdr_at ${t} "$1" agent list 2>/dev/null 9>&-) || return 0
       jq -c --arg w "$wsid" 'first(.result.agents[]? | select(.workspace_id == $w and .agent == "claude")) // empty' <<<"$al" 2>/dev/null || true; }
-    # worker_stop <host> <unit>: stop the unit (its hook closes the workspace, the container's contents are gone) and check
+    # worker_env <host> <container> <model>: the host hook reads ~/.config/workers/<container>.env at every start
+    worker_env() { ssh_at ${t} "$1" "mkdir -p .config/workers && printf 'WORKER_MODEL=%s\n' '$3' > .config/workers/$2.env"; }
+    # worker_stop <host> <unit>: stop the unit (its hook closes the workspace, the container's contents are gone), drop its
+    # env file so the next start brings no stale model, and check
     worker_stop() { local st
       ssh_at 60 "$1" systemctl stop "$2" >/dev/null 2>&1 || true
+      ssh_at ${t} "$1" "rm -f .config/workers/''${2#container@}.env" >/dev/null 2>&1 || true
       st=$(ssh_at ${t} "$1" systemctl is-active "$2" 2>/dev/null) || true
       jq -cn --arg s "$st" '{unit_stopped:($s == "inactive" or $s == "failed"), unit_state:(if $s == "" then null else $s end)}'; }
   '';
@@ -144,7 +149,7 @@ in
   };
 
   config.tasks."coord:spawn" = {
-    description = "ACT: start one Claude Code worker for an owner-labelled item (authorized_by) on a host (machine, or this one), refused (and audited) when the label is missing or the host's capacity does not allow it, never on a host whose spawn is off. On a worker = host host: a new Herdr workspace (cwd) with the kind's model. On a worker = nspawn host: starts the first free container unit over ssh and waits for the idle claude its hook opens in the host Herdr workspace named after the container (no cwd; model_applied false); any failure after the start stops the unit again.";
+    description = "ACT: start one Claude Code worker for an owner-labelled item (authorized_by) on a host (machine, or this one), refused (and audited) when the label is missing or the host's capacity does not allow it, never on a host whose spawn is off. On a worker = host host: a new Herdr workspace (cwd) with the kind's model. On a worker = nspawn host: starts the first free container unit over ssh and waits for the idle claude its hook opens in the host Herdr workspace named after the container (no cwd; the kind's model reaches the hook through ~/.config/workers/<container>.env, removed again at stop); any failure after the start stops the unit again.";
     after = [ "herdr:inventory@completed" "host:locks@completed" ];
     input = { machine = null; kind = null; task_ref = null; cwd = null; authorized_by = null; };
     exec = ''
@@ -246,6 +251,10 @@ in
       if [ "$worker" = nspawn ]; then
         # start the container (polkit lets lukas start exactly these units); the host's hook opens a Herdr workspace
         # labelled after it with claude running inside. Ready when that claude is idle; from here every failure stops the unit
+        # the kind's model goes to the hook through the slot's env file, written before the start
+        [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]*$ ]] && worker_env "$host" "$slot" "$model" >/dev/null 2>"$errf" || {
+          outcome=failed; detail=$(jq -cn --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '{error_code:"env_write_failed", error:("worker env file: " + $e)}'); rm -f "$errf"
+          fail 2 failed "could not write the model for $slot on $host; not starting it" "$(jq -c --arg a "$aid" '. + {audit_id:$a}' <<<"$ctx")"; }
         booted=true
         ssh_at 60 "$host" systemctl start "$unit" >/dev/null 2>"$errf" || rc=$?
         if [ "$rc" -ne 0 ]; then
@@ -266,8 +275,7 @@ in
         if ! valid_id "$pane" || ! valid_id "$wsid"; then
           outcome=failed; detail=$(jq -cn --arg p "$pane" '{error_code:"unsafe_id", error:"the worker agent has an unsafe pane id", returned_pane:($p | .[0:80])}')
           fail 2 failed "worker $slot on $host has an unsafe pane id; its unit was stopped again" "$ctx"; fi
-        # the hook chooses the model; until it can read the kind's, the worker runs its default (model_applied false)
-        detail=$(jq -cn --arg p "$pane" --arg w "$wsid" --arg s "$slot" --arg u "$unit" '{agent_id:$p, workspace_id:$w, worker:"nspawn", slot:$s, unit:$u, model_applied:false}')
+        detail=$(jq -cn --arg p "$pane" --arg w "$wsid" --arg s "$slot" --arg u "$unit" '{agent_id:$p, workspace_id:$w, worker:"nspawn", slot:$s, unit:$u, model_applied:true}')
         ses=$(jq -r '.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
       else
         # spawn: a workspace of its own (never a split of the coordinator's pane), then the agent in its root pane

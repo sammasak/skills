@@ -97,8 +97,9 @@ running inside the container, and started means that claude is idle within
 `workerBootSeconds` (120). A failed unit start (`unit_start_failed`), no
 claude in that workspace (`worker_not_found`) or one that never turns idle
 (`agent_not_ready`) stops the unit again (`cleanup` in the outcome). There
-is no fallback to a host claude. The worker runs its default model
-(`model_applied: false`), its transcript is inside the container so
+is no fallback to a host claude. The kind's model reaches the hook as
+`WORKER_MODEL` in `~/.config/workers/<slot>.env` on the host, written before
+the start and removed at every stop; its transcript is inside the container so
 `coord:capacity` reports `context_tokens` null, and its home is empty: the
 handoff tells it to `git clone` the repo, and its work leaves only by `git
 push`. `coord:reap` (`machine` + `slot`, or the spawn's `audit_id`;

@@ -220,9 +220,9 @@ END autonomy
    host (acer-swift, msi-ms7758) give `machine` and no `cwd`: the task starts
    the first free container (`slot`, e.g. `worker-1`) and returns the idle
    claude its host opened in the Herdr workspace of that name on `machine`;
-   never a host claude. It starts with an empty home and the worker's default
-   model (`model_applied: false`), and its context size is unknown (`null`).
-   A host worker gets the kind's model, never one you pick. A `started`
+   never a host claude. It starts with an empty home, and its context size
+   is unknown (`null`). Every worker gets the kind's model, never one you
+   pick. A `started`
    spawn has no assignment yet: draft with `coord:handoff` for the returned
    `machine` and `agent_id` (and `session_id`); for an nspawn worker the
    scope starts with `git clone` of the repo it works in (it pushes its
