@@ -23,7 +23,7 @@ in
             | (if .agent == "agent-runtime" then
                  ($title | capture("^(?<runtime_task_ref>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+) rt=(?<runtime_id>[a-z0-9-]+) tpl=(?<template>[0-9a-f]{12})( |$)")? // {})
                else {} end) as $runtime
-            | {host:$host, machine:(if $m == "" then null else $m end), agent_id:.pane_id, harness:(.agent // "unknown"),
+            | {host:$host, machine:(if $m == "" then null else $m end), agent_id:.pane_id, name:(.name // null), harness:(.agent // "unknown"),
                session_id:(.agent_session.value? // null), cwd:(.cwd // null), title:$title,
                runtime_id:($runtime.runtime_id // null), template:($runtime.template // null), runtime_task_ref:($runtime.runtime_task_ref // null),
                blocked_reason:(if .agent_status == "blocked" then .tokens.blocked_reason // null else null end),

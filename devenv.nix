@@ -15,7 +15,7 @@ in
     ./task-modules/tests.nix
     ./agents/coordinator/tasks.nix
     ./agents/coordinator/changed.nix
-    ./agents/coordinator/spawn.nix
+    ./agents/coordinator/capacity.nix
     ./agents/coordinator/tests.nix
     ./agents/quality/tasks.nix
     ./agents/quality/tests.nix

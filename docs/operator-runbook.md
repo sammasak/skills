@@ -31,7 +31,7 @@ separate. The same tasks work without an LLM from the checkout:
 cd ~/claude-code-skills
 devenv tasks run coord:brief >/dev/null; cat ~/.local/state/coordinator/brief/latest.md   # this host + every saved Herdr machine
 herdr machine list --json                           # which machines that is (empty on a worker)
-tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message, coord:spawn and gh act attempt and outcome
+tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message and gh act attempt and outcome
 ```
 
 To hand work over: the coordinator drafts (`coord:handoff`) with the
@@ -62,66 +62,26 @@ an agent that holds a handoff, an open epic does not hold back its merged
 children, and the brief prints verified handoffs as one line per `repo#ref`
 and each open one with its `implemented`, `reviewed`, `merged`, `live` stages.
 
-Workers: `coord:capacity` reports each host's workers, the worker and
-heavy-job slots left and which assignment kinds fit (planning and review on
-opus, implementation on sonnet, mechanical checks on haiku; review and
-implementation take a heavy-job slot). The limits are `coordinator.capacity`
-in `agents/coordinator/spawn.nix`. Each host has a `worker` kind: acer-swift
-and msi-ms7758 are `nspawn`: they are no workers themselves, their workers
-are the ephemeral containers listed as `slots` (acer `["worker-1"]`, msi
-`["worker-1" "worker-2"]`, nixos-config `docs/nspawn-workers.md`), one heavy
-job each; a slot is in use while `container@<slot>` is active (`ssh <host>
-systemctl is-active`). `max_workers` on an nspawn host, `slots` on a host
-host, or more heavy jobs than slots, fails evaluation. msi is up only Mon-Fri 09:00-21:00 local, so
-"unreachable" outside that window is expected: route to another host, and
-hand no heavy work to msi shortly before its 21:00 shutdown. lenovo is
-`host`, one heavy job and no spawning (the control plane; see
-nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`,
-`authorized_by`, and an absolute `cwd` on a `host` host only) starts one
-Claude Code worker in its own Herdr workspace only for an item
-carrying a label you applied on that same item and only when that host's
-capacity allows. The decision is taken under the audit lock on a fresh agent
-list of the target host, and a spawn in flight holds its slots, so two
-concurrent spawns never share one slot; the lock is released before the
-herdr calls. Every request that passes input validation and reaches the lock
-writes a `phase: spawn` attempt and an outcome line to `audit.jsonl`; the
-outcome is one of `started`, `refused` (with its reason), `agent_not_ready`,
-`failed` (herdr's code under `error_code`), or `interrupted` when the task
-died before writing one. A request refused earlier (`invalid_input`, a
-missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
-has no assignment until the coordinator hands it one (`coord:handoff`,
-`herdr:message`). On an `nspawn` host (`machine` = the host, no `cwd`) the
-task runs `ssh <host> systemctl start container@<slot>` for the first free
-slot; the host's hook opens a Herdr workspace labelled `<slot>` with claude
-running inside the container, and started means that claude is idle within
-`workerBootSeconds` (120). A failed unit start (`unit_start_failed`), no
-claude in that workspace (`worker_not_found`) or one that never turns idle
-(`agent_not_ready`) stops the unit again (`cleanup` in the outcome). There
-is no fallback to a host claude. The kind's model reaches the hook as
-`WORKER_MODEL` in `~/.config/workers/<slot>.env` on the host, written before
-the start and removed at every stop; its transcript is inside the container so
-`coord:capacity` reports `context_tokens` null, and its home is empty: the
-handoff tells it to `git clone` the repo, and its work leaves only by `git
-push`. `coord:reap` (`machine` + `slot`, or the spawn's `audit_id`;
-`force: true` for a working or blocked worker) runs `systemctl stop
-container@<slot>`, which closes the workspace and wipes the worker, and
-writes a `phase: reap` audit line; `coord:capacity` lists idle workers
-whose handoff was delivered since their start under `reapable`. Manually:
-`ssh acer-swift systemctl stop container@worker-1`. On a `host` host it isOn a `host` host it is `herdr agent start <kind>-<N> --kind
-claude -- --dangerously-skip-permissions --model <the kind's model>`, and
-`--dangerously-skip-permissions` starts unattended only where
-user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code
-2.1.300 no longer reads `~/.claude.json`'s `bypassPermissionsModeAccepted`)
-and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` on
-every host and, on a worker host, that host's `sam.herdr.worker.trustedDirs`
-as well (acer-swift: `~/claude-code-skills` and `~/nixos-config`; nixos-config
-`mcp.nix`, `acceptClaudeStartupDialogs`, since nixos-config#146). So on a worker
-host spawn in `$HOME` or either checkout; the coordinator host (lenovo, which
-does not spawn) pre-trusts `$HOME` only. Name the checkout in the handoff. Elsewhere `agent start` returns
-`agent_not_ready` and the workspace stays for you to inspect. A host
-configured with spawning off is refused as `capacity` whether or not it is
-in the inventory. The task never
-closes a pane or workspace. Each host also carries `lock_queue`: the heavy-work and light-work lanes with their holder, waiters and ages (`host:locks`, over the saved machine's ssh target); a heavy spawn is refused while the heavy lane already holds `heavy_jobs` jobs.
+Developer environments: a durable environment (persistent home, its
+Claude session resumes after a restart) is declared in nixos-config,
+`sam.workers.instances.<name> = { agent = "claude"|"codex"|"none"; model;
+prompt; memoryMax; cpuQuota; }` in `hosts/<host>/configuration.nix`, and
+exists only through a deploy (`just deploy-msi`, `just deploy-acer` from
+`~/nixos-config` on lenovo); remove the entry and deploy to delete it with
+its files. The host's memory budget is checked at evaluation (msi 7G: two at
+the 3584M default; acer 6G: one). There is no start or stop for operators.
+A running environment is a workspace and an agent both named `<name>` in
+its host's Herdr (`herdr --machine msi-ms7758 agent list`); reach it with
+`ssh <name>.msi` or `ssh <name>.acer` from lenovo. `coord:capacity` lists
+them per host in `coordinator.environmentHosts` (`agents/coordinator/capacity.nix`,
+default acer-swift and msi-ms7758) from `herdr:inventory` and the audit log
+alone: `herdr_state`, `unavailable`, `last_handoff`, `handoff_in_flight`,
+`available`, and a top-level `available` list. An unnamed agent on such a
+host is not an environment. msi is up only Mon-Fri 09:00-21:00 local, so
+"unreachable" outside that window is expected: route to another host. The
+coordinator hands work to an available environment through `coord:handoff`
+and `herdr:message`; it never creates or removes one, and with none
+available it reports the declaration and deploy for the owner.
 
 The coordinator's GitHub writes are `gh:label` (add or remove one of
 `needs-decision`, `blocked`, `needs-live` on one issue or PR) and

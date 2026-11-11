@@ -78,9 +78,8 @@ issue.
    or compiles (`nixos:qa`, `platform:verify`, `sdlc:done`, `rust:ci`, `cargo`,
    `nix build`) and `flock -o -w 900 /tmp/$(hostname)-light-work.lock` for eval-only
    and script gates (`skills:test*`, `nix eval`, `nix flake check` without builds,
-   jq/bash suites), so a short gate never queues behind a long one. `coord:capacity`
-   shows each lane (`lock_queue`) and refuses a heavy spawn while the heavy lane
-   holds `heavy_jobs` or more jobs. A green gate on a clean head is recorded once
+   jq/bash suites), so a short gate never queues behind a long one (`host:locks`
+   shows each lane). A green gate on a clean head is recorded once
    (`gate:record:<gate>`, devenv-platform); a reviewer or merger runs
    `gate:verify --input gate=<gate>` for the exact head and reruns targeted
    probes, never the whole gate a second time.
@@ -107,10 +106,11 @@ issue.
    `herdr:message` refuses to resend). An approved item is `reassignable` only when all its handoffs are closed and
    no open PR names it: hand it out again, naming the earlier handoff in the scope (a merged one without a review needs
    that review, not a new implementation); an unknown hold keeps it until the evidence returns. Then pick an agent that is `idle` or `done` (never
-   `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) on a host with capacity (lenovo: one heavy job,
-   control plane only; acer-swift: one worker container; msi-ms7758: two
-   worker containers, one heavy job, reachable Mon-Fri 09:00-21:00 only, so
-   unreachable outside it is expected: route elsewhere). Draft
+   `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) : an `available` developer environment in
+   `coord:capacity` (acer-swift, or msi-ms7758, reachable Mon-Fri 09:00-21:00
+   only, so unreachable outside it is expected: route elsewhere). With none
+   available, report the item with the environment declaration and deploy the
+   owner would run (ROLE.md item 13); never create one yourself. Draft
    with `coord:handoff`, `allowed_actions` limited to what the label grants
    (reading, committing, opening a PR and `comment` for ordinary work; `merge`,
    `close`, `deploy:<host>` only when the owner's label or comment says so).
