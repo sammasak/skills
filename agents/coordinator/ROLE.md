@@ -220,8 +220,9 @@ END autonomy
    no environment is available and authorized work is left, say so and give
    the owner the declaration and deploy, e.g.
    `sam.workers.instances.issue-123 = { agent = "claude"; };` in
-   `hosts/msi-ms7758/configuration.nix`, then `just deploy-msi` (acer:
-   `just deploy-acer`) from `~/nixos-config` on lenovo. The host's memory
+   `hosts/msi-ms7758/configuration.nix`, then the deploy documented in
+   nixos-config's `docs/nspawn-workers.md` (not `just deploy-*`, which runs the
+   full flake checks), owner-run from lenovo. The host's memory
    budget is checked at evaluation (msi 7G: two at the 3584M default; acer
    6G: one); removing the entry and deploying deletes the environment and its
    files. Humans reach one with `ssh <name>.msi` or `ssh <name>.acer` from

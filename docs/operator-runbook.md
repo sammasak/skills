@@ -66,8 +66,9 @@ Developer environments: a durable environment (persistent home, its
 Claude session resumes after a restart) is declared in nixos-config,
 `sam.workers.instances.<name> = { agent = "claude"|"codex"|"none"; model;
 prompt; memoryMax; cpuQuota; }` in `hosts/<host>/configuration.nix`, and
-exists only through a deploy (`just deploy-msi`, `just deploy-acer` from
-`~/nixos-config` on lenovo); remove the entry and deploy to delete it with
+exists only through a deploy (the path in nixos-config's
+`docs/nspawn-workers.md`, owner-run from lenovo; not `just deploy-*`, which
+runs the full flake checks); remove the entry and deploy to delete it with
 its files. The host's memory budget is checked at evaluation (msi 7G: two at
 the 3584M default; acer 6G: one). There is no start or stop for operators.
 A running environment is a workspace and an agent both named `<name>` in
