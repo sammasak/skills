@@ -207,7 +207,10 @@ END autonomy
    `unavailable`, `last_handoff`, `handoff_in_flight` and `available` (idle or
    done, not at its usage limit, no send in progress); the top-level
    `available` lists the free ones, and `hygiene.advice` is `/clear` when
-   `next={repo,task_ref}` is independent of its last handoff. Hand an item to
+   `next={repo,task_ref}` is independent of its last handoff, or `/compact`
+   when `hygiene.context_tokens` (read over ssh from an idle environment's
+   transcript; null when unreadable, then listed in `failed_sources`) is at
+   `coordinator.compactTokens`. Hand an item to
    an available environment like any other handoff: `coord:handoff` with
    `machine` = the host and the environment's `agent_id` from that list (its
    pane; after a restart read it again, the `name` stays), then

@@ -4,7 +4,9 @@
 # (audit.jsonl lines, slurped; [] when none), $next ({repo, task_ref} or null), $at, $now (epoch seconds).
 # A handoff is in flight while its send has no outcome yet (younger than the send bound) or after delivery while the
 # environment is working or blocked; an environment idle after a delivered handoff awaits its follow-up (work:status).
-$inv[0] as $inv | $audit[0] as $audit
+# $ctx: {"<host>/<name>": context tokens} of the idle environments read; $ctxerr: [{source, error}] of the reads that failed;
+# $threshold: the context size at which an idle environment's advice is /compact.
+$inv[0] as $inv | $audit[0] as $audit | $ctx[0] as $ctx | $ctxerr[0] as $ctxerr
 | ($audit | INDEX(.[] | select(.phase == "outcome"); .audit_id)) as $out
 | [$audit[] | select(.phase == "attempt" and (.agent_id | type) == "string")
    | ($out[.audit_id | tostring].outcome // null) as $o
@@ -23,9 +25,14 @@ $inv[0] as $inv | $audit[0] as $audit
           last_handoff:(if $w == null then null else $w | {audit_id, handoff_id, task_ref, repo, at} end),
           handoff_in_flight:($w != null and ($w.sending or ($s | busy))),
           available:(($s | idle) and $a.unavailable == null and ($w.sending // false | not)),
-          hygiene:(if ($s | idle) and $next != null and $w != null and ($next.repo != $w.repo or $next.task_ref != $w.task_ref)
-                   then {advice:"/clear", reasons:["next assignment \($next.repo // "?")\($next.task_ref // "") is independent of its last (\($w.repo // "?")\($w.task_ref // ""))"]}
-                   else {advice:null, reasons:[]} end)}] as $envs
+          hygiene:(($ctx["\($h | ascii_downcase)/\($a.name)"] // null) as $tok
+                   | ($tok != null and $tok >= $threshold) as $full
+                   | (($next != null and $w != null and ($next.repo != $w.repo or $next.task_ref != $w.task_ref))) as $indep
+                   | {context_tokens:$tok} + (
+                     if ($s | idle | not) then {advice:null, reasons:[]}
+                     elif $indep then {advice:"/clear", reasons:["next assignment \($next.repo // "?")\($next.task_ref // "") is independent of its last (\($w.repo // "?")\($w.task_ref // ""))"] + (if $full then ["context \($tok) tokens >= \($threshold)"] else [] end)}
+                     elif $full then {advice:"/compact", reasons:["context \($tok) tokens >= \($threshold)"]}
+                     else {advice:null, reasons:[]} end))}] as $envs
    | ([$envs[] | select(.available)] | length) as $idle
    | ([$envs[] | select(.unavailable == null and (.herdr_state | busy))] | length) as $busy
    | ([$envs[] | select(.unavailable != null)] | length) as $unavail
@@ -37,6 +44,7 @@ $inv[0] as $inv | $audit[0] as $audit
                if $unavail > 0 then "\($unavail) environment(s) unavailable (usage limit): " + ([$envs[] | select(.unavailable != null) | .name] | join(", ")) else empty end]}],
  failed_sources:([$inv.hosts[]? | select(.reachable == false and ((.host | ascii_downcase) as $n | $hosts | map(ascii_downcase) | index($n)))
                    | {source:("herdr:inventory:" + .host), error}]
+   + $ctxerr
    + (if $inv.machines_error != null then [{source:"herdr:machine-list", error:$inv.machines_error}] else [] end))}
 | .available = [.hosts[] | .host as $h | .environments.list[] | select(.available) | {host:$h, name, agent_id}]
 | .partial = ((.failed_sources | length) > 0)

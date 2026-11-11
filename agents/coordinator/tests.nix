@@ -155,7 +155,7 @@
       '';
     };
     "skills:test:tasks:coord-capacity" = {
-      description = "coord:capacity over fake herdr: the developer environments (named agents) per environment host, idle, busy, unavailable, handoff in flight, /clear hint; an unreachable or unsaved host; no ssh; nothing audited; a bad environmentHosts rejected at eval";
+      description = "coord:capacity over fake herdr: the developer environments (named agents) per environment host, idle, busy, unavailable, handoff in flight, /clear and /compact hints from the transcript tail read over ssh (a failed read is null and listed); an unreachable or unsaved host; nothing audited; a bad environmentHosts rejected at eval";
       exec = ''
         set +e -uo pipefail   # the task runner enables errexit; these suites inspect exit codes themselves
         ROOT="$DEVENV_ROOT"; cd "$ROOT" || exit 1
@@ -193,13 +193,18 @@
         hand a1 wF:p1 '#42' 2026-11-03T08:00:00Z delivered; hand b1 wT:p1 '#28' 2026-11-03T09:00:00Z delivered
         lines() { wc -l < "$A"; }; n=$(lines)
 
-        # (1) the environments per host, from Herdr alone: no ssh, no systemctl
+        # issue-a's transcript tail on the environment: the last assistant turn counts (input + cache read + cache creation), junk lines are skipped
+        printf '%s\n' '{"type":"assistant","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":1000,"cache_creation_input_tokens":99}}}' 'not json' \
+          '{"type":"user","message":{"content":"hi"}}' '{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":19000,"cache_creation_input_tokens":990}}}' > "$TMP/issue-a.jsonl"
+        printf '%s\n' '{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":150000,"cache_creation_input_tokens":9990}}}' > "$TMP/issue-a-full.jsonl"
+        export FAKE_SSH_OUT_issue_a_msi="$TMP/issue-a.jsonl"
+        # (1) the environments per host, from Herdr, plus one transcript read over ssh per idle environment: no systemctl
         : > "$FAKE_LOG"; run
         [ "$CODE" -eq 0 ] && [ "$(jqr '[.hosts[].host] | join(",")')" = "acer-swift,msi-ms7758" ] && [ "$(jqr .partial)" = false ] && ok || bad "two environment hosts, whole ($CODE $(tail -n 3 "$TMP/run.log"))"
         [ "$(hq msi-ms7758 '.environments | "\(.total) \(.idle) \(.busy) \(.unavailable) \(.unknown)"')" = "2 1 1 0 0" ] && [ "$(hq msi-ms7758 '[.environments.list[].name] | join(",")')" = "issue-a,issue-b" ] && ok || bad "msi: issue-a idle, issue-b busy, the unnamed pane is no environment ($(hq msi-ms7758 .environments | jq -c 'del(.list)'))"
         [ "$(hq acer-swift '"\(.reachable) \(.environments.total) \(.reasons[0])"')" = "true 0 no environment declared (sam.workers.instances in its nixos-config)" ] && ok || bad "acer: reachable, none declared ($(hq acer-swift '{reachable,reasons}' | jq -c .))"
         [ "$(jqr '.available | map("\(.host)/\(.name)/\(.agent_id)") | join(",")')" = "msi-ms7758/issue-a/wF:p1" ] && ok || bad "available lists the idle environment ($(jqr .available))"
-        ! grep -qE '^ssh|systemctl|workspace (create|list)|agent start' "$FAKE_LOG" && ok || bad "capacity reads Herdr only ($(grep -E '^(ssh|herdr)' "$FAKE_LOG" | tr '\n' '|'))"
+        [ "$(grep -c '^ssh' "$FAKE_LOG")" = 1 ] && grep -q '^ssh .* issue-a.msi ' "$FAKE_LOG" && ! grep -qE 'systemctl|workspace (create|list)|agent start' "$FAKE_LOG" && ok || bad "one ssh, to the idle environment only ($(grep -E '^(ssh|herdr)' "$FAKE_LOG" | tr '\n' '|'))"
         # (2) handoffs: issue-b's is in flight (working on it), issue-a's is done and it is free; a /clear hint for an independent next
         [ "$(env_ issue-b '"\(.handoff_in_flight) \(.available) \(.last_handoff.task_ref) \(.last_handoff.repo)"')" = "true false #28 sammasak/skills" ] && ok || bad "issue-b: handoff in flight ($(env_ issue-b . | jq -c .))"
         [ "$(env_ issue-a '"\(.handoff_in_flight) \(.available) \(.last_handoff.task_ref) \(.hygiene.advice)"')" = "false true #42 null" ] && ok || bad "issue-a: free after its handoff ($(env_ issue-a . | jq -c .))"
@@ -211,6 +216,26 @@
         hand a2 wF:p1 '#43' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; run
         [ "$(env_ issue-a '"\(.handoff_in_flight) \(.available) \(.last_handoff.task_ref)"')" = "true false #43" ] && [ "$(hq msi-ms7758 .environments.idle)" = 0 ] && hq msi-ms7758 '.reasons[]' | grep -qx 'no idle environment' && ok || bad "a send in progress holds the environment ($(env_ issue-a . | jq -c .))"
         head -n "$n" "$A" > "$TMP/a.tmp"; mv "$TMP/a.tmp" "$A"
+        # (2b) context: issue-a at 160000 tokens gets /compact when its next is the same thread; /clear (with the size) when independent; the busy one is not read
+        [ "$(env_ issue-a .hygiene.context_tokens)" = 20000 ] && [ "$(env_ issue-b .hygiene.context_tokens)" = null ] && ok || bad "context_tokens read for the idle environment only ($(env_ issue-a .hygiene))"
+        export FAKE_SSH_OUT_issue_a_msi="$TMP/issue-a-full.jsonl"
+        run --input-json '{"next":{"repo":"sammasak/skills","task_ref":"#42"}}'
+        [ "$(env_ issue-a .hygiene.advice)" = /compact ] && env_ issue-a '.hygiene.reasons[0]' | grep -q 'context 160000 tokens >= 150000' && ok || bad "full context, same thread: /compact ($(env_ issue-a .hygiene))"
+        run --input-json '{"next":{"repo":"sammasak/skills","task_ref":"#28"}}'
+        [ "$(env_ issue-a .hygiene.advice)" = /clear ] && [ "$(env_ issue-a '.hygiene.reasons | length')" = 2 ] && ok || bad "full context, independent next: /clear with both reasons ($(env_ issue-a .hygiene))"
+        # a transcript that cannot be read (ssh down) or holds no usage leaves the size null and is listed, never a guess
+        FAKE_SSH_OUT_issue_a_msi="$FX/herdr/read-fable-limit.txt" run
+        [ "$(env_ issue-a .hygiene.context_tokens)" = null ] && [ "$(jqr '.failed_sources | map(.source) | join(",")')" = context:msi-ms7758/issue-a ] && [ "$(jqr .partial)" = true ] && ok || bad "no usage in the tail: null, listed ($(jqr .failed_sources))"
+        run --option coordinator.environmentSsh:string '{"msi-ms7758":"msi-down"}'
+        [ "$(env_ issue-a .hygiene.context_tokens)" = null ] && jqr '.failed_sources[0].error' | grep -q 'exit 255' && ok || bad "ssh down: null, listed ($(jqr .failed_sources))"
+        export FAKE_SSH_OUT_issue_a_msi="$TMP/issue-a.jsonl"
+        run --option coordinator.environmentSsh:string '{"MSI-MS7758":"msi"}'
+        [ "$(env_ issue-a .hygiene.context_tokens)" = 20000 ] && ok || bad "environmentSsh host label matched case-insensitively ($(env_ issue-a .hygiene))"
+        run --option coordinator.environmentSsh:string '{}'
+        [ "$(env_ issue-a .hygiene.context_tokens)" = null ] && jqr '.failed_sources[0].error' | grep -q 'no safe ssh name' && ok || bad "no ssh suffix for the host: null, listed ($(jqr .failed_sources))"
+        run --option coordinator.environmentSsh:string '{"msi-ms7758":"-msi"}'
+        [ "$CODE" -ne 0 ] && grep -q 'coordinator.environmentSsh' "$TMP/run.log" && ok || bad "bad environmentSsh suffix rejected at eval ($CODE)"
+        export FAKE_SSH_OUT_issue_a_msi="$TMP/issue-a.jsonl"; run
         # (3) an environment at its usage limit is not idle, and the reason names it
         FAKE_HERDR_READ_wF_p1="$FX/herdr/read-fable-limit.txt" run
         [ "$(hq msi-ms7758 '"\(.environments.idle) \(.environments.unavailable)"')" = "0 1" ] && [ "$(env_ issue-a .available)" = false ] && hq msi-ms7758 '.reasons[]' | grep -q 'unavailable (usage limit): issue-a' && ok || bad "usage limit: unavailable ($(hq msi-ms7758 '{e:(.environments|del(.list)),reasons}' | jq -c .))"
