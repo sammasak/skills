@@ -254,11 +254,19 @@
         [ "$(hq msi-ms7758 '"\(.reachable) \(.limits.heavy_jobs) \(.limits.max_workers) \(.limits.spawn) \(.limits.heavy_gates)"')" = "true 1 2 false true" ] && ok || bad "msi-ms7758 ships heavy_jobs 1, max_workers 2, no spawn ($(hq msi-ms7758 .limits))"
         [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "false false" ] && [ "$(hq msi-ms7758 '.fits.spawn | length')" = 0 ] && ok || bad "msi-ms7758 never spawns ($(hq msi-ms7758 '{spawn_ok,fits}' | jq -c .))"
         [ "$(hq msi-ms7758 '"\(.workers.total) \(.free.workers) \(.free.heavy_jobs)"')" = "1 1 0" ] && ok || bad "msi-ms7758: 1 busy worker of 2 leaves one worker and no heavy slot ($(hq msi-ms7758 '{workers:(.workers|del(.list)),free}' | jq -c .))"
+        # the core claim: an IDLE msi worker with no heavy slot held fits the heavy kinds, and still never spawns
+        jq '.result.agents[0].agent_status = "idle"' "$FX/herdr/remote-ok.json" > "$TMP/msi-idle.json"
+        FAKE_HERDR_LIST_msi_ms7758="$TMP/msi-idle.json" devenv tasks run coord:capacity --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
+          --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output > "$TMP/run.log" 2>&1
+        OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F '"task":"coord:capacity"' | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
+        [ "$(hq msi-ms7758 '.fits.idle_worker | join(",")')" = "implementation,mechanical,planning,review" ] && ok || bad "idle msi worker fits all four kinds ($(hq msi-ms7758 '{fits,free}' | jq -c .))"
+        [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "false false" ] && ok || bad "idle msi still cannot spawn ($(hq msi-ms7758 .spawn_ok))"
         # outside its power window the host does not answer: no capacity, the reason says so (route elsewhere)
         FAKE_HERDR_EXIT_msi_ms7758=1 devenv tasks run coord:capacity --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output > "$TMP/run.log" 2>&1
         OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F '"task":"coord:capacity"' | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         [ "$(hq msi-ms7758 '"\(.reachable) \(.spawn_ok.light) \(.reasons[0])"')" = "false false host did not answer" ] && ok || bad "msi-ms7758 down is unreachable, not an error ($(hq msi-ms7758 '{reachable,reasons}' | jq -c .))"
+        unset FAKE_HERDR_LIST_msi_ms7758 FAKE_SSH_OUT_msi_ms7758
         export FAKE_HERDR_MACHINES='[{"id":"a1","label":"worker-a","target":"worker-a","enabled":true},{"id":"b2","label":"down-b","target":"down-b","enabled":true}]'
 
         # (4) accepted: a heavy implementation spawn on worker-a, with its kind's model, in a workspace of its own; audited.
