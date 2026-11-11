@@ -67,8 +67,11 @@ heavy-job slots left and which assignment kinds fit (planning and review on
 opus, implementation on sonnet, mechanical checks on haiku; review and
 implementation take a heavy-job slot). The limits are `coordinator.capacity`
 in `agents/coordinator/spawn.nix`: acer-swift two heavy jobs and three
-workers, lenovo one heavy job and no spawning (the control plane; see
-nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`, an absolute `cwd`,
+workers, msi-ms7758 one heavy job and two workers and no spawning
+(`sam.herdr.worker` is off there; its nspawn agent-runtime reserves 2 CPU and
+8192 MiB of 15 GiB; it is up only Mon-Fri 09:00-21:00 local, so "unreachable"
+outside that window is expected: route to another host), lenovo one heavy job
+and no spawning (the control plane; see nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`, an absolute `cwd`,
 `authorized_by`) starts one Claude Code worker in its own Herdr workspace
 (`herdr workspace create` + `herdr agent start <kind>-<N> --kind claude --
 --dangerously-skip-permissions --model <the kind's model>`) only for an item

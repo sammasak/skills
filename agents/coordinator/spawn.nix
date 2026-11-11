@@ -38,9 +38,13 @@ in
   options.coordinator.capacity = lib.mkOption {
     type = lib.types.str;
     # lenovo is the control plane: no spawning and no heavy gates (nixos-config#109, two platform:verify runs killed at
-    # 98 % swap); acer-swift is the worker (two heavy jobs). A host not named here has no capacity and is refused.
+    # 98 % swap); acer-swift is the worker (two heavy jobs). msi-ms7758 (8 cores, 15 GiB) is a smaller worker: its nspawn
+    # agent-runtime reserves 2 CPU / 8192 MiB (two instances), leaving ~7 GiB, so one heavy job and two workers; no spawn
+    # because sam.herdr.worker is deliberately off there (nixos-config: no bypass-permission launcher, no trustedDirs), and
+    # it is only up Mon-Fri 09:00-21:00 local. A host not named here has no capacity and is refused.
     default = builtins.toJSON {
       "acer-swift" = { heavy_jobs = 2; max_workers = 3; spawn = true; heavy_gates = true; };
+      "msi-ms7758" = { heavy_jobs = 1; max_workers = 2; spawn = false; heavy_gates = true; };
       "lenovo-21CB001PMX" = { heavy_jobs = 1; max_workers = 2; spawn = false; heavy_gates = false; };
     };
     description = "JSON object: per Herdr host label (matched case-insensitively) {heavy_jobs, max_workers, spawn, heavy_gates}. heavy_gates defaults true; false refuses heavy-gate assignments (review, implementation) on that host and leaves it light work only (finding 6: lenovo is the control plane).";
