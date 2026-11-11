@@ -72,6 +72,18 @@
               not_ready) echo '{"error":{"code":"agent_not_ready","message":"agent blocked during startup"}}' >&2; exit 1 ;;
               *) echo '{"error":{"code":"pane_not_available","message":"pane is not at a shell prompt"}}' >&2; exit 1 ;;
             esac ;;
+          # an nspawn worker: `pane run` types agent-runtime-session into the pane. FAKE_HERDR_SESSION_RUN=ok (the pane becomes
+          # an idle claude agent, no session id: the instance has no Herdr hook) | blocked | missing (the shell has no such
+          # command) | refused (the CLI dies); `pane read` shows what the pane printed, ending in the coord-spawn marker
+          "pane run") scr="''${FAKE_LOG:-/tmp/fake}.screen.''${3//[^A-Za-z0-9]/_}"
+            case "''${FAKE_HERDR_SESSION_RUN:-ok}" in
+              ok|blocked) st=idle; [ "''${FAKE_HERDR_SESSION_RUN:-ok}" = blocked ] && st=blocked
+                [ -n "''${FAKE_HERDR_STARTED:-}" ] && jq -cn --arg p "$3" --arg s "$st" '{pane_id:$p, agent:"claude", agent_status:$s, cwd:"/home/lukas"}' >> "$FAKE_HERDR_STARTED" ;;
+              missing) printf '%s\n' "fish: Unknown command: agent-runtime-session" "coord-spawn:ended" > "$scr" ;;
+              refused) printf '%s\n' "agent-runtime-session: the session was not started" "coord-spawn:ended" > "$scr" ;;
+            esac
+            printf '{"id":"cli:pane:run","result":{"type":"ok"}}\n' ;;
+          "pane read") cat "''${FAKE_LOG:-/tmp/fake}.screen.''${3//[^A-Za-z0-9]/_}" 2>/dev/null || true ;;
           *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
         esac
         exit "''${FAKE_HERDR_EXIT:-0}"

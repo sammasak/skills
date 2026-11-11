@@ -1,12 +1,14 @@
 # coord:capacity / coord:spawn (skills #28 W1): per-host worker capacity from herdr:inventory and the configured limits.
-# Inputs: $inv (herdr:inventory, slurped), $cap ({"<host label>": {heavy_jobs, max_workers, spawn, heavy_gates}}, matched
+# Inputs: $inv (herdr:inventory, slurped), $cap ({"<host label>": {worker, heavy_jobs, max_workers, slots?, spawn, heavy_gates}}, matched
 # case-insensitively; heavy_gates defaults true, false refuses heavy gates on that host -- finding 6, nixos-config#109),
 # $kinds ({"<kind>": {tier, model, heavy}}), $audit (audit.jsonl lines, slurped; [] when none),
 # $usage ({"<host>/<agent_id>": context tokens} for local Claude sessions), $next ({repo, task_ref} or null),
 # $threshold (context tokens that call for /compact or /clear), $at, $now (epoch seconds).
 # Heavy-job slots are held by every worker spawned for a heavy kind (whatever its state: it was started to run heavy
 # gates), by a busy or unknown worker whose kind is not known, and by a heavy spawn still in flight (an attempt line with
-# no outcome yet, younger than the agent-start bound); an in-flight spawn also holds a worker slot.
+# no outcome yet, younger than the agent-start bound); an in-flight spawn also holds a worker slot. On a worker:"nspawn"
+# host (spawn.nix sets max_workers = slots) every worker is an agent-runtime session whose transcript lives inside its
+# instance: its context size is unknown (null, context_source says why), never a number read from the host.
 $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null])[0]) as $locks
 | ($cap | with_entries(.key |= ascii_downcase)) as $cap
 # the last delivered handoff or started spawn per pane and session: what the worker last worked on
@@ -33,10 +35,11 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null]
    | (($lq.lanes // []) | map(select(.lane == "heavy-work")) | first // null) as $heavy_lane
    | ($heavy_lane.queue_depth // 0) as $heavy_queue
    | [$hst.agents[]? | . as $a | ($a.observed_state // "unknown") as $s | last_work($hst.host; $a.agent_id; $a.session_id) as $w
-       | ($usage["\($hst.host)/\($a.agent_id)"] // null) as $tok
+       | ($c.worker == "nspawn") as $boxed
+       | (if $boxed then null else ($usage["\($hst.host)/\($a.agent_id)"] // null) end) as $tok
        | ($next != null and $w != null and ($next.repo != $w.repo or $next.task_ref != $w.task_ref)) as $independent
        | {agent_id:$a.agent_id, harness:$a.harness, herdr_state:$s, unavailable:($a.unavailable // null), session_id:$a.session_id, kind:($spawns.kind_of["\($hst.host)/\($a.agent_id)"] // null), last_task_ref:($w.task_ref // null), last_repo:($w.repo // null),
-          hygiene:({context_tokens:$tok} + (
+          hygiene:({context_tokens:$tok, context_source:(if $boxed then "unknown: transcript inside the nspawn instance" elif $tok == null then null else "host transcript" end)} + (
             if ($s | idle | not) then {advice:null, reasons:[]}
             elif $independent then {advice:"/clear", reasons:["next assignment \($next.repo // "?")\($next.task_ref // "") is independent of its last (\($w.repo // "?")\($w.task_ref // ""))"]
                                      + (if $tok != null and $tok >= $threshold then ["context \($tok) tokens >= \($threshold)"] else [] end)}
@@ -59,7 +62,7 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null]
    # OOM-killed twice mid platform:verify, nixos-config#109); unset means true, so existing hosts are unaffected
    | ($light and ($c.heavy_gates != false) and $free_h > 0 and ($c == null or $heavy_queue < $c.heavy_jobs)) as $heavy
    | {host:$hst.host, machine:($hst.machine // null), reachable:$up, configured:($c != null),
-      limits:(if $c == null then null else {heavy_jobs:$c.heavy_jobs, max_workers:$c.max_workers, spawn:$c.spawn, heavy_gates:($c.heavy_gates != false)} end),
+      limits:(if $c == null then null else {worker:($c.worker // "host"), slots:($c.slots // null), heavy_jobs:$c.heavy_jobs, max_workers:$c.max_workers, spawn:$c.spawn, heavy_gates:($c.heavy_gates != false)} end),
       workers:{total:($ws | length), idle:$idle, busy:$busy, unavailable:$unavail, unknown:$unknown, spawning:($fly | length), list:$ws},
       free:{workers:$free_w, heavy_jobs:$free_h},
       lock_queue:(if $lq == null then {observed:false, lanes:[]} else {observed:$lq.reachable, error:$lq.error, lanes:$lq.lanes} end),
@@ -70,7 +73,7 @@ $inv[0] as $inv | $audit[0] as $audit | $usage[0] as $usage | (($locks // [null]
                 if $unavail > 0 then "\($unavail) worker(s) unavailable (usage limit): " + ([$ws[] | select(.unavailable != null) | .agent_id] | join(", ")) else empty end, if $c == null then "no capacity configured for this host (coordinator.capacity)" else empty end,
                 if $c != null and $c.spawn != true then "spawning is off for this host" else empty end,
                 if $c != null and $c.heavy_gates == false then "this host runs no heavy gates (heavy_gates:false): light assignments only" else empty end,
-                if $c != null and $free_w == 0 then "\($slots_used) of \($c.max_workers) workers in use" else empty end,
+                if $c != null and $free_w == 0 then "\($slots_used) of \($c.max_workers) " + (if $c.worker == "nspawn" then "instance slots" else "workers" end) + " in use" else empty end,
                 if $c != null and $free_h == 0 then "\($heavy_used) of \($c.heavy_jobs) heavy-job slots taken" else empty end,
                 if $c != null and $heavy_queue >= $c.heavy_jobs then "heavy-work lane: \($heavy_queue) on the lock (\($heavy_lane.holder.what // "?") for \(($heavy_lane.holder.age_s // 0) / 60 | floor) min)" else empty end])}],
  failed_sources:([$inv.hosts[]? | select(.reachable == false) | {source:("herdr:inventory:" + .host), error}] + (if $locks == null then [{source:"host:locks", error:{kind:"missing", message:"host:locks produced no output"}}] else [$locks.hosts[]? | select(.reachable == false) | {source:("host:locks:" + .host), error}] end) + (if $inv.machines_error != null then [{source:"herdr:machine-list", error:$inv.machines_error}] else [] end))}

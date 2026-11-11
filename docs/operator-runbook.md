@@ -66,18 +66,18 @@ Workers: `coord:capacity` reports each host's workers, the worker and
 heavy-job slots left and which assignment kinds fit (planning and review on
 opus, implementation on sonnet, mechanical checks on haiku; review and
 implementation take a heavy-job slot). The limits are `coordinator.capacity`
-in `agents/coordinator/spawn.nix`: acer-swift two heavy jobs and three
-workers, msi-ms7758 one heavy job and two workers and no spawning
-(`sam.herdr.worker` is off there; the agent-runtime `reserve` of 2 CPU and
-8192 MiB of 15 GiB is host capacity kept free of instances, not their use, and
-the headroom shared by the Herdr worker, a heavy gate and k3s is unmeasured, so
-the limits are a conservative proposal; it is up only Mon-Fri 09:00-21:00
-local, so "unreachable" outside that window is expected: route to another
-host, and hand no heavy work to msi shortly before its 21:00 shutdown), lenovo one heavy job
-and no spawning (the control plane; see nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`, an absolute `cwd`,
-`authorized_by`) starts one Claude Code worker in its own Herdr workspace
-(`herdr workspace create` + `herdr agent start <kind>-<N> --kind claude --
---dangerously-skip-permissions --model <the kind's model>`) only for an item
+in `agents/coordinator/spawn.nix`. Each host has a `worker` kind: acer-swift
+and msi-ms7758 are `nspawn` (owner decision: workers there run only inside
+agent-runtime instances, never as a host-level bypass claude), with `slots`
+equal to their `maxConcurrentInstances` (acer 1, msi 2) as the worker limit
+and one heavy job each; `max_workers` on an nspawn host, or more heavy jobs
+than slots, fails evaluation. msi is up only Mon-Fri 09:00-21:00 local, so
+"unreachable" outside that window is expected: route to another host, and
+hand no heavy work to msi shortly before its 21:00 shutdown. lenovo is
+`host`, one heavy job and no spawning (the control plane; see
+nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`,
+`authorized_by`, and an absolute `cwd` on a `host` host only) starts one
+Claude Code worker in its own Herdr workspace only for an item
 carrying a label you applied on that same item and only when that host's
 capacity allows. The decision is taken under the audit lock on a fresh agent
 list of the target host, and a spawn in flight holds its slots, so two
@@ -89,7 +89,20 @@ outcome is one of `started`, `refused` (with its reason), `agent_not_ready`,
 died before writing one. A request refused earlier (`invalid_input`, a
 missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
 has no assignment until the coordinator hands it one (`coord:handoff`,
-`herdr:message`). `--dangerously-skip-permissions` starts unattended only where
+`herdr:message`). On an `nspawn` host the start is `herdr pane run <pane>
+"agent-runtime-session run --template claude-session --task OWNER/REPO#N
+<kind>-<N>-<audit prefix>"`; the attach client runs as `claude`, so the pane
+becomes a Claude agent and `herdr:message` reaches it as any other. Started
+means an idle Claude agent in that pane within `sessionStartSeconds` (60);
+the command line returning first is `failed` (`error_code`
+`session_cli_missing` or `session_refused`), a pane that never turns idle is
+`agent_not_ready` (`session_not_ready`). There is no fallback to a host
+claude. The session takes no `--model` or `cwd` (`model_applied: false`), its
+transcript is inside the instance so `coord:capacity` reports its
+`context_tokens` as null, and it cannot push: its work leaves as the export
+bundle's patch. On a `host` host it is `herdr agent start <kind>-<N> --kind
+claude -- --dangerously-skip-permissions --model <the kind's model>`, and
+`--dangerously-skip-permissions` starts unattended only where
 user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code
 2.1.300 no longer reads `~/.claude.json`'s `bypassPermissionsModeAccepted`)
 and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` on

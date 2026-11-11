@@ -7,6 +7,21 @@
 let
   cfg = config.coordinator;
   t = toString cfg.timeoutSeconds;
+  # the per-host worker kind, checked at eval: "host" runs a host-level claude in the pane; "nspawn" runs it only as an
+  # agent-runtime session (template claude-session) and never falls back to a host claude. An nspawn host's workers ARE
+  # its instance slots (sam.agentRuntime.host.maxConcurrentInstances): it takes `slots`, never max_workers, so its
+  # worker limit cannot exceed them; heavy_jobs may not exceed them either.
+  capFor = name: c:
+    let w = c.worker or "host"; at = "coordinator.capacity.${name}"; in
+    if w == "host" then c // { worker = "host"; }
+    else if w == "nspawn" then
+      lib.throwIfNot (builtins.isInt (c.slots or null) && c.slots >= 1) "${at}: worker nspawn needs slots >= 1 (the host's maxConcurrentInstances)"
+        (lib.throwIf (c ? max_workers) "${at}: an nspawn host takes slots, not max_workers (its workers are its instance slots)"
+          (lib.throwIf ((c.heavy_jobs or 0) > c.slots) "${at}: heavy_jobs ${toString c.heavy_jobs} exceeds slots ${toString c.slots}"
+            (c // { max_workers = c.slots; })))
+    else throw "${at}: worker must be \"host\" or \"nspawn\", not ${builtins.toJSON w}";
+  capJSON = builtins.toJSON (lib.mapAttrs capFor (builtins.fromJSON cfg.capacity));
+  sessionTemplate = "claude-session";
   # the shared capacity computation: herdr:inventory (upstream) + limits + the audit log + local context sizes
   capacity = ''
     capacity_json() { # <next-json-or-null> -> the coord:capacity record on stdout
@@ -27,7 +42,7 @@ let
       done < <(jq -r --arg h "$(local_host)" '.hosts[]? | select(.host == $h and .machine == null) | .agents[]? | select(.harness == "claude" and .session_id != null and .cwd != null) | [.agent_id, .session_id, .cwd] | @tsv' <<<"$inv")
       jq -sc 'add // {}' "$tmpd/usage.jsonl" > "$tmpd/usage.json"
       jq -nc --slurpfile inv "$tmpd/inv.json" --slurpfile audit "$tmpd/audit.json" --slurpfile usage "$tmpd/usage.json" --slurpfile locks "$tmpd/locks.json" \
-        --argjson cap ${lib.escapeShellArg cfg.capacity} --argjson kinds ${lib.escapeShellArg (builtins.toJSON cfg.kinds)} \
+        --argjson cap ${lib.escapeShellArg capJSON} --argjson kinds ${lib.escapeShellArg (builtins.toJSON cfg.kinds)} \
         --argjson next "$1" --argjson threshold ${toString cfg.hygieneContextTokens} --arg at "$(now_iso)" --argjson now "$(now_epoch)" -f ${./capacity.jq}
       local rc=$?; rm -rf "$tmpd"; return $rc; }
   '';
@@ -38,18 +53,16 @@ in
   options.coordinator.capacity = lib.mkOption {
     type = lib.types.str;
     # lenovo is the control plane: no spawning and no heavy gates (nixos-config#109, two platform:verify runs killed at
-    # 98 % swap); acer-swift is the worker (two heavy jobs). msi-ms7758 (8 cores, 15 GiB) is a smaller worker. Its
-    # sam.agentRuntime.host.reserve (2 CPU / 8192 MiB) is capacity kept FREE of nspawn instances, not what they use, so
-    # instances may take up to ~7 GiB; the headroom the host-side Herdr worker, a heavy gate and k3s share is UNMEASURED
-    # (nixos-config says to measure it). One heavy job and two workers is a conservative proposal; no spawn
-    # because sam.herdr.worker is deliberately off there (nixos-config: no bypass-permission launcher, no trustedDirs), and
-    # it is only up Mon-Fri 09:00-21:00 local. A host not named here has no capacity and is refused.
+    # 98 % swap). acer-swift and msi-ms7758 run workers only inside agent-runtime nspawn sessions (owner decision: never a
+    # bare host-level bypass claude there), so their worker limit is their instance slots, maxConcurrentInstances in
+    # nixos-config: acer 1, msi 2 (8 cores, 15 GiB; its reserve of 2 CPU / 8192 MiB is kept free of instances). msi is
+    # only up Mon-Fri 09:00-21:00 local. A host not named here has no capacity and is refused.
     default = builtins.toJSON {
-      "acer-swift" = { heavy_jobs = 2; max_workers = 3; spawn = true; heavy_gates = true; };
-      "msi-ms7758" = { heavy_jobs = 1; max_workers = 2; spawn = false; heavy_gates = true; };
-      "lenovo-21CB001PMX" = { heavy_jobs = 1; max_workers = 2; spawn = false; heavy_gates = false; };
+      "acer-swift" = { worker = "nspawn"; slots = 1; heavy_jobs = 1; spawn = true; heavy_gates = true; };
+      "msi-ms7758" = { worker = "nspawn"; slots = 2; heavy_jobs = 1; spawn = true; heavy_gates = true; };
+      "lenovo-21CB001PMX" = { worker = "host"; heavy_jobs = 1; max_workers = 2; spawn = false; heavy_gates = false; };
     };
-    description = "JSON object: per Herdr host label (matched case-insensitively) {heavy_jobs, max_workers, spawn, heavy_gates}. heavy_gates defaults true; false refuses heavy-gate assignments (review, implementation) on that host and leaves it light work only (finding 6: lenovo is the control plane).";
+    description = "JSON object: per Herdr host label (matched case-insensitively) {worker, heavy_jobs, max_workers | slots, spawn, heavy_gates}. worker is \"host\" (default: a host-level claude in the pane, limited by max_workers) or \"nspawn\" (only an agent-runtime claude-session instance, limited by slots, its maxConcurrentInstances; max_workers is rejected and heavy_jobs may not exceed slots). heavy_gates defaults true; false refuses heavy-gate assignments (review, implementation) on that host and leaves it light work only (finding 6: lenovo is the control plane).";
   };
   options.coordinator.kinds = lib.mkOption {
     type = lib.types.attrsOf (lib.types.submodule { options = {
@@ -64,6 +77,11 @@ in
       mechanical = { tier = "haiku"; model = "claude-haiku-5-5"; heavy = false; };
     };
     description = "Assignment kinds: the model tier each one runs on and whether it takes a heavy-job slot. coord:spawn takes the model from here, never from the caller.";
+  };
+  options.coordinator.sessionStartSeconds = lib.mkOption {
+    type = lib.types.ints.positive;
+    default = 60;
+    description = "How long coord:spawn waits for an nspawn session's pane to become an idle Claude agent before it records agent_not_ready.";
   };
   options.coordinator.hygieneContextTokens = lib.mkOption {
     type = lib.types.ints.positive;
@@ -87,7 +105,7 @@ in
   };
 
   config.tasks."coord:spawn" = {
-    description = "ACT: start one Claude Code worker in a new Herdr workspace on a host (machine, or this one), for an owner-labelled item (authorized_by), with the model of its kind; refused (and audited) when the label is missing or the host's capacity does not allow it; never on a host whose spawn is off.";
+    description = "ACT: start one Claude Code worker in a new Herdr workspace on a host (machine, or this one), for an owner-labelled item (authorized_by), with the model of its kind; on a worker = nspawn host only as an agent-runtime-session claude-session instance (no cwd; never a host claude); refused (and audited) when the label is missing or the host's capacity does not allow it; never on a host whose spawn is off.";
     after = [ "herdr:inventory@completed" "host:locks@completed" ];
     input = { machine = null; kind = null; task_ref = null; cwd = null; authorized_by = null; };
     exec = ''
@@ -103,9 +121,16 @@ in
       [ -n "$model" ] || fail 3 invalid_input "kind must be one of: ${lib.concatStringsSep ", " (lib.attrNames cfg.kinds)}" "$ctx"
       [[ "$ref" =~ ^#([1-9][0-9]*)$ ]] || fail 3 invalid_input "task_ref must look like #N" "$ctx"
       num="''${BASH_REMATCH[1]}"; name="$kind-$num"
-      # an absolute path only: herdr takes --cwd literally (no ~ expansion), on whichever host runs the pane
-      [[ "$cwd" =~ ^/[A-Za-z0-9_./-]*$ ]] && [[ "$cwd" != *..* ]] || fail 3 invalid_input "cwd must be an absolute path with safe characters" "$ctx"
+      worker=$(jq -r --arg h "$host" 'with_entries(.key |= ascii_downcase) | .[$h | ascii_downcase].worker // "host"' <<<${lib.escapeShellArg capJSON})
+      if [ "$worker" = nspawn ]; then
+        # the session template fixes the instance's repository and workdir; a cwd here would name a host path the worker never sees
+        [ -z "$cwd" ] || fail 3 invalid_input "cwd is not accepted on $host: its workers run in agent-runtime sessions whose template sets the working directory" "$ctx"
+      else # an absolute path only: herdr takes --cwd literally (no ~ expansion), on whichever host runs the pane
+        [[ "$cwd" =~ ^/[A-Za-z0-9_./-]*$ ]] && [[ "$cwd" != *..* ]] || fail 3 invalid_input "cwd must be an absolute path with safe characters" "$ctx"
+      fi
       [ -n "$auth" ] || fail 3 invalid_input "authorized_by is required: {\"issue_url\":\"https://github.com/OWNER/REPO/issues/N\",\"label\":\"<label the owner applied>\"}" "$ctx"
+      # the session's --task OWNER/REPO#N: the item the label authorizes (checked against task_ref below)
+      task=""; [[ "$(jq -r .issue_url <<<"$auth")" =~ ^https://github\.com/([A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_][A-Za-z0-9._-]*)/(issues|pull)/$num$ ]] && task="''${BASH_REMATCH[1]}#$num"
       inv=$(upstream "herdr:inventory"); locks=$(upstream "host:locks")
       [ "$inv" != null ] || fail 2 missing "herdr:inventory produced no output" "$ctx"
       audit="${cfg.stateDir}/audit.jsonl"; mkdir -p "${cfg.stateDir}"; touch "$audit"
@@ -131,7 +156,7 @@ in
       # failed, and interrupted when the task dies without one; herdr's own error code stays under error_code
       attempt() { "$attempted" && return 0; attempted=true
         jq -cn --arg a "$aid" --arg h "$host" --arg m "$m" --arg n "$name" --arg k "$kind" --arg mo "$model" --argjson hv "$heavy" --arg r "$ref" --arg c "$cwd" --arg at "$(now_iso)" --argjson auth "$auth" \
-          '{audit_id:$a, phase:"spawn", stage:"attempt", host:$h, machine:(if $m == "" then null else $m end), name:$n, kind:$k, model:$mo, heavy:$hv, task_ref:$r, cwd:$c, at:$at, authorized_by:$auth}' >> "$audit" \
+          --arg w "$worker" '{audit_id:$a, phase:"spawn", stage:"attempt", host:$h, machine:(if $m == "" then null else $m end), worker:$w, name:$n, kind:$k, model:$mo, heavy:$hv, task_ref:$r, cwd:(if $c == "" then null else $c end), at:$at, authorized_by:$auth}' >> "$audit" \
           || fail 2 audit_failed "could not write the spawn attempt; not spawning" "$ctx"
         outcome=interrupted; detail='{}'
         trap 'exec 9>>"$audit.lock"; flock -w 30 9 || true; jq -cn --arg a "$aid" --arg at "$(now_iso)" --arg o "$outcome" --argjson d "$detail" "{audit_id:\$a, phase:\"outcome\", at:\$at, outcome:\$o} + \$d" >> "$audit"' EXIT; }
@@ -139,7 +164,7 @@ in
       [ -z "$refusal" ] || refuse "$(jq -r .kind <<<"$refusal")" "$(jq -r .message <<<"$refusal")" "$(jq -r '.exit // 2' <<<"$refusal")"
       # a host configured with spawning off is refused on its configuration, before it has to be in the inventory (lenovo,
       # the control plane, is no saved machine on the worker it would be asked from)
-      [ "$(jq -r --arg h "$host" 'with_entries(.key |= ascii_downcase) | .[$h | ascii_downcase] | if . == null then "unset" else (.spawn == true | tostring) end' <<<${lib.escapeShellArg cfg.capacity})" != false ] \
+      [ "$(jq -r --arg h "$host" 'with_entries(.key |= ascii_downcase) | .[$h | ascii_downcase] | if . == null then "unset" else (.spawn == true | tostring) end' <<<${lib.escapeShellArg capJSON})" != false ] \
         || refuse capacity "no spawn on $host: spawning is off for this host (coordinator.capacity)"
       # the inventory is from before the lock: re-read this host's agents now, so two spawns never decide on one snapshot
       # (a spawn still in flight holds its slots through its attempt line, see capacity.jq)
@@ -160,9 +185,11 @@ in
       [ "$(jq -r --arg w "$want" '.spawn_ok[$w]' <<<"$hc")" = true ] || refuse capacity "no $want spawn on $host: $(jq -r '.reasons | join("; ")' <<<"$hc")"
       attempt
       exec 9>&-
-      # spawn: a workspace of its own (never a split of the coordinator's pane), then the agent in its root pane
+      # spawn: a workspace of its own (never a split of the coordinator's pane), then the agent in its root pane. An nspawn
+      # session gets an id unique to this attempt: agent-runtime-session rejoins a running id instead of starting another
+      if [ "$worker" = nspawn ]; then sid="$name-''${aid:0:6}"; wsargs=(--label "$sid" --no-focus); else sid=""; wsargs=(--cwd "$cwd" --label "$name" --no-focus); fi
       errf=$(mktemp); rc=0
-      ws=$(herdr_at ${t} "$m" workspace create --cwd "$cwd" --label "$name" --no-focus 2>"$errf") || rc=$?
+      ws=$(herdr_at ${t} "$m" workspace create "''${wsargs[@]}" 2>"$errf") || rc=$?
       pane=$(jq -r '.result.root_pane.pane_id // .result.root_pane // empty | strings' <<<"$ws" 2>/dev/null || true)
       wsid=$(jq -r '.result.workspace.workspace_id // empty | strings' <<<"$ws" 2>/dev/null || true)
       if [ "$rc" -ne 0 ] || [ -z "$pane" ]; then
@@ -172,17 +199,54 @@ in
         outcome=failed; detail=$(jq -cn --arg p "$pane" '{error:"workspace create returned an unsafe pane id", returned_pane:($p | .[0:80])}'); rm -f "$errf"
         fail 2 herdr_error "herdr workspace create on $host returned an unsafe pane id; not starting an agent there" "$ctx"; fi
       rc=0
-      # --dangerously-skip-permissions runs unattended only where user settings carry skipDangerousModePermissionPrompt and
-      # cwd's trust dialog was accepted (Home Manager pre-trusts $HOME only); elsewhere agent start says agent_not_ready
-      st=$(herdr_at 70 "$m" agent start "$name" --kind claude --pane "$pane" --timeout 60000 -- --dangerously-skip-permissions --model "$model" 2>"$errf") || rc=$?
-      code=$(jq -rs 'map(.error.code? // empty | strings) | first // empty' "$errf" 2>/dev/null | tr -cd 'A-Za-z0-9_' || true)
-      detail=$(jq -cn --arg p "$pane" --arg w "$wsid" '{agent_id:$p, workspace_id:(if $w == "" then null else $w end)}')
-      if [ "$rc" -ne 0 ]; then
-        if [ "$code" = agent_not_ready ]; then outcome=agent_not_ready; else outcome=failed; fi
-        detail=$(jq -c --arg c "$code" --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '. + {error_code:(if $c == "" then null else $c end), error:$e}' <<<"$detail"); rm -f "$errf"
-        fail 2 "$outcome" "herdr agent start failed on $host/$pane (exit $rc''${code:+, $code}; the workspace stays for inspection)" "$(jq -c --arg a "$aid" --arg p "$pane" '. + {audit_id:$a, agent_id:$p}' <<<"$ctx")"; fi
-      rm -f "$errf"
-      ses=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
+      detail=$(jq -cn --arg p "$pane" --arg w "$wsid" --arg s "$sid" --arg wk "$worker" --arg tk "$task" \
+        '{agent_id:$p, workspace_id:(if $w == "" then null else $w end), worker:$wk} + (if $wk == "nspawn" then {runtime_session:$s, session_task:$tk, model_applied:false} else {model_applied:true} end)')
+      if [ "$worker" = nspawn ]; then
+        # the only start on an nspawn host: agent-runtime-session in the pane, whose attach client runs as `claude` so Herdr
+        # tracks the pane as a Claude agent. No fallback to a host claude: a missing CLI or a refused session is `failed`.
+        # It takes no --model: the template's settings choose it (model_applied false). The marker is quoted so the echoed
+        # command line itself never matches it.
+        [[ "$task" =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_][A-Za-z0-9._-]*#[1-9][0-9]*$ ]] && [[ "$sid" =~ ^[a-z0-9]([a-z0-9-]{0,27}[a-z0-9])?$ ]] \
+          || { outcome=failed; detail=$(jq -c --arg s "$sid" --arg tk "$task" '. + {error:("no valid session id or task: " + $s + " " + $tk)}' <<<"$detail"); rm -f "$errf"
+               fail 2 failed "coord:spawn could not form an agent-runtime session id and task for $name; not starting" "$ctx"; }
+        herdr_at ${t} "$m" pane run "$pane" "agent-runtime-session run --template ${sessionTemplate} --task $task $sid; echo coord-spawn:\"ended\"" >/dev/null 2>"$errf" || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          outcome=failed; detail=$(jq -c --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '. + {error_code:"herdr_error", error:("pane run: " + $e)}' <<<"$detail"); rm -f "$errf"
+          fail 2 herdr_error "herdr pane run failed on $host/$pane (exit $rc; the workspace stays for inspection)" "$(jq -c --arg a "$aid" --arg p "$pane" '. + {audit_id:$a, agent_id:$p}' <<<"$ctx")"; fi
+        # ready when the pane is an idle Claude agent; over when the command line returned (CLI missing, session refused)
+        st=""; screen=""; ready=false; ended=false; deadline=$(( $(now_epoch) + ${toString cfg.sessionStartSeconds} ))
+        while :; do
+          al=$(herdr_at ${t} "$m" agent list 2>/dev/null) || al=""
+          st=$(jq -c --arg p "$pane" 'first(.result.agents[]? | select(.pane_id == $p and .agent == "claude")) // empty' <<<"$al" 2>/dev/null || true)
+          if [ -n "$st" ] && [ "$(jq -r '.agent_status // ""' <<<"$st")" = idle ]; then ready=true; break; fi
+          screen=$(herdr_at ${t} "$m" pane read "$pane" --lines 40 2>/dev/null) || screen=""
+          if grep -q 'coord-spawn:ended' <<<"$screen"; then ended=true; break; fi
+          [ "$(now_epoch)" -lt "$deadline" ] || break
+          sleep 1
+        done
+        rm -f "$errf"
+        if ! "$ready"; then
+          tailtxt=$(grep -v 'coord-spawn' <<<"$screen" | tail -n 6 | tr -d '\000-\011\013-\037' | tail -c 300) || tailtxt=""
+          if "$ended"; then
+            outcome=failed
+            if grep -qiE 'unknown command|command not found|no such file' <<<"$tailtxt"; then code=session_cli_missing; else code=session_refused; fi
+          else outcome=agent_not_ready; code=session_not_ready; fi
+          detail=$(jq -c --arg c "$code" --arg e "$tailtxt" --arg s "$(jq -r '.agent_status // "none"' <<<"''${st:-{\}}" 2>/dev/null)" '. + {error_code:$c, error:$e, agent_status:$s}' <<<"$detail")
+          fail 2 "$outcome" "agent-runtime session $sid did not start on $host/$pane ($code; the workspace stays for inspection; never a host claude on an nspawn host)" "$(jq -c --arg a "$aid" --arg p "$pane" '. + {audit_id:$a, agent_id:$p}' <<<"$ctx")"; fi
+        # the session id Herdr reports, if any (the instance drops the host's Herdr SessionStart hook: usually none)
+        ses=$(jq -r '.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
+      else
+        # --dangerously-skip-permissions runs unattended only where user settings carry skipDangerousModePermissionPrompt and
+        # cwd's trust dialog was accepted (Home Manager pre-trusts $HOME only); elsewhere agent start says agent_not_ready
+        st=$(herdr_at 70 "$m" agent start "$name" --kind claude --pane "$pane" --timeout 60000 -- --dangerously-skip-permissions --model "$model" 2>"$errf") || rc=$?
+        code=$(jq -rs 'map(.error.code? // empty | strings) | first // empty' "$errf" 2>/dev/null | tr -cd 'A-Za-z0-9_' || true)
+        if [ "$rc" -ne 0 ]; then
+          if [ "$code" = agent_not_ready ]; then outcome=agent_not_ready; else outcome=failed; fi
+          detail=$(jq -c --arg c "$code" --arg e "$(head -c 300 "$errf" | tr -d '\000-\037')" '. + {error_code:(if $c == "" then null else $c end), error:$e}' <<<"$detail"); rm -f "$errf"
+          fail 2 "$outcome" "herdr agent start failed on $host/$pane (exit $rc''${code:+, $code}; the workspace stays for inspection)" "$(jq -c --arg a "$aid" --arg p "$pane" '. + {audit_id:$a, agent_id:$p}' <<<"$ctx")"; fi
+        rm -f "$errf"
+        ses=$(jq -r '.result.agent.agent_session.value // empty' <<<"$st" 2>/dev/null || true)
+      fi
       outcome=started; detail=$(jq -c --arg s "$ses" --argjson auth "$auth" '. + {session_id:(if $s == "" then null else $s end), authorized_by:$auth}' <<<"$detail")
       emit "$(jq -cn --arg a "$aid" --arg h "$host" --arg m "$m" --arg n "$name" --arg k "$kind" --arg mo "$model" --argjson hv "$heavy" --arg r "$ref" --argjson d "$detail" \
         '{schema_version:1, task:"coord:spawn", audit_id:$a, host:$h, machine:(if $m == "" then null else $m end), name:$n, kind:$k, model:$mo, heavy:$hv, task_ref:$r, outcome:"started"} + $d + {error:null}')"

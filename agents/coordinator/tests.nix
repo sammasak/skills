@@ -245,14 +245,15 @@
         [ "$(hq worker-a '.fits.spawn | join(",")')" = "mechanical,planning" ] && ok || bad "a heavy_gates:false host fits only light kinds, no review or implementation ($(hq worker-a '.fits.spawn'))"
         [ "$(hq "$H" '.limits.heavy_gates')" = false ] && ok || bad "the control-plane host carries heavy_gates:false (lenovo-config)"
 
-        # (3d) the shipped default names msi-ms7758: an intermittent worker with one heavy job, two workers and no spawn
-        #      (sam.herdr.worker is off there); no capacity override, so this reads coordinator.capacity as shipped
+        # (3d) the shipped default names msi-ms7758: an intermittent nspawn worker host, one heavy job and two instance slots
+        #      (its maxConcurrentInstances); no capacity override, so this reads coordinator.capacity as shipped
         export FAKE_HERDR_MACHINES='[{"id":"m1","label":"msi-ms7758","target":"msi-ms7758","enabled":true}]' FAKE_HERDR_LIST_msi_ms7758="$TMP/worker-a.json" FAKE_SSH_OUT_msi_ms7758="$FX/locks/idle.tsv"
         devenv tasks run coord:capacity --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output > "$TMP/run.log" 2>&1
         OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F '"task":"coord:capacity"' | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
-        [ "$(hq msi-ms7758 '"\(.reachable) \(.limits.heavy_jobs) \(.limits.max_workers) \(.limits.spawn) \(.limits.heavy_gates)"')" = "true 1 2 false true" ] && ok || bad "msi-ms7758 ships heavy_jobs 1, max_workers 2, no spawn ($(hq msi-ms7758 .limits))"
-        [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "false false" ] && [ "$(hq msi-ms7758 '.fits.spawn | length')" = 0 ] && ok || bad "msi-ms7758 never spawns ($(hq msi-ms7758 '{spawn_ok,fits}' | jq -c .))"
+        [ "$(hq msi-ms7758 '"\(.reachable) \(.limits.worker) \(.limits.slots) \(.limits.heavy_jobs) \(.limits.max_workers) \(.limits.spawn) \(.limits.heavy_gates)"')" = "true nspawn 2 1 2 true true" ] && ok || bad "msi-ms7758 ships nspawn, 2 slots = 2 workers, heavy_jobs 1, spawn ($(hq msi-ms7758 .limits))"
+        [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "true false" ] && [ "$(hq msi-ms7758 '.fits.spawn | join(",")')" = "mechanical,planning" ] && ok || bad "msi-ms7758: a light session fits beside its busy worker ($(hq msi-ms7758 '{spawn_ok,fits}' | jq -c .))"
+        [ "$(hq msi-ms7758 '.workers.list[0].hygiene | "\(.context_tokens) \(.context_source)"')" = "null unknown: transcript inside the nspawn instance" ] && ok || bad "an nspawn worker's context is unknown, not a number ($(hq msi-ms7758 '.workers.list[0].hygiene'))"
         [ "$(hq msi-ms7758 '"\(.workers.total) \(.free.workers) \(.free.heavy_jobs)"')" = "1 1 0" ] && ok || bad "msi-ms7758: 1 busy worker of 2 leaves one worker and no heavy slot ($(hq msi-ms7758 '{workers:(.workers|del(.list)),free}' | jq -c .))"
         # the core claim: an IDLE msi worker with no heavy slot held fits the heavy kinds, and still never spawns
         jq '.result.agents[0].agent_status = "idle"' "$FX/herdr/remote-ok.json" > "$TMP/msi-idle.json"
@@ -260,7 +261,7 @@
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output > "$TMP/run.log" 2>&1
         OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F '"task":"coord:capacity"' | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'
         [ "$(hq msi-ms7758 '.fits.idle_worker | join(",")')" = "implementation,mechanical,planning,review" ] && ok || bad "idle msi worker fits all four kinds ($(hq msi-ms7758 '{fits,free}' | jq -c .))"
-        [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "false false" ] && ok || bad "idle msi still cannot spawn ($(hq msi-ms7758 .spawn_ok))"
+        [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "true true" ] && ok || bad "idle msi takes a heavy session in its second slot ($(hq msi-ms7758 .spawn_ok))"
         # outside its power window the host does not answer: no capacity, the reason says so (route elsewhere)
         FAKE_HERDR_EXIT_msi_ms7758=1 devenv tasks run coord:capacity --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
           --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output > "$TMP/run.log" 2>&1
@@ -349,6 +350,35 @@
         grep -q 'coord:handoff' <<<"$item" && grep -q 'herdr:message' <<<"$item" && grep -q 'agent_id' <<<"$item" && grep -qi 'never retry' <<<"$item" && grep -q 'agent_not_ready' <<<"$item" && ok || bad "ROLE.md item 13 covers the handoff after a spawn and what to do after a refusal"
         # (11) spawn lines do not disturb the other audit readers
         run coord:brief; [ "$CODE" -eq 0 ] && [ "$(jq -r '.handoffs | length' "$TMP/state/brief/latest.json")" = 1 ] && [ "$(jq -r .handoffs_error "$TMP/state/brief/latest.json")" = null ] && ok || bad "coord:brief reads an audit log with spawn lines ($CODE)"
+        # (12) an nspawn worker host: the worker starts only as an agent-runtime session in the pane, never a host claude;
+        #      a missing CLI or a refused session is an audited failure; workers cannot exceed the instance slots
+        CAP=$(jq -cn --arg h "$H" '{($h): {heavy_jobs:1, max_workers:3, spawn:false}, "box-n": {worker:"nspawn", slots:2, heavy_jobs:1, spawn:true}}')
+        jq '.result.agents = []' "$FX/herdr/remote-ok.json" > "$TMP/box-n.json"; : > "$FAKE_HERDR_STARTED"
+        export FAKE_HERDR_MACHINES='[{"id":"n1","label":"box-n","target":"box-n","enabled":true}]' FAKE_HERDR_LIST_box_n="$TMP/box-n.json" FAKE_SSH_OUT_box_n="$FX/locks/idle.tsv"
+        spawnn() { run coord:spawn --option coordinator.sessionStartSeconds:int 2 --input-json "{\"machine\":\"box-n\",\"kind\":\"$1\",\"task_ref\":\"#28\",$AUTH''${2:-}}"; }
+        : > "$FAKE_LOG"; FAKE_HERDR_WS=wQ spawnn mechanical
+        SID=$(jqr .runtime_session)
+        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.outcome) \(.worker) \(.agent_id) \(.model_applied) \(.session_task) \(.session_id)"')" = "started nspawn wQ:p1 false sammasak/skills#28 null" ] && [[ "$SID" =~ ^mechanical-28-[a-f0-9]{6}$ ]] && ok || bad "nspawn spawn started as a session ($CODE $OUT)"
+        grep -q "^herdr(machine=box-n) workspace create --label $SID --no-focus$" "$FAKE_LOG" \
+          && grep -qF "herdr(machine=box-n) pane run wQ:p1 agent-runtime-session run --template claude-session --task sammasak/skills#28 $SID; echo coord-spawn:\"ended\"" "$FAKE_LOG" \
+          && ! grep -qE 'agent start|dangerously-skip-permissions|--cwd' "$FAKE_LOG" && ok || bad "an nspawn host gets agent-runtime-session in the pane, no agent start, no host bypass claude ($(grep herdr "$FAKE_LOG"))"
+        [ "$(jq -sr --arg a "$(jqr .audit_id)" '[.[] | select(.audit_id == $a)] | "\(.[0].worker) \(.[0].cwd) \(.[1].outcome) \(.[1].runtime_session)"' "$A")" = "nspawn null started $SID" ] && ok || bad "nspawn spawn audited ($(tail -n 2 "$A"))"
+        n=$(lines); spawnn mechanical ',"cwd":"/home/lukas"'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && jqr .error.message | grep -q 'template sets the working directory' && [ "$(lines)" = "$n" ] && ok || bad "a cwd on an nspawn host is invalid_input, unaudited ($OUT)"
+        for c in missing:session_cli_missing:failed refused:session_refused:failed blocked:session_not_ready:agent_not_ready; do
+          : > "$FAKE_LOG"; FAKE_HERDR_SESSION_RUN="''${c%%:*}" FAKE_HERDR_WS="w''${c%%:*}" spawnn mechanical
+          want="''${c#*:}"; [ "$CODE" -ne 0 ] && [ "$(tail -n 1 "$A" | jq -r '"\(.error_code):\(.outcome)"')" = "$want" ] && ! grep -qE 'agent start|dangerously' "$FAKE_LOG" && ok || bad "session ''${c%%:*}: $want, never a host claude ($CODE $(tail -n 1 "$A"))"
+          rm -f "$FAKE_LOG".screen.*; done
+        # slots: wQ and the blocked session hold both; a third session is refused on the slots, and the started one has unknown context
+        : > "$FAKE_LOG"; FAKE_HERDR_WS=wW spawnn planning
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = capacity ] && jqr .error.message | grep -q '2 of 2 instance slots in use' && ! grep -q 'pane run' "$FAKE_LOG" && ok || bad "an nspawn host cannot exceed its slots ($CODE $OUT)"
+        run coord:capacity
+        [ "$(hq box-n '"\(.limits.max_workers) \(.workers.total)"')" = "2 2" ] && [ "$(hq box-n '.workers.list[] | select(.agent_id == "wQ:p1") | "\(.kind) \(.hygiene.context_tokens)"')" = "mechanical null" ] && ok || bad "box-n: two of two slots, the session's context unknown ($(hq box-n '{limits,workers:(.workers|del(.list))}' | jq -c .))"
+        # an nspawn entry with max_workers, or more heavy jobs than slots, is rejected at eval: no such host config exists
+        for bc in '{"worker":"nspawn","slots":1,"max_workers":3,"heavy_jobs":1,"spawn":true}' '{"worker":"nspawn","slots":1,"heavy_jobs":2,"spawn":true}'; do
+          CAP=$(jq -cn --argjson c "$bc" '{"box-n":$c}'); run coord:capacity
+          [ "$CODE" -ne 0 ] && grep -qE 'takes slots, not max_workers|exceeds slots' "$TMP/run.log" && ok || bad "bad nspawn capacity rejected at eval ($bc: $CODE)"; done
+        unset FAKE_HERDR_LIST_box_n FAKE_SSH_OUT_box_n
         summary
       '';
     };
