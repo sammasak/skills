@@ -17,13 +17,16 @@ fixed; skipping a step is a boundary violation.
    agent, not just its pane:
    `devenv tasks run coord:handoff --input-json '{"machine":"<label>","agent_id":"<id>","session_id":"<session>","task_ref":"#N","scope":"...","expected_evidence":"...","acceptance":"...","allowed_actions":["comment","deploy:none"],"owner_input":"..."}'`
    `allowed_actions` is required: a non-empty list (at most 8) of distinct
-   entries from `merge`, `close`, `label`, `comment`, `deploy:none`,
-   `deploy:<host>` (`deploy:none` excludes `deploy:<host>`). The task puts
-   it in canonical order (merge, close, label, comment, deploy:* by host),
-   so the same set always gives the same `handoff_id`, and renders it into
-   the brief as the `Allowed actions:` line, which also tells the agent that
-   reading, committing and opening a PR are always implied and that anything
-   else, deleting included, is not allowed. `scope`, `expected_evidence`,
+   entries from `merge`, `close`, `label`, `comment`, `cleanup:tmp`,
+   `deploy:none`, `deploy:<host>` (`deploy:none` excludes `deploy:<host>`).
+   The task puts it in canonical order (merge, close, label, comment,
+   cleanup:tmp, deploy:* by host), so the same set always gives the same
+   `handoff_id`, and renders it into the brief as the `Allowed actions:`
+   line, which also tells the agent that reading, committing and opening a
+   PR are always implied and that anything else, deleting included, is not
+   allowed — except that `cleanup:tmp` lets the agent delete only the
+   temporary review worktrees/clones, their cargo targets and `/tmp/devenv-*`
+   dirs the scope lists (skills#28). `scope`, `expected_evidence`,
    `acceptance` and `owner_input` take up to 4000 characters each.
    Show the owner the returned `text`, `handoff_id` and target (`host` is the
    machine label, or this hostname) verbatim. Nothing has been sent.

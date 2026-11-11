@@ -1345,6 +1345,14 @@ JSON
           run coord:handoff --input-json "$R77,\"review\":\"$bad_review\"}"
           [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "skills#77: review '$bad_review' refused"
         done
+        # skills#28: cleanup:tmp is a vocabulary entry, accepted and sorted after comment and before deploy:*, and its footer
+        # turns the deletion refusal into a scoped allowance for the temp paths the scope lists.
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#28","scope":"sweep /tmp review clones","expected_evidence":"e","acceptance":"a","allowed_actions":["deploy:acer-swift","cleanup:tmp","comment"]}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr '.allowed_actions | join(",")')" = "comment,cleanup:tmp,deploy:acer-swift" ] && ok || bad "skills#28: cleanup:tmp accepted in canonical order ($(jqr '.allowed_actions'))"
+        jqr .text | grep -q '^Allowed actions: comment, cleanup:tmp, deploy:acer-swift\. Reading, committing and opening a PR are always implied; anything else is not allowed, except that deleting is allowed only for the temporary review worktrees, clones, their cargo targets and /tmp/devenv-\* dirs this scope lists\.$' && ok || bad "skills#28: cleanup:tmp footer allows scoped deletion ($(jqr .text | grep '^Allowed actions:'))"
+        # skills#28: without cleanup:tmp the footer still forbids all deletion and never carries the scoped-deletion clause
+        run coord:handoff --input-json '{"agent_id":"wF:p1","task_ref":"#28","scope":"s","expected_evidence":"e","acceptance":"a","allowed_actions":["comment"]}'
+        jqr .text | grep -q '^Allowed actions: comment\. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed\.$' && ! jqr .text | grep -q 'deleting is allowed only for' && ok || bad "skills#28: no cleanup:tmp => footer still forbids all deletion"
         summary
       '';
     };

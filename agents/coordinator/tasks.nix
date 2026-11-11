@@ -250,13 +250,15 @@ in
         for v in "$scope" "$ev" "$acc" "$need"; do [ "''${#v}" -le 4000 ] || fail 3 invalid_input "a field exceeds 4000 characters" "$ctx"; done
         # allowed_actions: a non-empty list (at most 8) of distinct actions the agent may take beyond reading, committing and
         # opening a PR, which are always implied; the owner's "do not merge, deploy or delete" is now spelled per handoff.
-        # deploy:none excludes deploy:<host>. Canonical order (merge, close, label, comment, deploy:* by host) so the same
-        # set always renders and hashes the same. \z, not $: in jq's regexes $ also matches before a trailing newline.
+        # cleanup:tmp authorizes deletion, but only of the temporary review worktrees/clones, their cargo targets and
+        # /tmp/devenv-* dirs the scope lists (skills#28); without it the footer still forbids all deletion.
+        # deploy:none excludes deploy:<host>. Canonical order (merge, close, label, comment, cleanup:tmp, deploy:* by host) so
+        # the same set always renders and hashes the same. \z, not $: in jq's regexes $ also matches before a trailing newline.
         actions=$(jq -c 'if type == "array" and length > 0 and length <= 8
-            and all(.[]; type == "string" and test("^(merge|close|label|comment|deploy:none|deploy:[A-Za-z0-9_][A-Za-z0-9_.-]{0,62})\\z") and ((ascii_downcase != "deploy:none") or (. == "deploy:none")))
+            and all(.[]; type == "string" and test("^(merge|close|label|comment|cleanup:tmp|deploy:none|deploy:[A-Za-z0-9_][A-Za-z0-9_.-]{0,62})\\z") and ((ascii_downcase != "deploy:none") or (. == "deploy:none")))
             and (length == (unique | length)) and ((any(.[]; . == "deploy:none") | not) or ((map(select(startswith("deploy:"))) | length) == 1))
-            then sort_by([(if . == "merge" then 0 elif . == "close" then 1 elif . == "label" then 2 elif . == "comment" then 3 else 4 end), .]) else empty end' <<<"$actions")
-        [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
+            then sort_by([(if . == "merge" then 0 elif . == "close" then 1 elif . == "label" then 2 elif . == "comment" then 3 elif . == "cleanup:tmp" then 4 else 5 end), .]) else empty end' <<<"$actions")
+        [ -n "$actions" ] || fail 3 invalid_input "allowed_actions must be a non-empty list (at most 8) of distinct entries from: merge, close, label, comment, cleanup:tmp, deploy:none, deploy:<host> (deploy:none excludes deploy:<host>)" "$ctx"
         # #70: author-merge is enforced at herdr:message send by the authorship of the PR being merged, not the authorizing
         # item (implement, review and merge handoffs share the issue the owner labelled). The draft is composed freely (as a
         # review draft is); the send is the gate: it resolves the implementer from the PR the merge handoff names -- pr_url
@@ -267,9 +269,17 @@ in
           jq -e 'index("merge")' <<<"$actions" >/dev/null || fail 3 invalid_input "pr_url is only for a merge handoff (allowed_actions must include merge)" "$ctx"
         fi
         actions_line=$(jq -r 'join(", ")' <<<"$actions")
+        # The deletion clause of the footer is the only part cleanup:tmp changes (skills#28): with it, deleting is allowed, but
+        # only for the temp paths the scope lists; without it the clause is byte-for-byte the long-standing "deleting included"
+        # refusal, so a handoff that does not grant cleanup:tmp renders and hashes exactly as before.
+        if jq -e 'any(.[]; . == "cleanup:tmp")' <<<"$actions" >/dev/null; then
+          del_clause='anything else is not allowed, except that deleting is allowed only for the temporary review worktrees, clones, their cargo targets and /tmp/devenv-* dirs this scope lists'
+        else
+          del_clause='anything else, deleting included, is not allowed'
+        fi
         at=$(now_iso)
-        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed.\n%s%s%s\nReply in this pane when done, naming the evidence above.\n' \
-          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$([ -n "$pr" ] && printf '\nMerge target: %s\n' "$pr")" "$([ -n "$review" ] && printf '\nReview of: %s at head %s\n' "''${review%@*}" "''${review##*@}")" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
+        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; %s.\n%s%s%s\nReply in this pane when done, naming the evidence above.\n' \
+          "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$del_clause" "$([ -n "$pr" ] && printf '\nMerge target: %s\n' "$pr")" "$([ -n "$review" ] && printf '\nReview of: %s at head %s\n' "''${review%@*}" "''${review##*@}")" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
         id=$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
         rec=$(jq -cn --arg id "$id" --arg at "$at" --arg h "$host" --arg m "$m" --arg a "$agent" --arg ses "$ses" --arg r "$ref" --arg t "$text" --arg pr "$pr" --arg need "$need" --argjson acts "$actions" --arg rv "$review" \

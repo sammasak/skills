@@ -36,10 +36,12 @@ tail -n 5 ~/.local/state/coordinator/audit.jsonl    # every herdr:message, coord
 
 To hand work over: the coordinator drafts (`coord:handoff`) with the
 `allowed_actions` the agent may take on that handoff (`merge`, `close`,
-`label`, `comment`, `deploy:none`, `deploy:<host>`; the brief shows them as
-its `Allowed actions:` line, which also says that reading, committing and
-opening a PR are implied and everything else, deleting included, stays
-forbidden), it sends, authorized by the label you applied on the GitHub
+`label`, `comment`, `cleanup:tmp`, `deploy:none`, `deploy:<host>`; the brief
+shows them as its `Allowed actions:` line, which also says that reading,
+committing and opening a PR are implied and everything else, deleting
+included, stays forbidden — except that `cleanup:tmp` allows deleting only
+the temporary review worktrees/clones, their cargo targets and `/tmp/devenv-*`
+dirs the scope lists, skills#28), it sends, authorized by the label you applied on the GitHub
 item (the coordinator takes the issue URL and label from `gh:work`, never
 invents one, and does not ask you to confirm each draft; ROLE.md, Autonomy), (`herdr:message` with
 `authorized_by`, which Claude Code prompts for; it reads that issue's labels

@@ -125,9 +125,12 @@ END autonomy
    refuses a Coordinator pane, listed, running the task, or a past sender):
    draft with `coord:handoff`, naming in
    `allowed_actions` what the agent may do on this handoff (`merge`, `close`,
-   `label`, `comment`, `deploy:none` or `deploy:<host>`; the brief renders
-   it as its `Allowed actions:` line, which says that reading, committing
-   and opening a PR are implied and nothing else is permitted). A `merge`
+   `label`, `comment`, `cleanup:tmp`, `deploy:none` or `deploy:<host>`; the
+   brief renders it as its `Allowed actions:` line, which says that reading,
+   committing and opening a PR are implied and nothing else is permitted —
+   except that `cleanup:tmp` lets the agent delete only the temporary review
+   worktrees/clones, their cargo targets and `/tmp/devenv-*` dirs the scope
+   lists (skills#28); without it the line still forbids all deletion). A `merge`
    handoff must also carry `pr_url`, the `.../pull/N` it merges: the send
    resolves that PR's implementer from the audit and refuses it (author_merge).
    Then call
