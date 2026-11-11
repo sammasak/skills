@@ -20,6 +20,7 @@
         echo "herdr $*" >> "''${FAKE_LOG:-/dev/null}"
         # saved machines: FAKE_HERDR_MACHINES is the `machine list --json` answer; `--machine <L>` selects FAKE_HERDR_LIST_<L>
         # (and FAKE_HERDR_EXIT_<L>) for that machine, like herdr forwarding to another server; `*down*` labels are unreachable
+        m=""
         if [ "$1" = --machine ]; then
           m="$2"; shift 2; echo "herdr(machine=$m) $*" >> "''${FAKE_LOG:-/dev/null}"
           # like herdr 0.9.5: a connection failure is exit 1 with one stderr line, an unknown machine is exit 2
@@ -41,8 +42,8 @@
         agent_info() { printf '{"id":"cli:agent:%s","result":{"agent":{"pane_id":"%s","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"%s"},"agent_status":"%s","state_change_seq":%s,"revision":3},"type":"agent_info"}}\n' "$1" "$2" "''${FAKE_HERDR_SESSION:-sess-1}" "$3" "$4"; }
         case "$1 $2" in
           # FAKE_HERDR_STARTED=<file>: agents a successful `agent start` registered (one JSON object per line) join the list,
-          # like a real server listing the new agent
-          "agent list") if [ -s "''${FAKE_HERDR_STARTED:-/nonexistent}" ]; then jq --slurpfile s "$FAKE_HERDR_STARTED" '.result.agents += $s' "''${FAKE_HERDR_LIST:?}"; else cat "''${FAKE_HERDR_LIST:?}"; fi ;;
+          # like a real server listing the new agent; one started on a saved machine is listed there only (_machine)
+          "agent list") if [ -s "''${FAKE_HERDR_STARTED:-/nonexistent}" ]; then jq --slurpfile s "$FAKE_HERDR_STARTED" --arg m "$m" '.result.agents += [$s[] | select(._machine == null or ._machine == $m) | del(._machine)]' "''${FAKE_HERDR_LIST:?}"; else cat "''${FAKE_HERDR_LIST:?}"; fi ;;
           "agent read") # like herdr 0.9.5: <TARGET> comes first; an option or `--` in its place is "unknown option"
             case "$3" in -*|"") echo "unknown option: ''${3:-<none>}" >&2; exit 2 ;; esac
             # FAKE_HERDR_READ_<agent id, non-alphanumerics as _> is that agent's pane, else FAKE_HERDR_READ
@@ -64,26 +65,16 @@
             agent_info wait "$3" "$s" 9 ;;
           # coord:spawn: FAKE_HERDR_WS=<id> names the created workspace (root pane <id>:p1); FAKE_HERDR_START=ok|not_ready|fail,
           # FAKE_HERDR_START_SLEEP delays it
+          # `workspace list`: the workspaces an nspawn start hook opened on this machine (FAKE_HERDR_WSFILE, see the fake ssh)
+          "workspace list") jq -sc --arg m "$m" '{id:"cli:workspace:list", result:{type:"workspace_list", workspaces:[.[] | select(._machine == $m) | del(._machine)]}}' "''${FAKE_HERDR_WSFILE:-/dev/null}" ;;
           "workspace create") w="''${FAKE_HERDR_WS:-wN}"; printf '{"id":"cli:workspace:create","result":{"type":"workspace_created","workspace":{"workspace_id":"%s"},"tab":{"tab_id":"%s:t1"},"root_pane":{"pane_id":"%s:p1"}}}\n' "$w" "$w" "$w" ;;
           "agent start") [ -n "''${FAKE_HERDR_START_SLEEP:-}" ] && sleep "$FAKE_HERDR_START_SLEEP"
             case "''${FAKE_HERDR_START:-ok}" in
-              ok) [ -n "''${FAKE_HERDR_STARTED:-}" ] && jq -cn --arg p "$7" --arg s "''${FAKE_HERDR_SESSION:-sess-new}" '{pane_id:$p, agent:"claude", agent_status:"idle", agent_session:{agent:"claude", kind:"id", value:$s}, cwd:"/home/lukas", terminal_title_stripped:"Claude Code"}' >> "$FAKE_HERDR_STARTED"
+              ok) [ -n "''${FAKE_HERDR_STARTED:-}" ] && jq -cn --arg p "$7" --arg s "''${FAKE_HERDR_SESSION:-sess-new}" --arg m "$m" '{pane_id:$p, agent:"claude", agent_status:"idle", agent_session:{agent:"claude", kind:"id", value:$s}, cwd:"/home/lukas", terminal_title_stripped:"Claude Code"} + (if $m == "" then {} else {_machine:$m} end)' >> "$FAKE_HERDR_STARTED"
                 printf '{"id":"cli:agent:start","result":{"type":"agent_started","agent":{"name":"%s","pane_id":"%s","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"%s"},"agent_status":"idle"}}}\n' "$3" "$7" "''${FAKE_HERDR_SESSION:-sess-new}" ;;
               not_ready) echo '{"error":{"code":"agent_not_ready","message":"agent blocked during startup"}}' >&2; exit 1 ;;
               *) echo '{"error":{"code":"pane_not_available","message":"pane is not at a shell prompt"}}' >&2; exit 1 ;;
             esac ;;
-          # an nspawn worker: `pane run` types agent-runtime-session into the pane. FAKE_HERDR_SESSION_RUN=ok (the pane becomes
-          # an idle claude agent, no session id: the instance has no Herdr hook) | blocked | missing (the shell has no such
-          # command) | refused (the CLI dies); `pane read` shows what the pane printed, ending in the coord-spawn marker
-          "pane run") scr="''${FAKE_LOG:-/tmp/fake}.screen.''${3//[^A-Za-z0-9]/_}"
-            case "''${FAKE_HERDR_SESSION_RUN:-ok}" in
-              ok|blocked) st=idle; [ "''${FAKE_HERDR_SESSION_RUN:-ok}" = blocked ] && st=blocked
-                [ -n "''${FAKE_HERDR_STARTED:-}" ] && jq -cn --arg p "$3" --arg s "$st" '{pane_id:$p, agent:"claude", agent_status:$s, cwd:"/home/lukas"}' >> "$FAKE_HERDR_STARTED" ;;
-              missing) printf '%s\n' "fish: Unknown command: agent-runtime-session" "coord-spawn:ended" > "$scr" ;;
-              refused) printf '%s\n' "agent-runtime-session: the session was not started" "coord-spawn:ended" > "$scr" ;;
-            esac
-            printf '{"id":"cli:pane:run","result":{"type":"ok"}}\n' ;;
-          "pane read") cat "''${FAKE_LOG:-/tmp/fake}.screen.''${3//[^A-Za-z0-9]/_}" 2>/dev/null || true ;;
           *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
         esac
         exit "''${FAKE_HERDR_EXIT:-0}"
@@ -154,12 +145,35 @@
         if [ -r "$f" ]; then case "$kind:$state" in prs:open) jq --argjson n "$limit" 'map(select(.state == "OPEN")) | .[:$n]' "$f" ;; prs:merged) jq --argjson n "$limit" 'map(select(.state == "MERGED")) | .[:$n]' "$f" ;; *) jq --argjson n "$limit" '.[:$n]' "$f" ;; esac; else echo "[]"; fi
       '')
       (pkgs.writeShellScriptBin "ssh" ''
-        # Fake ssh for host:locks: logs the call; a `*down*` target fails like an unreachable host (exit 255);
-        # otherwise prints FAKE_SSH_OUT_<target> (a file) or FAKE_SSH_OUT; stdin (the observer script) is ignored.
+        # Fake ssh: logs the call; a `*down*` target or one named in FAKE_SSH_DOWN (space-separated) fails like an
+        # unreachable host (exit 255). `systemctl is-active|start|stop <unit>…` reads and writes unit states under
+        # FAKE_UNITS (<target>.<unit>, default inactive; FAKE_SSH_START_EXIT fails a start); anything else (the host:locks observer on stdin, ignored) prints
+        # FAKE_SSH_OUT_<target> (a file) or FAKE_SSH_OUT.
         echo "ssh $*" >> "''${FAKE_LOG:-/dev/null}"
-        target=""; for a in "$@"; do case "$a" in -*|sh|-s|BatchMode=yes|ConnectTimeout=5) ;; *) [ -z "$target" ] && target="$a" ;; esac; done
+        while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -*) shift ;; *) break ;; esac; done
+        target="''${1:-}"; shift || true
         case "$target" in *down*) echo "ssh: connect to host $target port 22: Connection refused" >&2; exit 255 ;; esac
-        v="FAKE_SSH_OUT_$(printf '%s' "$target" | tr -c 'A-Za-z0-9_' '_')"; f="''${!v:-''${FAKE_SSH_OUT:-}}"
+        case " ''${FAKE_SSH_DOWN:-} " in *" $target "*) echo "ssh: connect to host $target port 22: No route to host" >&2; exit 255 ;; esac
+        key=$(printf '%s' "$target" | tr -c 'A-Za-z0-9_' '_')
+        case "''${1:-}" in
+          systemctl) verb="$2"; shift 2; rc=0
+            for u in "$@"; do f="''${FAKE_UNITS:-/nonexistent}/$target.$u"
+              case "$verb" in
+                is-active) s=$(cat "$f" 2>/dev/null || echo inactive); echo "$s"; [ "$s" = active ] || rc=3 ;;
+                # the host's start hook: a Herdr workspace labelled after the container (id W<target>-<container>) whose
+                # claude (FAKE_HOOK_STATE: idle, blocked, or none for no agent) lands in FAKE_HERDR_STARTED; stop closes both
+                start) [ -n "''${FAKE_SSH_START_EXIT:-}" ] && { echo "Job for $u failed." >&2; echo failed > "$f"; exit "$FAKE_SSH_START_EXIT"; }; echo active > "$f"
+                  c="''${u#container@}"; w="W$key-$c"
+                  if [ -n "''${FAKE_HERDR_WSFILE:-}" ]; then jq -cn --arg m "$target" --arg l "$c" --arg w "$w" '{_machine:$m, label:$l, workspace_id:$w}' >> "$FAKE_HERDR_WSFILE"
+                    [ "''${FAKE_HOOK_STATE:-idle}" = none ] || jq -cn --arg m "$target" --arg w "$w" --arg s "''${FAKE_HOOK_STATE:-idle}" '{_machine:$m, pane_id:($w + ":p1"), workspace_id:$w, agent:"claude", agent_status:$s, agent_session:{agent:"claude", kind:"id", value:"sess-box"}, cwd:"/home/lukas"}' >> "''${FAKE_HERDR_STARTED:?}"; fi ;;
+                stop) echo inactive > "$f"; c="''${u#container@}"; w="W$key-$c"
+                  if [ -n "''${FAKE_HERDR_WSFILE:-}" ]; then
+                    jq -c --arg w "$w" 'select(.workspace_id != $w)' "$FAKE_HERDR_WSFILE" > "$FAKE_HERDR_WSFILE.tmp"; mv "$FAKE_HERDR_WSFILE.tmp" "$FAKE_HERDR_WSFILE"
+                    jq -c --arg w "$w" 'select(.workspace_id != $w)' "''${FAKE_HERDR_STARTED:?}" > "$FAKE_HERDR_STARTED.tmp"; mv "$FAKE_HERDR_STARTED.tmp" "$FAKE_HERDR_STARTED"; fi ;;
+              esac; done
+            exit "$rc" ;;
+        esac
+        v="FAKE_SSH_OUT_$key"; f="''${!v:-''${FAKE_SSH_OUT:-}}"
         [ -n "$f" ] && cat "$f"; exit 0
       '')
       (pkgs.writeShellScriptBin "host-locks" ''

@@ -60,7 +60,7 @@ Your commands are:
   list [--json]`, `machine status [<label>] [--json]`, `agent list`, `pane
   list`, `agent get|read|wait <target> …`, and `herdr --skill`.
 
-`tasks.act` entries (`herdr:message`, `gh:label`, `gh:comment`, `gh:issue`) and `herdr
+`tasks.act` entries (`herdr:message`, `coord:spawn`, `coord:reap`, `gh:label`, `gh:comment`, `gh:issue`) and `herdr
 agent prompt` change state outside this conversation: `herdr:message` sends
 only what the owner's label authorizes (the task checks it), and `gh:label`,
 `gh:comment`, `gh:issue` and `herdr agent prompt` follow ROLE.md and the Autonomy rules

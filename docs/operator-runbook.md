@@ -67,11 +67,12 @@ heavy-job slots left and which assignment kinds fit (planning and review on
 opus, implementation on sonnet, mechanical checks on haiku; review and
 implementation take a heavy-job slot). The limits are `coordinator.capacity`
 in `agents/coordinator/spawn.nix`. Each host has a `worker` kind: acer-swift
-and msi-ms7758 are `nspawn` (owner decision: workers there run only inside
-agent-runtime instances, never as a host-level bypass claude), with `slots`
-equal to their `maxConcurrentInstances` (acer 1, msi 2) as the worker limit
-and one heavy job each; `max_workers` on an nspawn host, or more heavy jobs
-than slots, fails evaluation. msi is up only Mon-Fri 09:00-21:00 local, so
+and msi-ms7758 are `nspawn`: they are no workers themselves, their workers
+are the ephemeral containers listed as `slots` (acer `["worker-1"]`, msi
+`["worker-1" "worker-2"]`, nixos-config `docs/nspawn-workers.md`), one heavy
+job each; a slot is in use while `container@<slot>` is active (`ssh <host>
+systemctl is-active`). `max_workers` on an nspawn host, `slots` on a host
+host, or more heavy jobs than slots, fails evaluation. msi is up only Mon-Fri 09:00-21:00 local, so
 "unreachable" outside that window is expected: route to another host, and
 hand no heavy work to msi shortly before its 21:00 shutdown. lenovo is
 `host`, one heavy job and no spawning (the control plane; see
@@ -89,18 +90,23 @@ outcome is one of `started`, `refused` (with its reason), `agent_not_ready`,
 died before writing one. A request refused earlier (`invalid_input`, a
 missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
 has no assignment until the coordinator hands it one (`coord:handoff`,
-`herdr:message`). On an `nspawn` host the start is `herdr pane run <pane>
-"agent-runtime-session run --template claude-session --task OWNER/REPO#N
-<kind>-<N>-<audit prefix>"`; the attach client runs as `claude`, so the pane
-becomes a Claude agent and `herdr:message` reaches it as any other. Started
-means an idle Claude agent in that pane within `sessionStartSeconds` (60);
-the command line returning first is `failed` (`error_code`
-`session_cli_missing` or `session_refused`), a pane that never turns idle is
-`agent_not_ready` (`session_not_ready`). There is no fallback to a host
-claude. The session takes no `--model` or `cwd` (`model_applied: false`), its
-transcript is inside the instance so `coord:capacity` reports its
-`context_tokens` as null, and it cannot push: its work leaves as the export
-bundle's patch. On a `host` host it is `herdr agent start <kind>-<N> --kind
+`herdr:message`). On an `nspawn` host (`machine` = the host, no `cwd`) the
+task runs `ssh <host> systemctl start container@<slot>` for the first free
+slot; the host's hook opens a Herdr workspace labelled `<slot>` with claude
+running inside the container, and started means that claude is idle within
+`workerBootSeconds` (120). A failed unit start (`unit_start_failed`), no
+claude in that workspace (`worker_not_found`) or one that never turns idle
+(`agent_not_ready`) stops the unit again (`cleanup` in the outcome). There
+is no fallback to a host claude. The worker runs its default model
+(`model_applied: false`), its transcript is inside the container so
+`coord:capacity` reports `context_tokens` null, and its home is empty: the
+handoff tells it to `git clone` the repo, and its work leaves only by `git
+push`. `coord:reap` (`machine` + `slot`, or the spawn's `audit_id`;
+`force: true` for a working or blocked worker) runs `systemctl stop
+container@<slot>`, which closes the workspace and wipes the worker, and
+writes a `phase: reap` audit line; `coord:capacity` lists idle workers
+whose handoff was delivered since their start under `reapable`. Manually:
+`ssh acer-swift systemctl stop container@worker-1`. On a `host` host it isOn a `host` host it is `herdr agent start <kind>-<N> --kind
 claude -- --dangerously-skip-permissions --model <the kind's model>`, and
 `--dangerously-skip-permissions` starts unattended only where
 user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code

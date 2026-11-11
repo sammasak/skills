@@ -29,6 +29,7 @@ tasks:
   act:
     - herdr:message
     - coord:spawn
+    - coord:reap
     - gh:label
     - gh:comment
     - gh:issue
@@ -199,8 +200,8 @@ END autonomy
 13. Workers and tiers: `coord:capacity` says, per host, how many workers
    there are (idle, busy, unknown, still spawning), the worker and heavy-job
    slots left (`coordinator.capacity`: acer-swift and msi-ms7758 are
-   `worker: nspawn` hosts whose workers are agent-runtime sessions, one and two
-   instance slots, one heavy job each; lenovo one heavy job and no spawning),
+   `worker: nspawn` hosts whose workers are ephemeral containers, one and two
+   slots, one heavy job each; lenovo one heavy job and no spawning),
    whether a light or heavy
    spawn is allowed, which assignment kinds fit (`planning` and `review` on
    opus, `implementation` on sonnet, `mechanical` on haiku; review and
@@ -216,24 +217,32 @@ END autonomy
    issue URL and the owner's label, the same object you will give
    `herdr:message`) and, only on a `worker: host` host, an absolute `cwd` (a
    folder whose trust dialog is pre-accepted there). On a `worker: nspawn`
-   host (acer-swift, msi-ms7758) give no `cwd`: the worker is
-   `agent-runtime-session run --template claude-session --task OWNER/REPO#N`
-   in the new pane, never a host claude; the template fixes its repository
-   and model (`model_applied: false`), its context size is unknown (`null`),
-   and it cannot push (its work leaves as the export bundle's patch). A host
-   worker gets the kind's model, never one you pick. A `started` spawn has
-   no assignment yet: draft with `coord:handoff` for the returned `agent_id`
-   (and `session_id`) and send it with `herdr:message`, like any other
+   host (acer-swift, msi-ms7758) give `machine` and no `cwd`: the task starts
+   the first free container (`slot`, e.g. `worker-1`) and returns the idle
+   claude its host opened in the Herdr workspace of that name on `machine`;
+   never a host claude. It starts with an empty home and the worker's default
+   model (`model_applied: false`), and its context size is unknown (`null`).
+   A host worker gets the kind's model, never one you pick. A `started`
+   spawn has no assignment yet: draft with `coord:handoff` for the returned
+   `machine` and `agent_id` (and `session_id`); for an nspawn worker the
+   scope starts with `git clone` of the repo it works in (it pushes its
+   branch from inside, nothing else survives). Send it with `herdr:message`,
+   like any other
    handoff. On `refused` read `error.kind`: `capacity` means no slot (the
    item waits for a free worker), `authorization_missing` means the label is
    missing, someone other than the owner applied it, or it is on another
    item; `host_unreachable` or `host_unknown` names the host. On
-   `agent_not_ready` or `failed` the workspace stays for the owner to
-   inspect. In every case record it per the Autonomy rule (one `gh:comment`
+   `agent_not_ready` or `failed` a host workspace stays for the owner to
+   inspect; an nspawn unit was stopped again (`cleanup`). In every case record it per the Autonomy rule (one `gh:comment`
    citing the `audit_id`, `gh:label` `blocked` when the owner must act) and
    never retry the spawn, on this host or another, without reading
    `coord:capacity` again. Send `/clear` or `/compact` only under the
-   Autonomy rule above.
+   Autonomy rule above. When an nspawn worker's handoff is complete (its
+   evidence read, the worker idle or done, listed under the host's
+   `reapable`), end it with `coord:reap` (`machine` and `slot`, or the
+   spawn's `audit_id`): it stops the unit and everything in it is gone. A
+   working or blocked worker is refused (`busy`); `force: true` only when
+   the owner says so.
 
 ## Prohibited
 
