@@ -25,7 +25,7 @@ $inv[0] as $inv | $audit[0] as $audit | $ctx[0] as $ctx | $ctxerr[0] as $ctxerr
           last_handoff:(if $w == null then null else $w | {audit_id, handoff_id, task_ref, repo, at} end),
           handoff_in_flight:($w != null and ($w.sending or ($s | busy))),
           available:(($s | idle) and $a.unavailable == null and ($w.sending // false | not)),
-          hygiene:(($ctx["\($h)/\($a.name)"] // null) as $tok
+          hygiene:(($ctx["\($h | ascii_downcase)/\($a.name)"] // null) as $tok
                    | ($tok != null and $tok >= $threshold) as $full
                    | (($next != null and $w != null and ($next.repo != $w.repo or $next.task_ref != $w.task_ref))) as $indep
                    | {context_tokens:$tok} + (

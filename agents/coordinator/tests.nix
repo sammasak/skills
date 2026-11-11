@@ -228,6 +228,13 @@
         [ "$(env_ issue-a .hygiene.context_tokens)" = null ] && [ "$(jqr '.failed_sources | map(.source) | join(",")')" = context:msi-ms7758/issue-a ] && [ "$(jqr .partial)" = true ] && ok || bad "no usage in the tail: null, listed ($(jqr .failed_sources))"
         run --option coordinator.environmentSsh:string '{"msi-ms7758":"msi-down"}'
         [ "$(env_ issue-a .hygiene.context_tokens)" = null ] && jqr '.failed_sources[0].error' | grep -q 'exit 255' && ok || bad "ssh down: null, listed ($(jqr .failed_sources))"
+        export FAKE_SSH_OUT_issue_a_msi="$TMP/issue-a.jsonl"
+        run --option coordinator.environmentSsh:string '{"MSI-MS7758":"msi"}'
+        [ "$(env_ issue-a .hygiene.context_tokens)" = 20000 ] && ok || bad "environmentSsh host label matched case-insensitively ($(env_ issue-a .hygiene))"
+        run --option coordinator.environmentSsh:string '{}'
+        [ "$(env_ issue-a .hygiene.context_tokens)" = null ] && jqr '.failed_sources[0].error' | grep -q 'no safe ssh name' && ok || bad "no ssh suffix for the host: null, listed ($(jqr .failed_sources))"
+        run --option coordinator.environmentSsh:string '{"msi-ms7758":"-msi"}'
+        [ "$CODE" -ne 0 ] && grep -q 'coordinator.environmentSsh' "$TMP/run.log" && ok || bad "bad environmentSsh suffix rejected at eval ($CODE)"
         export FAKE_SSH_OUT_issue_a_msi="$TMP/issue-a.jsonl"; run
         # (3) an environment at its usage limit is not idle, and the reason names it
         FAKE_HERDR_READ_wF_p1="$FX/herdr/read-fable-limit.txt" run

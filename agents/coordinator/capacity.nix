@@ -8,7 +8,7 @@ let
   cfg = config.coordinator;
   hosts = builtins.fromJSON cfg.environmentHosts;
   suffixes = builtins.fromJSON cfg.environmentSsh;
-  okHost = h: builtins.isString h && builtins.match "[A-Za-z0-9_.-]+" h != null;
+  okHost = h: builtins.isString h && builtins.match "[A-Za-z0-9_][A-Za-z0-9_.-]*" h != null;
   suffixJSON = lib.throwIfNot (lib.isAttrs suffixes && lib.all okHost (lib.attrValues suffixes))
     "coordinator.environmentSsh: a JSON object of host label to ssh domain suffix" (builtins.toJSON suffixes);
   hostsJSON = lib.throwIfNot (builtins.isList hosts && hosts != [ ] && lib.all okHost hosts)
@@ -51,16 +51,16 @@ in
       # transcript (the environment's own home, reached as <name>.<suffix>); a failed read stays null and is listed
       sfx=${lib.escapeShellArg suffixJSON}; : > "$tmpd/ctx.tsv"; : > "$tmpd/ctxerr.tsv"
       while IFS=$'\t' read -r h name; do
-        s=$(jq -r --arg h "$h" '.[$h] // empty' <<<"$sfx")
-        valid_machine "$name" && valid_machine "$s" || continue
+        s=$(jq -r --arg h "$h" 'with_entries(.key |= ascii_downcase)[$h] // empty' <<<"$sfx")
+        valid_machine "$name" && valid_machine "$s" || { printf '%s/%s\tno safe ssh name (environmentSsh suffix for the host, or the environment name)\n' "$h" "$name" >> "$tmpd/ctxerr.tsv"; continue; }
         rc=0; tail=$(timeout -k 1 ${toString cfg.timeoutSeconds} ${cfg.sshCommand} -o BatchMode=yes -o ConnectTimeout=5 "$name.$s" \
-          'f=$(ls -t "$HOME"/.claude/projects/-home-lukas/*.jsonl 2>/dev/null | head -n 1); [ -n "$f" ] && tail -n 400 "$f"' 9>&- </dev/null 2>/dev/null) || rc=$?
+          'sh -c '"'"'f=$(ls -t "$HOME"/.claude/projects/-home-lukas/*.jsonl 2>/dev/null | head -n 1); [ -n "$f" ] && tail -n 400 "$f"'"'" 9>&- </dev/null 2>/dev/null) || rc=$?
         tok=$(printf '%s\n' "$tail" | jq -Rs 'split("\n") | map(fromjson? | select(type == "object" and .type == "assistant" and (.message.usage | type) == "object") | .message.usage)
           | last | if . == null then "" else (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) end' -r 2>/dev/null)
         if [ "$rc" -eq 0 ] && [[ "$tok" =~ ^[0-9]+$ ]]; then printf '%s/%s\t%s\n' "$h" "$name" "$tok" >> "$tmpd/ctx.tsv"
         else printf '%s/%s\t%s\n' "$h" "$name" "ssh $name.$s transcript read: $([ "$rc" -ne 0 ] && echo "exit $rc" || echo "no usage found")" >> "$tmpd/ctxerr.tsv"; fi
       done < <(jq -r --argjson hosts ${lib.escapeShellArg hostsJSON} '.hosts[]? | select(.reachable == true and ((.host | ascii_downcase) as $n | $hosts | map(ascii_downcase) | index($n)))
-        | .host as $h | (.agents // [])[] | select((.name | type) == "string" and (.observed_state == "idle" or .observed_state == "done")) | [$h, .name] | @tsv' "$tmpd/inv.json")
+        | (.host | ascii_downcase) as $h | (.agents // [])[] | select((.name | type) == "string" and (.observed_state == "idle" or .observed_state == "done")) | [$h, .name] | @tsv' "$tmpd/inv.json")
       jq -Rn '[inputs | split("\t") | {key:.[0], value:(.[1] | tonumber)}] | from_entries' "$tmpd/ctx.tsv" > "$tmpd/ctx.json"
       jq -Rn '[inputs | split("\t") | {source:("context:" + .[0]), error:.[1]}]' "$tmpd/ctxerr.tsv" > "$tmpd/ctxerr.json"
       rc=0; out=$(jq -nc --slurpfile inv "$tmpd/inv.json" --slurpfile ctx "$tmpd/ctx.json" --slurpfile ctxerr "$tmpd/ctxerr.json" --argjson threshold ${toString cfg.compactTokens} --slurpfile audit "$tmpd/audit.json" --argjson hosts ${lib.escapeShellArg hostsJSON} \
