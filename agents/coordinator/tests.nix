@@ -252,7 +252,7 @@
           [ "$CODE" -ne 0 ] && grep -q 'coordinator.environmentHosts: a non-empty JSON list' "$TMP/run.log" && ok || bad "bad environmentHosts rejected at eval ($bc: $CODE)"; done
         ! grep -rqE 'coord:(spawn|reap)' agents/coordinator/ROLE.md agents/coordinator.md agents/coordinator/codex.toml && ok || bad "an adapter still names coord:spawn or coord:reap"
         item=$(sed -n '/^13\. Developer environments/,/^## /p' agents/coordinator/ROLE.md | tr '\n' ' ')
-        grep -q 'coord:handoff' <<<"$item" && grep -q 'herdr:message' <<<"$item" && grep -q 'sam.workers.instances' <<<"$item" && grep -q 'just deploy-msi' <<<"$item" && ok || bad "ROLE.md item 13 covers the handoff to an idle environment and the declaration when none is idle"
+        grep -q 'coord:handoff' <<<"$item" && grep -q 'herdr:message' <<<"$item" && grep -q 'sam.workers.instances' <<<"$item" && grep -q 'docs/nspawn-workers.md' <<<"$item" && ! grep -q 'just deploy-msi' <<<"$item" && ok || bad "ROLE.md item 13 covers the handoff to an idle environment and the declaration when none is idle"
         summary
       '';
     };
@@ -1227,6 +1227,7 @@ JSON
         [ "$(jqr .host)" = acer-swift ] && [ "$(jqr .machine)" = acer-swift ] && [ "$(jqr .approval_required)" = true ] && ok || bad "handoff fields"
         [ "$(jqr '.allowed_actions | join(",")')" = "comment,deploy:none" ] && ok || bad "allowed_actions recorded on the draft"
         jqr .text | grep -q 'Assignment #7 for acer-swift/wA:p2' && jqr .text | grep -q '^Allowed actions: comment, deploy:none\. Reading, committing and opening a PR are always implied; anything else, deleting included, is not allowed\.$' && jqr .text | grep -q '^Reply in this pane when done, naming the evidence above\.$' && ok || bad "handoff text"
+        jqr .text | grep -q '^First step: check for an existing branch or open PR for this issue before starting; if one exists, take it to mergeable instead of starting over\.$' && jqr .text | grep -q '^Process: run gates one at a time; .*independent subagent review.*ENV-FEEDBACK\.md; finish with a five line summary\.$' && ok || bad "handoff text carries the existing-PR first step and the standing process"
         ! jqr .text | grep -q 'Do not merge' && ! jqr .text | grep -q 'naming the commit or PR' && ok || bad "fixed footer gone"
         [ -f "$TMP/state/handoffs/$ID.json" ] && ok || bad "draft saved"
         [ ! -s "$FAKE_LOG" ] && ok || bad "handoff must not call herdr"

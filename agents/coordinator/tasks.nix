@@ -278,7 +278,7 @@ in
           del_clause='anything else, deleting included, is not allowed'
         fi
         at=$(now_iso)
-        text=$(printf 'Assignment %s for %s/%s\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; %s.\n%s%s%s\nReply in this pane when done, naming the evidence above.\n' \
+        text=$(printf 'Assignment %s for %s/%s\n\nFirst step: check for an existing branch or open PR for this issue before starting; if one exists, take it to mergeable instead of starting over.\n\nScope: %s\n\nExpected evidence: %s\n\nAcceptance: %s\n\nAllowed actions: %s. Reading, committing and opening a PR are always implied; %s.\n%s%s%s\nProcess: run gates one at a time; get one independent subagent review of your diff before pushing; append friction to ~/ENV-FEEDBACK.md; finish with a five line summary.\nReply in this pane when done, naming the evidence above.\n' \
           "$ref" "$host" "$agent" "$scope" "$ev" "$acc" "$actions_line" "$del_clause" "$([ -n "$pr" ] && printf '\nMerge target: %s\n' "$pr")" "$([ -n "$review" ] && printf '\nReview of: %s at head %s\n' "''${review%@*}" "''${review##*@}")" "$([ -n "$need" ] && printf '\nOwner input still needed: %s\n' "$need")")
         id=$(printf '%s|%s|%s|%s|%s|%s|%s' "$host" "$m" "$agent" "$ses" "$ref" "$actions" "$text" | sha256sum | cut -c1-12)
         dir="${cfg.stateDir}/handoffs"; mkdir -p "$dir"
