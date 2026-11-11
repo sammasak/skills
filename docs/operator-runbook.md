@@ -74,9 +74,14 @@ A running environment is a workspace and an agent both named `<name>` in
 its host's Herdr (`herdr --machine msi-ms7758 agent list`); reach it with
 `ssh <name>.msi` or `ssh <name>.acer` from lenovo. `coord:capacity` lists
 them per host in `coordinator.environmentHosts` (`agents/coordinator/capacity.nix`,
-default acer-swift and msi-ms7758) from `herdr:inventory` and the audit log
-alone: `herdr_state`, `unavailable`, `last_handoff`, `handoff_in_flight`,
-`available`, and a top-level `available` list. An unnamed agent on such a
+default acer-swift and msi-ms7758) from `herdr:inventory`, the audit log and those reads: `herdr_state`, `unavailable`, `last_handoff`, `handoff_in_flight`,
+`available`, `hygiene` (`context_tokens` from the tail of an idle
+environment's newest `~/.claude/projects/-home-lukas/*.jsonl`, read with one
+`ssh <name>.<suffix>` per idle environment, suffixes in
+`coordinator.environmentSsh`; advice `/compact` at `coordinator.compactTokens`,
+default 150000, `/clear` when the next item is independent; an unreadable
+transcript is null and listed in `failed_sources`), and a top-level
+`available` list. An unnamed agent on such a
 host is not an environment. msi is up only Mon-Fri 09:00-21:00 local, so
 "unreachable" outside that window is expected: route to another host. The
 coordinator hands work to an available environment through `coord:handoff`
