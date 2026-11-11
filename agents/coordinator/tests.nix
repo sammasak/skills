@@ -181,7 +181,7 @@
         export FAKE_GH_LABELS='["approved"]' FAKE_GH_EVENTS='[{"event":"labeled","label":{"name":"approved"},"actor":{"login":"sammasak"},"created_at":"2026-11-03T09:00:00Z"}]'
         # lock lanes (host:locks): idle everywhere unless a case says otherwise
         export FAKE_LOCKS_OUT="$FX/locks/idle.tsv" FAKE_SSH_OUT_worker_a="$FX/locks/idle.tsv"
-        mkdir -p "$TMP/state" "$TMP/claude"; A="$TMP/state/audit.jsonl"
+        mkdir -p "$TMP/state" "$TMP/claude" "$TMP/units"; A="$TMP/state/audit.jsonl"; export FAKE_UNITS="$TMP/units"
         run() { # <task> [args]
           local task="$1"; shift
           devenv tasks run "$task" --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
@@ -244,6 +244,33 @@
         hq worker-a '.reasons[]' | grep -q 'no heavy gates (heavy_gates:false)' && ok || bad "the reason names heavy_gates ($(hq worker-a .reasons))"
         [ "$(hq worker-a '.fits.spawn | join(",")')" = "mechanical,planning" ] && ok || bad "a heavy_gates:false host fits only light kinds, no review or implementation ($(hq worker-a '.fits.spawn'))"
         [ "$(hq "$H" '.limits.heavy_gates')" = false ] && ok || bad "the control-plane host carries heavy_gates:false (lenovo-config)"
+
+        # (3d) the shipped default: acer-swift and msi-ms7758 are nspawn hosts (one and two worker containers); a slot is in
+        #      use when its unit is active (asked over ssh), its worker is the claude in the host Herdr workspace its start
+        #      hook opened (label = the container). The fake ssh plays the hook: start opens the workspace and its claude
+        jq '.result.agents = []' "$FX/herdr/remote-ok.json" > "$TMP/fresh.json"
+        export FAKE_HERDR_MACHINES='[{"id":"m1","label":"msi-ms7758","target":"msi-ms7758","enabled":true},{"id":"m2","label":"acer-swift","target":"acer-swift","enabled":true}]' \
+          FAKE_HERDR_LIST_msi_ms7758="$TMP/fresh.json" FAKE_HERDR_LIST_acer_swift="$TMP/fresh.json" FAKE_HERDR_WSFILE="$TMP/ws.jsonl" FAKE_HERDR_STARTED="$TMP/started.jsonl"
+        : > "$FAKE_HERDR_WSFILE"; : > "$FAKE_HERDR_STARTED"
+        FAKE_HOOK_STATE=blocked "$FAKES/ssh" msi-ms7758 systemctl start container@worker-1
+        capd() { devenv tasks run coord:capacity --option coordinator.herdrCommand:string "$FAKES/herdr" --option coordinator.sshCommand:string "$FAKES/ssh" --option coordinator.locksCommand:string "$FAKES/host-locks" --option coordinator.ghCommand:string "$FAKES/gh" \
+            --option coordinator.stateDir:string "$TMP/state" --option coordinator.timeoutSeconds:int 2 --option coordinator.claudeProjectsDir:string "$TMP/claude" --show-output > "$TMP/run.log" 2>&1
+          OUT=$(grep -E "^\s*\{\"schema_version\":1" "$TMP/run.log" | grep -F '"task":"coord:capacity"' | tail -1 | sed -E 's/^\s+//'); [ -n "$OUT" ] || OUT='{}'; }
+        capd
+        [ "$(hq msi-ms7758 '"\(.reachable) \(.limits.worker) \(.limits.slots) \(.limits.heavy_jobs) \(.limits.max_workers) \(.limits.spawn) \(.limits.heavy_gates)"')" = "true nspawn 2 1 2 true true" ] && ok || bad "msi-ms7758 ships nspawn, 2 slots = 2 workers, heavy_jobs 1, spawn ($(hq msi-ms7758 .limits))"
+        [ "$(hq msi-ms7758 '"\(.workers.total) \(.free.workers) \(.free.heavy_jobs) \(.free_slot.container) \(.workers.list[0].slot) \(.workers.list[0].herdr_state) \(.workers.list[0].agent_id)"')" = "1 1 0 worker-2 worker-1 blocked Wmsi_ms7758-worker-1:p1" ] && ok || bad "msi: worker-1 active with a blocked claude, worker-2 free ($(hq msi-ms7758 '{workers,free,free_slot}' | jq -c .))"
+        [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "true false" ] && [ "$(hq msi-ms7758 '.fits.spawn | join(",")')" = "mechanical,planning" ] && ok || bad "msi-ms7758: a light worker fits beside its busy one ($(hq msi-ms7758 '{spawn_ok,fits}' | jq -c .))"
+        [ "$(hq msi-ms7758 '.workers.list[0].hygiene | "\(.context_tokens) \(.context_source)"')" = "null unknown: transcript inside the worker container" ] && ok || bad "a worker's context is unknown, not a number ($(hq msi-ms7758 '.workers.list[0].hygiene'))"
+        [ "$(hq acer-swift '"\(.reachable) \(.workers.total) \(.free.workers) \(.free_slot.container)"')" = "true 0 1 worker-1" ] && ok || bad "acer: one free slot ($(hq acer-swift '{reachable,workers,free}' | jq -c .))"
+        # an idle worker fits every kind, and a heavy one fits the free slot
+        jq -c '.agent_status = "idle"' "$FAKE_HERDR_STARTED" > "$TMP/st.tmp" && mv "$TMP/st.tmp" "$FAKE_HERDR_STARTED"
+        capd
+        [ "$(hq msi-ms7758 '.fits.idle_worker | join(",")')" = "implementation,mechanical,planning,review" ] && [ "$(hq msi-ms7758 '"\(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "true true" ] && ok || bad "idle msi worker fits all four kinds, a heavy spawn fits ($(hq msi-ms7758 '{fits,spawn_ok}' | jq -c .))"
+        # outside its power window the host does not answer: no capacity, the reason says so (route elsewhere)
+        FAKE_SSH_DOWN=msi-ms7758 capd
+        [ "$(hq msi-ms7758 '"\(.reachable) \(.spawn_ok.light) \(.reasons[0])"')" = "false false host did not answer" ] && jqr '.failed_sources[].source' | grep -qx 'ssh:msi-ms7758' && ok || bad "msi-ms7758 down is unreachable, not an error ($(hq msi-ms7758 '{reachable,reasons}' | jq -c .))"
+        "$FAKES/ssh" msi-ms7758 systemctl stop container@worker-1; unset FAKE_HERDR_LIST_msi_ms7758 FAKE_HERDR_LIST_acer_swift
+        export FAKE_HERDR_MACHINES='[{"id":"a1","label":"worker-a","target":"worker-a","enabled":true},{"id":"b2","label":"down-b","target":"down-b","enabled":true}]'
 
         # (4) accepted: a heavy implementation spawn on worker-a, with its kind's model, in a workspace of its own; audited.
         #     FAKE_HERDR_STARTED makes the fake list every agent it started, like a real server
@@ -325,6 +352,69 @@
         grep -q 'coord:handoff' <<<"$item" && grep -q 'herdr:message' <<<"$item" && grep -q 'agent_id' <<<"$item" && grep -qi 'never retry' <<<"$item" && grep -q 'agent_not_ready' <<<"$item" && ok || bad "ROLE.md item 13 covers the handoff after a spawn and what to do after a refusal"
         # (11) spawn lines do not disturb the other audit readers
         run coord:brief; [ "$CODE" -eq 0 ] && [ "$(jq -r '.handoffs | length' "$TMP/state/brief/latest.json")" = 1 ] && [ "$(jq -r .handoffs_error "$TMP/state/brief/latest.json")" = null ] && ok || bad "coord:brief reads an audit log with spawn lines ($CODE)"
+        # (12) an nspawn host: coord:spawn starts a free container unit over ssh and waits for the idle claude the host's
+        #      hook opens in the workspace named after it (no workspace create, no agent start, no host claude); a failure
+        #      after the start stops the unit again; coord:reap stops one
+        CAP=$(jq -cn --arg h "$H" '{($h): {heavy_jobs:1, max_workers:3, spawn:false}, "box-n": {worker:"nspawn", slots:["worker-1", "worker-2"], heavy_jobs:1, spawn:true}}')
+        : > "$FAKE_HERDR_STARTED"; : > "$FAKE_HERDR_WSFILE"
+        export FAKE_HERDR_MACHINES='[{"id":"n1","label":"box-n","target":"box-n","enabled":true}]' FAKE_HERDR_LIST_box_n="$TMP/fresh.json"
+        unit() { cat "$FAKE_UNITS/box-n.container@$1" 2>/dev/null || echo inactive; }
+        wss() { jq -sr 'map(.label) | join(",")' "$FAKE_HERDR_WSFILE"; }
+        spawnn() { run coord:spawn --option coordinator.workerBootSeconds:int 2 --input-json "{\"machine\":\"box-n\",\"kind\":\"$1\",\"task_ref\":\"#28\",$AUTH''${2:-}}"; }
+        reap() { run coord:reap --input-json "$1"; }
+        run coord:capacity
+        [ "$(hq box-n '"\(.limits.slots) \(.workers.total) \(.free.workers) \(.free_slot.container) \(.spawn_ok.light) \(.spawn_ok.heavy)"')" = "2 0 2 worker-1 true true" ] && ok || bad "box-n: two free slots ($(hq box-n '{limits,free,free_slot,spawn_ok}' | jq -c .))"
+        : > "$FAKE_LOG"; spawnn mechanical
+        SP1=$(jqr .audit_id); W1="Wbox_n-worker-1:p1"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.outcome) \(.worker) \(.machine) \(.slot) \(.agent_id) \(.model_applied) \(.session_id)"')" = "started nspawn box-n worker-1 $W1 true sess-box" ] && grep -qF "box-n mkdir -p .config/workers && printf 'WORKER_MODEL=%s\n' 'claude-haiku-5-5' > .config/workers/worker-1.env" "$FAKE_LOG" && ok || bad "nspawn spawn started ($CODE $OUT)"
+        grep -q '^ssh -o BatchMode=yes -o ConnectTimeout=5 box-n systemctl start container@worker-1$' "$FAKE_LOG" && grep -q '^herdr(machine=box-n) workspace list' "$FAKE_LOG" \
+          && ! grep -qE 'workspace create|agent start|dangerously|machine add' "$FAKE_LOG" && [ "$(unit worker-1) $(wss)" = "active worker-1" ] && ok || bad "unit start, then the hook's workspace; no workspace create or agent start ($(grep -E '^(ssh|herdr)' "$FAKE_LOG" | tr '\n' '|'))"
+        [ "$(jq -sr --arg a "$SP1" '[.[] | select(.audit_id == $a)] | "\(.[0].worker) \(.[0].slot) \(.[0].unit) \(.[0].cwd) \(.[1].outcome) \(.[1].agent_id) \(.[1].model_applied)"' "$A")" = "nspawn worker-1 container@worker-1 null started $W1 true" ] && ok || bad "nspawn spawn audited ($(grep -F "$SP1" "$A" | tr '\n' ' '))"
+        n=$(lines); spawnn mechanical ',"cwd":"/home/lukas"'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && [ "$(lines)" = "$n" ] && ok || bad "a cwd on an nspawn host is invalid_input, unaudited ($OUT)"
+        # failures after the unit started: each stops the unit again (its workspace closes), audited with cleanup
+        for c in unit:failed:unit_start_failed none:failed:worker_not_found blocked:agent_not_ready:agent_not_ready; do
+          : > "$FAKE_LOG"; v="''${c%%:*}"; if [ "$v" = unit ]; then export FAKE_SSH_START_EXIT=1; else export FAKE_HOOK_STATE="$v"; fi
+          spawnn mechanical; unset FAKE_SSH_START_EXIT FAKE_HOOK_STATE; want="''${c#*:}"
+          [ "$CODE" -ne 0 ] && [ "$(tail -n 1 "$A" | jq -r '"\(.outcome):\(.error_code) \(.cleanup.unit_stopped)"')" = "$want true" ] \
+            && [ "$(unit worker-2) $(wss)" = "inactive worker-1" ] && grep -q 'box-n systemctl stop container@worker-2$' "$FAKE_LOG" && ok || bad "$v: stopped again, audited ($CODE $(tail -n 1 "$A") $(unit worker-2) $(wss))"
+        done
+        # both slots taken: a second worker starts in worker-2, then a third is refused on the slots
+        : > "$FAKE_LOG"; spawnn planning
+        SP2=$(jqr .audit_id)
+        [ "$CODE" -eq 0 ] && [ "$(jqr .slot)" = worker-2 ] && [ "$(wss)" = "worker-1,worker-2" ] && ok || bad "second worker in the second slot ($CODE $OUT)"
+        : > "$FAKE_LOG"; spawnn mechanical
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = capacity ] && jqr .error.message | grep -q '2 of 2 worker slots in use' && ! grep -q 'systemctl start' "$FAKE_LOG" && ok || bad "an nspawn host cannot exceed its slots ($CODE $OUT)"
+        # reap: a worker whose delivered handoff is done shows as reapable; a working one is refused without force
+        printf '%s\n' "{\"audit_id\":\"hb1\",\"handoff_id\":\"bbbbbbbbbbbb\",\"task_ref\":\"#28\",\"phase\":\"attempt\",\"host\":\"box-n\",\"machine\":\"box-n\",\"agent_id\":\"$W1\",\"session_id\":\"sess-box\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"authorized_by\":{\"issue_url\":\"https://github.com/sammasak/skills/issues/28\",\"label\":\"approved\"}}" \
+          '{"audit_id":"hb1","handoff_id":"bbbbbbbbbbbb","phase":"outcome","at":"2026-11-03T08:00:01Z","outcome":"delivered"}' >> "$A"
+        run coord:capacity
+        [ "$(hq box-n '"\(.workers.total) \(.reapable | join(","))"')" = "2 worker-1" ] && [ "$(hq box-n '.workers.list[] | select(.slot == "worker-1") | "\(.kind) \(.last_task_ref)"')" = "mechanical #28" ] && ok || bad "worker-1 is reapable after its handoff, worker-2 is not ($(hq box-n '{reapable,workers:.workers.list}' | jq -c .))"
+        jq -c --arg w "$W1" 'if .pane_id == $w then .agent_status = "working" else . end' "$FAKE_HERDR_STARTED" > "$TMP/st.tmp" && mv "$TMP/st.tmp" "$FAKE_HERDR_STARTED"
+        n=$(lines); : > "$FAKE_LOG"; reap '{"machine":"box-n","slot":"worker-1"}'
+        [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = busy ] && [ "$(unit worker-1)" = active ] && ! grep -q 'systemctl stop' "$FAKE_LOG" && [ "$(tail -n 1 "$A" | jq -r '"\(.phase) \(.outcome)"')" = "reap refused" ] && [ "$(lines)" = $((n + 1)) ] && ok || bad "a working worker is not reaped ($CODE $OUT)"
+        jq -c --arg w "$W1" 'if .pane_id == $w then .agent_status = "idle" else . end' "$FAKE_HERDR_STARTED" > "$TMP/st.tmp" && mv "$TMP/st.tmp" "$FAKE_HERDR_STARTED"
+        : > "$FAKE_LOG"; reap '{"machine":"box-n","slot":"worker-1"}'
+        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.outcome) \(.unit_stopped) \(.host) \(.unit)"')" = "reaped true box-n container@worker-1" ] && [ "$(unit worker-1) $(wss)" = "inactive worker-2" ] \
+          && grep -q 'box-n systemctl stop container@worker-1$' "$FAKE_LOG" && grep -qF 'box-n rm -f .config/workers/worker-1.env' "$FAKE_LOG" && [ "$(tail -n 1 "$A" | jq -r '"\(.phase) \(.outcome) \(.slot)"')" = "reap reaped worker-1" ] && ok || bad "reap stops the unit ($CODE $OUT)"
+        # by the spawn's audit id, with force
+        reap "{\"audit_id\":\"$SP2\",\"force\":true}"
+        [ "$CODE" -eq 0 ] && [ "$(jqr '"\(.slot) \(.outcome)"')" = "worker-2 reaped" ] && [ "$(unit worker-2) $(wss)" = "inactive " ] && ok || bad "reap by audit_id ($CODE $OUT)"
+        reap '{"machine":"worker-a","slot":"worker-1"}'; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "reap on a host with no slots is invalid_input ($OUT)"
+        reap '{"audit_id":"000000000000"}'; [ "$CODE" -ne 0 ] && [ "$(jqr .error.kind)" = invalid_input ] && ok || bad "reap of an unknown spawn is invalid_input ($OUT)"
+        run coord:capacity
+        [ "$(hq box-n '"\(.workers.total) \(.free.workers) \(.free_slot.container)"')" = "0 2 worker-1" ] && ok || bad "after the reaps both slots are free ($(hq box-n '{workers,free}' | jq -c .))"
+        # illegal configurations are rejected at eval: an nspawn host with max_workers, more heavy jobs than slots, a
+        # numeric slots, a bad container name, a container twice; a host worker with slots
+        for bc in '{"box-n":{"worker":"nspawn","slots":["worker-1"],"max_workers":3,"heavy_jobs":1,"spawn":true}}' \
+                  '{"box-n":{"worker":"nspawn","slots":["worker-1"],"heavy_jobs":2,"spawn":true}}' \
+                  '{"box-n":{"worker":"nspawn","slots":2,"heavy_jobs":1,"spawn":true}}' \
+                  '{"box-n":{"worker":"nspawn","slots":["worker 1"],"heavy_jobs":1,"spawn":true}}' \
+                  '{"box-n":{"worker":"nspawn","slots":["worker-1","worker-1"],"heavy_jobs":1,"spawn":true}}' \
+                  '{"box-n":{"worker":"host","slots":["worker-1"],"max_workers":1,"heavy_jobs":1,"spawn":true}}'; do
+          CAP="$bc"; run coord:capacity
+          [ "$CODE" -ne 0 ] && grep -qE 'takes slots, not max_workers|exceeds its|needs slots, a non-empty list|named twice in slots|takes max_workers, not slots' "$TMP/run.log" && ok || bad "bad capacity rejected at eval ($bc: $CODE)"; done
+        unset FAKE_HERDR_LIST_box_n FAKE_HERDR_WSFILE
         summary
       '';
     };

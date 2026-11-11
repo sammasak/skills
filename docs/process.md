@@ -108,7 +108,9 @@ issue.
    no open PR names it: hand it out again, naming the earlier handoff in the scope (a merged one without a review needs
    that review, not a new implementation); an unknown hold keeps it until the evidence returns. Then pick an agent that is `idle` or `done` (never
    `blocked`, never `working`, never one of your own panes: `coord:handoff` refuses a Coordinator pane) on a host with capacity (lenovo: one heavy job,
-   control plane only; acer-swift: two, one while a full gate runs). Draft
+   control plane only; acer-swift: one worker container; msi-ms7758: two
+   worker containers, one heavy job, reachable Mon-Fri 09:00-21:00 only, so
+   unreachable outside it is expected: route elsewhere). Draft
    with `coord:handoff`, `allowed_actions` limited to what the label grants
    (reading, committing, opening a PR and `comment` for ordinary work; `merge`,
    `close`, `deploy:<host>` only when the owner's label or comment says so).

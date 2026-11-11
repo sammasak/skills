@@ -66,12 +66,19 @@ Workers: `coord:capacity` reports each host's workers, the worker and
 heavy-job slots left and which assignment kinds fit (planning and review on
 opus, implementation on sonnet, mechanical checks on haiku; review and
 implementation take a heavy-job slot). The limits are `coordinator.capacity`
-in `agents/coordinator/spawn.nix`: acer-swift two heavy jobs and three
-workers, lenovo one heavy job and no spawning (the control plane; see
-nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`, an absolute `cwd`,
-`authorized_by`) starts one Claude Code worker in its own Herdr workspace
-(`herdr workspace create` + `herdr agent start <kind>-<N> --kind claude --
---dangerously-skip-permissions --model <the kind's model>`) only for an item
+in `agents/coordinator/spawn.nix`. Each host has a `worker` kind: acer-swift
+and msi-ms7758 are `nspawn`: they are no workers themselves, their workers
+are the ephemeral containers listed as `slots` (acer `["worker-1"]`, msi
+`["worker-1" "worker-2"]`, nixos-config `docs/nspawn-workers.md`), one heavy
+job each; a slot is in use while `container@<slot>` is active (`ssh <host>
+systemctl is-active`). `max_workers` on an nspawn host, `slots` on a host
+host, or more heavy jobs than slots, fails evaluation. msi is up only Mon-Fri 09:00-21:00 local, so
+"unreachable" outside that window is expected: route to another host, and
+hand no heavy work to msi shortly before its 21:00 shutdown. lenovo is
+`host`, one heavy job and no spawning (the control plane; see
+nixos-config#109). `coord:spawn` (`machine`, `kind`, `task_ref`,
+`authorized_by`, and an absolute `cwd` on a `host` host only) starts one
+Claude Code worker in its own Herdr workspace only for an item
 carrying a label you applied on that same item and only when that host's
 capacity allows. The decision is taken under the audit lock on a fresh agent
 list of the target host, and a spawn in flight holds its slots, so two
@@ -83,7 +90,26 @@ outcome is one of `started`, `refused` (with its reason), `agent_not_ready`,
 died before writing one. A request refused earlier (`invalid_input`, a
 missing inventory, `busy`, `audit_corrupt`) is not audited. A started worker
 has no assignment until the coordinator hands it one (`coord:handoff`,
-`herdr:message`). `--dangerously-skip-permissions` starts unattended only where
+`herdr:message`). On an `nspawn` host (`machine` = the host, no `cwd`) the
+task runs `ssh <host> systemctl start container@<slot>` for the first free
+slot; the host's hook opens a Herdr workspace labelled `<slot>` with claude
+running inside the container, and started means that claude is idle within
+`workerBootSeconds` (120). A failed unit start (`unit_start_failed`), no
+claude in that workspace (`worker_not_found`) or one that never turns idle
+(`agent_not_ready`) stops the unit again (`cleanup` in the outcome). There
+is no fallback to a host claude. The kind's model reaches the hook as
+`WORKER_MODEL` in `~/.config/workers/<slot>.env` on the host, written before
+the start and removed at every stop; its transcript is inside the container so
+`coord:capacity` reports `context_tokens` null, and its home is empty: the
+handoff tells it to `git clone` the repo, and its work leaves only by `git
+push`. `coord:reap` (`machine` + `slot`, or the spawn's `audit_id`;
+`force: true` for a working or blocked worker) runs `systemctl stop
+container@<slot>`, which closes the workspace and wipes the worker, and
+writes a `phase: reap` audit line; `coord:capacity` lists idle workers
+whose handoff was delivered since their start under `reapable`. Manually:
+`ssh acer-swift systemctl stop container@worker-1`. On a `host` host it isOn a `host` host it is `herdr agent start <kind>-<N> --kind
+claude -- --dangerously-skip-permissions --model <the kind's model>`, and
+`--dangerously-skip-permissions` starts unattended only where
 user settings carry `skipDangerousModePermissionPrompt: true` (Claude Code
 2.1.300 no longer reads `~/.claude.json`'s `bypassPermissionsModeAccepted`)
 and `cwd`'s trust dialog was accepted: Home Manager pre-trusts `$HOME` on
