@@ -61,9 +61,10 @@ in
       coordinator_panes() { local self=""; [ -z "''${HERDR_PANE_ID:-}" ] || self="$(local_host)/$HERDR_PANE_ID"
         { printf '%s\n' ${lib.escapeShellArg cfg.panes} | jq -R 'split(",") | map(select(. != ""))'; printf '%s\n' "$self" | jq -R 'select(. != "")'
           [ ! -s "''${1:-/dev/null}" ] || jq -c 'select(type == "object" and .phase == "attempt" and (.from | type) == "string") | .from' "$1" 2>/dev/null || true; } | jq -sc 'flatten | unique'; }
-      # herdr_at <timeout_s> <machine-label-or-empty> <herdr args...>: the local server, or herdr's own forwarding to a saved machine
+      # herdr_at <timeout_s> <machine-label-or-empty> <herdr args...>: the local server, or herdr's own forwarding to a saved
+      # machine. stdin is /dev/null: forwarded over ssh inside a `while read` loop it would otherwise swallow the loop's lines
       herdr_at() { local tmo="$1" m="$2"; shift 2
-        if [ -z "$m" ]; then timeout -k 1 "$tmo" ${cfg.herdrCommand} "$@"; else timeout -k 1 "$tmo" ${cfg.herdrCommand} --machine "$m" "$@"; fi; }
+        if [ -z "$m" ]; then timeout -k 1 "$tmo" ${cfg.herdrCommand} "$@" </dev/null; else timeout -k 1 "$tmo" ${cfg.herdrCommand} --machine "$m" "$@" </dev/null; fi; }
       # usage_limit_line <machine-or-empty> <agent_id>: the harness's usage-limit line ("You've reached your Fable limit. …",
       # "You've hit your weekly limit · resets …") among the agent's last 30 visible lines, or nothing. It must start its
       # line (after box-drawing or bullet characters, which are trimmed), so a prompt or document quoting the phrase does not match; a read
@@ -132,8 +133,8 @@ in
       # \z, not $ (jq's $ also matches before a trailing newline).
       auth_shape() { jq -c 'if type == "object" and (.issue_url | type) == "string" and (.issue_url | test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[1-9][0-9]*\\z"))
           and (.label | type) == "string" and (.label | test("^[A-Za-z0-9_:./ -]{1,50}\\z")) then {issue_url, label, verified:false} else empty end' <<<"$1" 2>/dev/null || true; }
-      # gh_authorize <noun> <verb-ing> <item>: the GitHub gate shared by every act that starts work (herdr:message,
-      # coord:spawn). The label in $auth must be on the issue now (the issues API serves PR labels too), must be one the
+      # gh_authorize <noun> <verb-ing> <item>: the GitHub gate of every act that starts work (herdr:message). The label
+      # in $auth must be on the issue now (the issues API serves PR labels too), must be one the
       # coordinator cannot write (gh:label's vocabulary is refused) and must not have been added by a gh:label act in
       # $audit, unless every such act was a delegated approval (an authorizing label added under the owner's delegation,
       # its outcome line citing the decision: owner_delegation); a gh failure is reported, never treated as present. On
@@ -142,8 +143,8 @@ in
       gh_authorize() { local what="$1" doing="$2" item="$3" want_label want_url gh_path gh_repo gh_num errf rc=0 labels gherr events ev added line delegated=true applied_by=owner deleg='null' deleg_aid=null hold issue
         local holds full live scope_acts hold_rec='null' pr_scoped=false pr_head prj
         AUTH_EXIT=2; AUTH_KIND=""; AUTH_MSG=""
-        # skills#28: the scope a hold is judged against is the handoff's allowed_actions (herdr:message's $acts; a spawn
-        # has none). A live scope is deploy:<host or cluster>; deploy:none is not one.
+        # skills#28: the scope a hold is judged against is the handoff's allowed_actions (herdr:message's $acts).
+        # A live scope is deploy:<host or cluster>; deploy:none is not one.
         scope_acts=''${acts:-[]}
         live=$(jq -c '[.[] | select(type == "string" and startswith("deploy:") and . != "deploy:none")]' <<<"$scope_acts" 2>/dev/null) || live='[]'
         want_label=$(jq -r .label <<<"$auth"); want_url=$(jq -r .issue_url <<<"$auth")

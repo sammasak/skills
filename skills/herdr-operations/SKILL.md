@@ -36,7 +36,7 @@ is JSON with `schema_version: 1`; `coord:brief` also prints Markdown.
 | Open issues and recent PRs of one repo | `devenv tasks run gh:work --input-json '{"repo":"OWNER/REPO"}'` |
 | Recent commits, dirty files, unpushed work of one checkout | `devenv tasks run git:recent --input-json '{"checkout":"/abs/path"}'` |
 | Per-agent join of Herdr state and GitHub evidence | `devenv tasks run work:status --show-output` |
-| Worker pool: per host the workers (idle/busy/unknown), worker and heavy-job slots left, whether a spawn fits, which assignment kinds fit (opus planning/review, sonnet implementation, haiku mechanical), and a `/clear` or `/compact` hint per idle worker | `devenv tasks run coord:capacity --show-output` (add `--input-json '{"next":{"repo":"OWNER/REPO","task_ref":"#N"}}'` to judge the next assignment's independence) |
+| Developer environments per host (named agents in acer-swift's and msi-ms7758's Herdr): idle/busy/unavailable, last handoff, whether one is in flight, which are available, and a `/clear` hint | `devenv tasks run coord:capacity --show-output` (add `--input-json '{"next":{"repo":"OWNER/REPO","task_ref":"#N"}}'` to judge the next assignment's independence) |
 
 You may also use Herdr's own read commands as typed, without a task:
 `herdr [--machine <label>] machine list [--json]`, `machine status [<label>]
