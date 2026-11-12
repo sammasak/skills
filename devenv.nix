@@ -27,6 +27,10 @@ in
   tasks = {
     # the two pre-existing hook-framework suites keep their scripts; everything the roles added is a task
     "skills:test:hooks".exec = "bash tests/test-hooks.sh";
+    "skills:test:shunt" = {
+      description = "Shunt redirect hooks and scripts/bulk-read.sh against fixtures with a fake claude CLI (offline, no model calls)";
+      exec = "bash tests/test-shunt.sh";
+    };
     "skills:test:manifests".exec = "bash tests/test-plugin-manifests.sh";
     "skills:test:bundles".exec = "bash tests/test-bundles.sh";
     "skills:test:bundle-sandbox" = {
@@ -56,7 +60,7 @@ in
     "skills:test" = {
       description = "Every repo test suite.";
       exec = "echo skills:test green";
-      after = [ "skills:test:hooks" "skills:test:manifests" "skills:test:bundles" "skills:test:bundle-sandbox" "skills:test:policy" "skills:test:contract" "skills:test:tasks" "skills:test:herdr-skill" ];
+      after = [ "skills:test:hooks" "skills:test:shunt" "skills:test:manifests" "skills:test:bundles" "skills:test:bundle-sandbox" "skills:test:policy" "skills:test:contract" "skills:test:tasks" "skills:test:herdr-skill" ];
     };
   };
 }

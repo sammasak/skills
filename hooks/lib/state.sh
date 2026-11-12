@@ -53,3 +53,28 @@ update_state() {
 inc_state() {
   update_state ".$1 = (.$1 // 0) + 1"
 }
+
+# seen_before <kind> <key>: 0 when <key> was already recorded this session,
+# 1 after recording it now, 2 when no state can be kept (no session id, one
+# that is not [A-Za-z0-9_-]+ and so could leave the state dir, or the file is
+# not writable). Kept in its own append-only file, not the JSON above:
+# PreToolUse hooks run in parallel, and check-loop's update_state would clobber
+# a concurrent write to the shared state file.
+seen_before() {
+  local dir="${XDG_RUNTIME_DIR:-${HOME:+$HOME/.cache}}" file hash line
+  [ -n "$dir" ] || return 2
+  [ -n "${CLAUDE_SESSION_ID:-}" ] && [ "$CLAUDE_SESSION_ID" != "nosession" ] || return 2
+  case "$CLAUDE_SESSION_ID" in *[!A-Za-z0-9_-]*) return 2 ;; esac
+  file="$dir/claude-$1-${CLAUDE_SESSION_ID}.seen"
+  mkdir -p "$dir" 2>/dev/null || return 2
+  find "$dir" -maxdepth 1 -name "claude-$1-*.seen" -mtime +2 -delete 2>/dev/null || true
+  hash=$(printf '%s' "$2" | sha256sum | cut -c1-32) || return 2
+  [ -n "$hash" ] || return 2
+  if [ -f "$file" ]; then
+    while IFS= read -r line; do
+      if [ "$line" = "$hash" ]; then return 0; fi
+    done 2>/dev/null < "$file" || return 2
+  fi
+  printf '%s\n' "$hash" 2>/dev/null >> "$file" || return 2   # 2> first: a failed >> must stay silent
+  return 1
+}
