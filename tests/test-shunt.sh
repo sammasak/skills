@@ -346,6 +346,127 @@ check "*.min.js is not source" 2 "shunt:" $R "$(rd "$F/bundle.min.js")"
 check "*.min.css is not source" 2 "shunt:" $R "$(rd "$F/site.min.css")"
 check "plain .js is still source" 0 - $R "$(rd "$F/app.js")"
 
+# ── PostToolUse spill of large command output ──
+SP=shunt-spill-output.sh
+SPROOT="$XDG_CACHE_HOME/claude-spill"
+# spin <stdout-file> [json merged over the input] [stderr-file]: write $TMP/sp.json
+spin() {
+  jq -n --rawfile o "$1" --rawfile e "${3:-/dev/null}" --arg s "spill$RANDOM$RANDOM" --arg t "toolu_$RANDOM$RANDOM" --argjson x "${2:-{\}}" \
+    '{session_id:$s,tool_use_id:$t,tool_input:{command:"make test"},tool_response:{stdout:$o,stderr:$e,interrupted:false,isImage:false}} * $x' > "$TMP/sp.json"
+}
+sprun() { "$HOOKS/$SP" < "$TMP/sp.json" > "$TMP/sp.out" 2> "$TMP/sp.err"; echo $?; }
+splog() { echo "$SPROOT/$(jq -r .session_id "$TMP/sp.json")/$(jq -r .tool_use_id "$TMP/sp.json").log"; }
+sptext() { jq -r '.hookSpecificOutput.updatedToolOutput.stdout' "$TMP/sp.out"; }
+# untouched(name): exit 0 and no output, so the original result stands
+untouched() { local c; c=$(sprun); [ "$c" = 0 ] && [ ! -s "$TMP/sp.out" ] && [ ! -s "$TMP/sp.err" ] && ok || bad "spill: $1 (exit $c, out '$(head -c 200 "$TMP/sp.out")', err '$(cat "$TMP/sp.err")')"; }
+seq -f '%g small' 1 100 > "$TMP/small.out"
+spin "$TMP/small.out"; untouched "small output untouched"
+grep -q '"hook":"shunt-spill".*"result":"small"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "spill: small not logged"
+seq -f 'generated line %06g ..........................................................................................' 1 3000 > "$TMP/gen.out"
+sed -i '1501s/.*/MIDDLE-MARKER-7f3a9 in the middle/' "$TMP/gen.out"
+spin "$TMP/gen.out"
+c=$(sprun)
+[ "$c" = 0 ] && ok || bad "spill: exit $c"
+jq -e '(keys == ["hookSpecificOutput"]) and (.hookSpecificOutput | keys == ["hookEventName","updatedToolOutput"])
+  and .hookSpecificOutput.hookEventName == "PostToolUse"
+  and (.hookSpecificOutput.updatedToolOutput | keys == ["interrupted","isImage","stderr","stdout"])
+  and .hookSpecificOutput.updatedToolOutput.interrupted == false and .hookSpecificOutput.updatedToolOutput.isImage == false
+  and .hookSpecificOutput.updatedToolOutput.stderr == "" and (.hookSpecificOutput.updatedToolOutput.stdout | type == "string")' "$TMP/sp.out" >/dev/null \
+  && ok || bad "spill: replacement JSON has the wrong shape: $(head -c 300 "$TMP/sp.out")"
+cmp -s "$TMP/gen.out" "$(splog)" && ok || bad "spill: log differs from the output"
+[ "$(stat -c %a "$(splog)")" = 600 ] && [ "$(stat -c %a "$(dirname "$(splog)")")" = 700 ] && ok || bad "spill: log or dir mode not 0600/0700"
+sptext > "$TMP/sp.txt"
+grep -qxF "$(head -n 1 "$TMP/gen.out")" "$TMP/sp.txt" && grep -qxF "$(tail -n 1 "$TMP/gen.out")" "$TMP/sp.txt" && ok || bad "spill: first or last line missing from the excerpt"
+[ "$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout | length' "$TMP/sp.out")" -le 4500 ] && ok || bad "spill: excerpt over 4500 chars"
+grep -q "MIDDLE-MARKER-7f3a9" "$TMP/sp.txt" && bad "spill: the middle leaked into the excerpt" || ok
+grep -q "MIDDLE-MARKER-7f3a9" "$(splog)" && ok || bad "spill: the middle is not in the log"
+grep -qF "[shunt] command output was $(wc -c < "$TMP/gen.out") chars, 3000 lines (exit 0); full output saved to $(splog)." "$TMP/sp.txt" && ok || bad "spill: header wrong: $(head -n 1 "$TMP/sp.txt")"
+grep -qF "Do not re-run the command just to see more." "$TMP/sp.txt" && grep -qF "over the bulk-read payload cap" "$TMP/sp.txt" && ok || bad "spill: a log over the payload cap must not suggest bulk-read"
+seq -f 'mid-size line %06g ......................................' 1 400 > "$TMP/mid.out"
+spin "$TMP/mid.out"; sprun >/dev/null; MIDLOG=$(splog)
+sptext | grep -qF "$ROOT/scripts/bulk-read.sh --question \"<what you need>\" --paths $MIDLOG" && ok || bad "spill: guidance line wrong: $(sptext | sed -n 2p)"
+grep -q '^\[\.\.\. [0-9]* lines omitted \.\.\.\]$' "$TMP/sp.txt" && ok || bad "spill: omitted marker missing"
+grep -q '"hook":"shunt-spill".*"result":"spilled".*"secret":false' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "spill: spilled not logged"
+head -c 20000 /dev/zero | tr '\0' 'x' > "$TMP/oneline.out"
+spin "$TMP/oneline.out"; c=$(sprun)
+[ "$c" = 0 ] && cmp -s "$TMP/oneline.out" "$(splog)" && sptext | grep -q '…\[cut\]' && [ "$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout | length' "$TMP/sp.out")" -le 4500 ] && ok || bad "spill: 20k single line not handled"
+fill 2000 > "$F/big.md"
+spin "$TMP/gen.out" '{"tool_input":{"command":"cat big.md"}}'; untouched "cat big.md is a printer"
+spin "$TMP/gen.out" '{"tool_input":{"command":"sed -n 1,3000p big.md"}}'; untouched "sed -n is a printer"
+spin "$TMP/gen.out" '{"tool_input":{"command":"cat big.md | grep line"}}'; c=$(sprun); [ -s "$TMP/sp.out" ] && ok || bad "spill: a filtered cat should spill"
+spin "$TMP/gen.out" '{"tool_input":{"command":"/x/scripts/bulk-read.sh --question q --paths f"}}'; untouched "bulk-read.sh output untouched"
+spin "$TMP/gen.out" '{"tool_input":{"command":"make","run_in_background":true}}'; untouched "run_in_background untouched"
+spin "$TMP/gen.out" '{"tool_response":{"interrupted":true}}'; untouched "interrupted untouched"
+spin "$TMP/gen.out" '{"tool_response":{"isImage":true}}'; untouched "image untouched"
+spin "$TMP/gen.out" '{"agent_type":"Explore"}'; untouched "skipped agent type untouched"
+spin "$TMP/gen.out"; SHUNT_SPILL_DISABLE=1 untouched "SHUNT_SPILL_DISABLE=1 untouched"
+spin "$TMP/gen.out"; SHUNT_DISABLE=1 untouched "SHUNT_DISABLE=1 untouched"
+spin "$TMP/gen.out"; SHUNT_SPILL_MIN_CHARS=1000000 untouched "raised SHUNT_SPILL_MIN_CHARS untouched"
+printf 'not json' > "$TMP/sp.json"; untouched "malformed stdin"
+: > "$TMP/sp.json"; untouched "empty stdin"
+spin "$TMP/gen.out" '{"tool_use_id":"../escaped"}'; untouched "unsafe tool_use_id"
+spin "$TMP/gen.out" '{"session_id":"../../escaped"}'; untouched "unsafe session_id"
+[ -z "$(find "$XDG_CACHE_HOME" "$TMP" -maxdepth 3 -name '*escaped*' 2>/dev/null)" ] && ok || bad "spill: an unsafe id wrote a file"
+mkdir -p "$TMP/ro-cache"; chmod 500 "$TMP/ro-cache"
+spin "$TMP/gen.out"; XDG_CACHE_HOME="$TMP/ro-cache" untouched "unwritable cache dir"
+chmod 700 "$TMP/ro-cache"
+spin "$TMP/gen.out"; HOME='' XDG_CACHE_HOME='' untouched "no HOME and no XDG_CACHE_HOME"
+# stderr: short kept as is, long folded into the log with its tail shown
+printf 'warning: short\n' > "$TMP/short.err"
+spin "$TMP/gen.out" '{}' "$TMP/short.err"; sprun >/dev/null
+jq -e '.hookSpecificOutput.updatedToolOutput.stderr == "warning: short\n"' "$TMP/sp.out" >/dev/null && ok || bad "spill: short stderr not kept"
+seq -f 'stderr line %g ------------------------------------------' 1 300 > "$TMP/long.err"
+spin "$TMP/gen.out" '{}' "$TMP/long.err"; sprun >/dev/null
+jq -e '.hookSpecificOutput.updatedToolOutput.stderr == ""' "$TMP/sp.out" >/dev/null && sptext | grep -q 'stderr (last 20 lines' && sptext | grep -qF "stderr line 300 " \
+  && grep -qx -- '--- stderr ---' "$(splog)" && grep -qF "stderr line 1 " "$(splog)" && ok || bad "spill: long stderr not folded"
+# Claude Code's own saved output: use it, no copy, real tail
+mkdir -p "$TMP/home/.claude/projects/p/sess/tool-results"
+PERS="$TMP/home/.claude/projects/p/sess/tool-results/big-out.txt"
+seq -f 'persisted line %g ..........' 1 5000 > "$PERS"
+head -c 30000 "$PERS" > "$TMP/cut.out"
+spin "$TMP/cut.out" "$(jq -nc --arg p "$PERS" '{tool_response:{persistedOutputPath:$p,persistedOutputSize:1}}')"; sprun >/dev/null
+sptext | grep -qF "full output saved to $PERS." && sptext | grep -qxF "persisted line 5000 .........." && ok || bad "spill: persisted output not used: $(sptext | head -n 1)"
+[ ! -e "$(splog)" ] && ok || bad "spill: persisted output was copied"
+# diff index
+{ for i in 1 2 3; do printf 'diff --git a/src/f%s.c b/src/f%s.c\nindex 1..2 100644\n' "$i" "$i"; seq -f '+added line %g in a hunk of the diff ..........' 1 400; done; } > "$TMP/diff.out"
+spin "$TMP/diff.out" '{"tool_input":{"command":"git diff"}}'; sprun >/dev/null
+sptext | grep -q '^\[diff index' && sptext | grep -qF "805:diff --git a/src/f3.c b/src/f3.c" && ok || bad "spill: diff index missing: $(sptext | grep -n diff)"
+# secret-looking output: still spilled, flagged, no delegation suggested
+{ seq -f 'pre %g ..............................' 1 10; echo "-----BEGIN OPENSSH PRIVATE KEY-----"; seq -f 'post %g ..............................' 1 2000; } > "$TMP/secret.out"
+spin "$TMP/secret.out"; sprun >/dev/null
+SECRET_LOG=$(splog)
+sptext | grep -qF "This output looks like it contains secret material; do not delegate it." && ! sptext | grep -q "bulk-read.sh --question" && ok || bad "spill: secret output not flagged"
+grep -qxF "$SECRET_LOG" "$(dirname "$SECRET_LOG")/no-delegate.list" && ok || bad "spill: secret log not listed do-not-delegate"
+grep -q '"hook":"shunt-spill".*"secret":true' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "spill: secret not logged"
+# odd characters: control characters and U+FFFD survive, the result stays valid JSON
+printf 'ctl \001 and \357\277\275 and tab\t\n' > "$TMP/odd.out"; cat "$TMP/gen.out" >> "$TMP/odd.out"
+spin "$TMP/odd.out"; sprun >/dev/null
+jq -e '.hookSpecificOutput.updatedToolOutput.stdout | test("tab")' "$TMP/sp.out" >/dev/null && cmp -s "$TMP/odd.out" "$(splog)" && ok || bad "spill: control characters broke the excerpt"
+printf '{"session_id":"s","tool_use_id":"t","tool_input":{"command":"x"},"tool_response":{"stdout":"bad \377 byte %s","stderr":""}}' "$(head -c 13000 /dev/zero | tr '\0' 'y')" > "$TMP/sp.json"
+c=$(sprun); [ "$c" = 0 ] && { [ ! -s "$TMP/sp.out" ] || jq -e . "$TMP/sp.out" >/dev/null; } && ok || bad "spill: invalid UTF-8 input: exit $c"
+# spill logs and Claude Code's saved outputs are data: a whole Read is redirected, a range passes
+GENLOG=$(grep -l "MIDDLE-MARKER-7f3a9" "$SPROOT"/*/*.log | head -n 1)
+check "whole Read of a large spill log redirected" 2 "shunt:" $R "$(rd "$GENLOG")"
+check "ranged Read of a spill log allowed" 0 - $R "$(rd "$GENLOG" 1490 30)"
+check "whole Read of Claude Code's saved output (.claude/.../tool-results) redirected" 2 "shunt:" $R "$(rd "$PERS")"
+# cleanup: once an hour, only stale real directories inside the root
+mkdir -p "$SPROOT/old-sess" "$SPROOT/new-sess" "$TMP/outside-old"
+touch -d '3 days ago' "$SPROOT/old-sess" "$TMP/outside-old"; touch -d '1 day ago' "$SPROOT/new-sess"
+ln -s "$TMP/outside-old" "$SPROOT/link-sess"; touch -h -d '3 days ago' "$SPROOT/link-sess"
+rm -f "$SPROOT/.cleanup-stamp"
+spin "$TMP/gen.out"; sprun >/dev/null
+[ ! -e "$SPROOT/old-sess" ] && [ -d "$SPROOT/new-sess" ] && [ -d "$TMP/outside-old" ] && [ -L "$SPROOT/link-sess" ] && ok || bad "spill cleanup removed the wrong things"
+[ -s "$SECRET_LOG" ] && ok || bad "spill cleanup removed a fresh session"
+mkdir -p "$SPROOT/old-sess2"; touch -d '3 days ago' "$SPROOT/old-sess2"
+spin "$TMP/gen.out"; sprun >/dev/null
+[ -d "$SPROOT/old-sess2" ] && ok || bad "spill cleanup ran twice within an hour"
+# the small path stays fast
+spin "$TMP/small.out"
+t0=$(date +%s%N); for _ in 1 2 3 4 5; do "$HOOKS/$SP" < "$TMP/sp.json" >/dev/null 2>&1; done; t1=$(date +%s%N)
+SPILL_SMALL_MS=$(( (t1 - t0) / 5000000 ))
+[ "$SPILL_SMALL_MS" -lt 300 ] && ok || bad "spill: small path took ${SPILL_SMALL_MS} ms per call"
+echo "info: spill small path ${SPILL_SMALL_MS} ms per call"
+
 # ── composition: validate-bash, check-loop and shunt on one input, in sequence ──
 # each decides alone; a shunt redirect then repeat stays far under check-loop's
 # advisory (5) and block (12); a force push stays blocked by validate-bash.
@@ -567,6 +688,11 @@ grep -q '"hook":"bulk-read".*"result":"private"' "$XDG_STATE_HOME"/claude-hooks/
 grep -q '"hook":"bulk-read".*"result":"secret"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "secret refusal not logged"
 grep -q '"hook":"bulk-read".*"result":"sensitive"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "sensitive refusal not logged"
 # ── v2: bulk-read plumbing ──
+# spill logs through bulk-read: listed secret logs refused, content check applies, clean logs sent
+brx "spill log listed do-not-delegate is refused" "saved command output that looked like secret material" --question "$Q" --paths "$SECRET_LOG"
+mkdir -p "$SPROOT/manual"; { echo "-----BEGIN RSA PRIVATE KEY-----"; fill 50; } > "$SPROOT/manual/toolu_m.log"; chmod 644 "$SPROOT/manual/toolu_m.log"
+brx "spill log with key material refused by the content check" "looks like secret material by content" --question "$Q" --paths "$SPROOT/manual/toolu_m.log"
+br "clean spill log is delegated" 0 - "answer at big.txt:42" --question "$Q" --paths "$MIDLOG"
 HOME='' XDG_CACHE_HOME='' br "no HOME and no XDG_CACHE_HOME: clear refusal" 1 "neither XDG_CACHE_HOME nor HOME is set" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=notloggedin br "'Not logged in' on stdout reaches the message" 1 "claude exited 1: Not logged in" - --question "$Q" --paths small.txt
 NOJQ_PATH=""

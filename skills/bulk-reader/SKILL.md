@@ -20,6 +20,10 @@ S="$(dirname "$(readlink -f ~/.claude/skills/bulk-reader/SKILL.md)")/../../scrip
 
 Each call is independent: for a follow-up, ask again with the same `--paths`. Limits: 12 files and 200 KB per call by default; split larger sets, or use Grep. In an interactive session in `default` permission mode each call asks for permission unless the owner has allowed the script.
 
+## Saved command output
+
+A `[shunt] command output was N chars ...` notice means a large command result was saved to the named log and you see only its head and tail. Grep or Read a range of that log (or ask `bulk-read.sh` about it); do not re-run the command to see more.
+
 ## Ask well
 
 Ask one specific question that names what you are looking for (a function, a setting, an error string, a behaviour), not "summarise this file". Good: "Which functions write to the session state file, and under what conditions?" Weak: "What does this do?"

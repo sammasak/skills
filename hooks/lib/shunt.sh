@@ -80,12 +80,58 @@ shunt_source() {
 # .claude/ directory, and anything in the skills repo these hooks live in.
 shunt_instructions() {
   local root
+  # Claude Code's own saved command outputs live under .claude/ but are data, not instructions.
+  case "$2/" in */tool-results/*) return 1 ;; esac
   case "${1##*/}" in CLAUDE.md | AGENTS.md | ROLE.md | SKILL.md | MEMORY.md) return 0 ;; esac
   case "${2##*/}" in CLAUDE.md | AGENTS.md | ROLE.md | SKILL.md | MEMORY.md) return 0 ;; esac
   case "$1/" in */.claude/*) return 0 ;; esac
   case "$2/" in */.claude/*) return 0 ;; esac
   root=$(cd "$3/.." 2>/dev/null && pwd -P) || return 1
   case "$2" in "$root"/*) return 0 ;; esac
+  return 1
+}
+
+# shunt_file_printer <command>: 0 when the command is one simple invocation of a
+# plain file printer (cat/head/tail/less/more/bat/nl, or sed -n): the words the
+# Bash-read hook judges; shunt_compound rejects anything beyond one invocation.
+shunt_file_printer() {
+  case "$1" in
+    cat\ * | head\ * | tail\ * | less\ * | more\ * | bat\ * | nl\ *) return 0 ;;
+    sed\ -n\ * | sed\ -n[0-9]*) return 0 ;;
+  esac
+  return 1
+}
+shunt_compound() {
+  case "$1" in
+    *[\|\>\<\;\&\$\`\{\}\(\)\\~\*\?\[\]]* | *$'\n'* | *$'\r'*) return 0 ;;
+  esac
+  return 1
+}
+
+# shunt_safe_id <id>: 0 for a non-empty [A-Za-z0-9_-]+ id, safe as a path component.
+shunt_safe_id() {
+  [ -n "$1" ] || return 1
+  case "$1" in *[!A-Za-z0-9_-]*) return 1 ;; esac
+}
+
+# shunt_spill_root: where shunt-spill-output.sh keeps command logs (empty: nowhere).
+shunt_spill_root() {
+  local base="${XDG_CACHE_HOME:-${HOME:+$HOME/.cache}}"
+  [ -n "$base" ] && printf '%s/claude-spill\n' "$base"
+}
+
+# shunt_no_delegate <resolved path>: 0 when a spill log of secret-looking output
+# was listed as not to be delegated (lists are per session, checked across all).
+shunt_no_delegate() {
+  local root list line
+  root=$(shunt_spill_root) || return 1
+  [ -n "$root" ] && [ -d "$root" ] || return 1
+  for list in "$root"/*/no-delegate.list; do
+    [ -f "$list" ] || continue
+    while IFS= read -r line; do
+      if [ "$line" = "$1" ]; then return 0; fi
+    done 2>/dev/null < "$list"
+  done
   return 1
 }
 
@@ -152,7 +198,12 @@ shunt_sensitive() {
 # the mode was chosen on purpose. Under a private umask (077) every file is 0600
 # and the mode says nothing, so the check stands down rather than refuse everything.
 shunt_private() { # shunt_private <file> [umask]: umask defaults to the current one
-  local mode um="${2:-}"
+  local mode um="${2:-}" root
+  # Saved command outputs are 0600 by design (spill logs, Claude Code's tool-results):
+  # their mode is no signal; the content check still applies to them.
+  case "$1" in */tool-results/*) return 1 ;; esac
+  root=$(shunt_spill_root)
+  if [ -n "$root" ]; then case "$1" in "$root"/* | "$(realpath -m -- "$root" 2>/dev/null)"/*) return 1 ;; esac; fi
   [ -n "$um" ] || um=$(umask 2>/dev/null) || return 1
   case "$um" in '' | *[!0-7]*) return 1 ;; esac
   [ $(( 8#$um & 8#044 )) -ne $(( 8#044 )) ] || return 1

@@ -95,6 +95,7 @@ for f in "${FILES[@]}"; do
   [ -r "$real" ] || invalid "$f is not readable."
   shunt_nontext "$real" && invalid "$f is binary or non-text; not delegated."
   shunt_private "$real" "$CALLER_UMASK" && fail private "$f is private (mode $(stat -c %a -- "$real"), no group or other read): not delegated; read it directly if you are permitted to."
+  shunt_no_delegate "$real" && fail secret "$f is a saved command output that looked like secret material: not delegated; Grep or Read a range of it instead."
   shunt_secret_marker "$real" && fail secret "$f looks like secret material by content (a key, token, Kubernetes Secret or sops data): not delegated; read it directly if you are permitted to."
   b=$(shunt_count_bytes "$real"); l=$(shunt_count_lines "$real")
   TOTAL_BYTES=$((TOTAL_BYTES + b)); TOTAL_LINES=$((TOTAL_LINES + l))

@@ -4,7 +4,7 @@
 
 Two PreToolUse hooks notice when Claude Code is about to put more than about 8000 tokens of one file into context (a `Read`, or `cat`/`head`/`tail`/`less`/`more`/`bat`/`nl` through Bash) and deny that first attempt with a message carrying the exact `scripts/bulk-read.sh` command and a range that fits. The script hands the files and one question to headless Claude Code (`claude -p`, haiku by default, no tools) and prints a short, cited answer, so only the answer enters context. Delegated tokens are Anthropic usage on the same account: cheaper per token than the main model, not free. The `bulk-reader` skill tells Claude when to use it and when not to. Any later read of the same file in the session is allowed, so the redirect is a nudge, never a wall.
 
-Files: `hooks/shunt-check-read.sh`, `hooks/shunt-check-bash-read.sh`, `hooks/lib/shunt.sh` (shared policy), `hooks/lib/state.sh` (`seen_before`), `scripts/bulk-read.sh`, `skills/bulk-reader/SKILL.md`, `tests/test-shunt.sh` (`devenv tasks run skills:test:shunt`, also in pre-push).
+Files: `hooks/shunt-check-read.sh`, `hooks/shunt-check-bash-read.sh`, `hooks/shunt-spill-output.sh` (PostToolUse, see "Command output spill"), `hooks/lib/shunt.sh` (shared policy), `hooks/lib/state.sh` (`seen_before`), `scripts/bulk-read.sh`, `skills/bulk-reader/SKILL.md`, `tests/test-shunt.sh` (`devenv tasks run skills:test:shunt`, also in pre-push).
 
 ## Upstream and what changed
 
@@ -69,6 +69,9 @@ Every logged decision lands in `$XDG_STATE_HOME/claude-hooks/<date>.jsonl` as `{
 | `SHUNT_SKIP_AGENTS` | `Explore,claude-code-guide,statusline-setup` | hooks: comma-separated `agent_type` values to leave alone; set empty to cover every agent |
 | `SHUNT_EXCLUDE` | unset | hooks and script: colon-separated glob patterns, matched against the full path or the basename (never expanded against the filesystem) |
 | `SHUNT_MAX_PAYLOAD_BYTES` | 200000 | script; hooks stop suggesting the script above it |
+| `SHUNT_SPILL_DISABLE` | unset | spill hook: `1` leaves every command output untouched |
+| `SHUNT_SPILL_MIN_CHARS` | 12000 | spill hook: stdout+stderr size above which output is saved and excerpted |
+| `SHUNT_SPILL_KEEP_DAYS` | 2 | spill hook: session log directories untouched this long are deleted |
 | `SHUNT_CLAUDE_BIN` | `claude` from PATH | script |
 | `SHUNT_MODEL` | `haiku` (`--model`) | script |
 | `SHUNT_MAX_BUDGET_USD` | 0.15 (`--max-budget-usd`, per call; covers a payload at the cap) | script |
@@ -106,10 +109,24 @@ The hooks fail open: any error, missing dependency or missing session allows the
 - The script never reads, sets or prints a credential. The payload goes on stdin, never argv; only the static system prompt (with the per-call delimiter) is on argv.
 - Prompt injection: file content is wrapped in a random per-call delimiter and the model is told never to follow instructions inside it, but a hostile file can still skew the answer. The skill treats every answer as a lead to verify with a ranged Read, never as ground truth.
 
+## Command output spill
+
+`hooks/shunt-spill-output.sh`, registered as PostToolUse with matcher `Bash`. In 77,758 real tool results, Bash output is 61% of tool-result volume; results over 12,000 chars are 5.4% of Bash calls but 38% of Bash volume, and Claude Code itself only spills above 30,000 chars (a 2 KB head-only preview). So when a successful command's stdout plus stderr exceeds `SHUNT_SPILL_MIN_CHARS` (12,000), the hook saves the full output and replaces what the model sees (`updatedToolOutput`) with an excerpt. Why 12,000: delegating or re-reading pays off from about 9k chars for generated output and about 15k for file dumps, with a median of 22 turns left in which the output would be re-sent as context. No model is called; the model can Grep or Read a range of the log, or run `bulk-read.sh` on it with its own question.
+
+- Excerpt, about 4,000 chars: a header (`[shunt] command output was <C> chars, <L> lines (exit 0); full output saved to <path>.` and how to get the rest, without re-running the command), up to 15 head lines (1,200 chars), `[... N lines omitted ...]`, up to 40 tail lines (2,800 chars), each line cut at 240 chars with `…[cut]`. Output with `diff --git` headers gets an index of up to 40 headers with their log line numbers in place of most of the head. Short stderr (up to 2,000 chars) is returned as is; longer stderr is appended to the log under `--- stderr ---` and its last 20 lines are shown.
+- Untouched (exit 0, no output, logged): failed commands (they go to PostToolUseFailure, so error output is never hidden), interrupted or image results, `run_in_background`, plain file printers (`cat/head/tail/less/more/bat/nl`, `sed -n`: the Bash-read hook owns those, and spilling a deliberate read guarantees a re-read), calls to `bulk-read.sh`, agent types in `SHUNT_SKIP_AGENTS`, `SHUNT_DISABLE`/`SHUNT_SPILL_DISABLE`, and any error (missing jq, unparsable input, unsafe ids, unwritable directory).
+- Logs live in `${XDG_CACHE_HOME:-~/.cache}/claude-spill/<session_id>/<tool_use_id>.log` (directories 0700, files 0600, created exclusively; ids must be `[A-Za-z0-9_-]+`). When Claude Code already saved the output (`persistedOutputPath`), that file is used and not copied. At most once an hour, a spill deletes session directories untouched for `SHUNT_SPILL_KEEP_DAYS`: only real directories directly inside the resolved root, never through a symlink.
+- Each decision is one JSONL line: hook `shunt-spill`, result `spilled`, `small`, `printer`, `background`, `interrupted`, `disabled`, `subagent` or `error`, with `chars`, `lines`, `excerpt_chars`, `secret`.
+- Secrets: the content markers run over the log. On a hit the output is still spilled (the model already saw it and Claude Code may have saved it), the header says not to delegate it, the `bulk-read.sh` suggestion is left out, and the log path goes on the session's `no-delegate.list`, which `bulk-read.sh` honours. The hook adds one more 0600 copy on disk of output the model and Claude Code's own saved file already hold. Spill logs and `tool-results` files are 0600 by design, so the private-mode check skips them; the content check still applies.
+- Spill logs and Claude Code's `tool-results` files are data: a whole Read of a large one is redirected by the token rule (the `.claude/` instructions exemption does not cover `tool-results`), and ranged reads pass.
+
 ## Design notes: considered, not done
 
 - Clamping instead of denying: a PreToolUse hook can rewrite the Read with `updatedInput` (a fitting `limit`) and explain it via `additionalContext`, which is documented and would save the denied turn. Not done: it is unverified whether a clamped Read satisfies Edit's read-before-edit check, and how auto mode treats a rewritten Read.
 - Gating on the main model (redirect only when it is expensive): hooks do not receive the model, so there is nothing to gate on.
+- Spill: an automatic `claude -p` summary inside the hook. It would block every large result for about 5 s, summarise without knowing the model's question, send unvetted output to a second session, and break the no-model-in-hooks rule.
+- Spill: wrapping every command before it runs (PreToolUse `updatedInput` with a tee to a log). In a prototype a command ending in `exit 3` lost all its output, the rewritten command was refused by permission checks, and background output was invisible.
+- Spill: lowering Claude Code's `bashOutputMaxChars`. Its truncation keeps the head, so failure tails would be lost.
 
 ## Rollback
 

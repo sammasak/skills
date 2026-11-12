@@ -37,9 +37,7 @@ case "$CMD" in
   *) exit 0 ;;
 esac
 # Anything beyond one simple invocation is out of scope: allow.
-case "$CMD" in
-  *[\|\>\<\;\&\$\`\{\}\(\)\\~\*\?\[\]]* | *$'\n'* | *$'\r'*) shunt_done compound ;;
-esac
+shunt_compound "$CMD" && shunt_done compound
 GATE=$(shunt_context_gate)
 [ -n "$GATE" ] && shunt_done "$GATE"
 
