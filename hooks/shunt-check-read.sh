@@ -13,7 +13,10 @@ set -uo pipefail
 
 [ "${SHUNT_DISABLE:-0}" = "1" ] && exit 0
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Physical location (symlinks resolved): a symlinked hooks dir or script must neither
+# exempt a foreign tree as "the skills repo" nor name a bulk-read.sh that is not there.
+SCRIPT_DIR=$(realpath -e -- "$0" 2>/dev/null) || exit 0
+SCRIPT_DIR="${SCRIPT_DIR%/*}"
 source "$SCRIPT_DIR/lib/input.sh" 2>/dev/null || exit 0
 source "$SCRIPT_DIR/lib/shunt.sh" 2>/dev/null || exit 0
 source "$SCRIPT_DIR/lib/state.sh" 2>/dev/null || exit 0
@@ -26,7 +29,7 @@ START_MS=$(($(date +%s%N) / 1000000))
 # shellcheck disable=SC2034
 SHUNT_HOOK=shunt-read
 T=$(shunt_threshold)
-LINES=0 BYTES=0 RETURNED=0 TOKENS=0
+NLINES=0 BYTES=0 RETURNED=0 TOKENS=0
 
 FILE=$(hook_file_path)
 [ -n "$FILE" ] || exit 0
@@ -60,18 +63,20 @@ shunt_nontext "$REAL" && shunt_done nontext
 shunt_instructions "$ABS" "$REAL" "$SCRIPT_DIR" && shunt_done instructions
 shunt_source "$REAL" && shunt_done source
 
-LINES=$(shunt_count_lines "$REAL") || exit 0
+NLINES=$(shunt_count_lines "$REAL") || exit 0
 BYTES=$(shunt_count_bytes "$REAL") || exit 0
 
 # Lines this read returns. Read's offset is the 1-based first line, so
 # offset:0 and limit:0 both mean "from the start / no limit": not a range.
-RETURNED=$LINES
-[ "$OFFSET" -gt 0 ] && RETURNED=$(( LINES - OFFSET + 1 ))
+RETURNED=$NLINES
+[ "$OFFSET" -gt 0 ] && RETURNED=$(( NLINES - OFFSET + 1 ))
 [ "$RETURNED" -lt 0 ] && RETURNED=0
 [ "$LIMIT" -gt 0 ] && [ "$LIMIT" -lt "$RETURNED" ] && RETURNED=$LIMIT
+# Read returns at most 2000 lines when no limit is given.
+[ "$LIMIT" -eq 0 ] && [ "$RETURNED" -gt 2000 ] && RETURNED=2000
 # Bytes it returns, pro rata, so a one-line minified file still counts.
 RET_BYTES=0
-[ "$LINES" -gt 0 ] && RET_BYTES=$(( BYTES * RETURNED / LINES ))
+[ "$NLINES" -gt 0 ] && RET_BYTES=$(( BYTES * RETURNED / NLINES ))
 TOKENS=$(shunt_tokens "$RET_BYTES" "$RETURNED")
 
 if [ "$TOKENS" -le "$T" ]; then
@@ -85,4 +90,4 @@ shunt_private "$REAL" && shunt_done private
 shunt_secret_marker "$REAL" && shunt_done secret
 
 shunt_redirect "$SCRIPT_DIR" "$ABS" "$REAL" \
-  "shunt: $ABS is $LINES lines ($BYTES bytes); this Read would put about $TOKENS tokens in context, over the threshold of $T."
+  "shunt: $ABS is $NLINES lines ($BYTES bytes); this Read would put about $TOKENS tokens in context, over the threshold of $T."

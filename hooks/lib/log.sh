@@ -7,9 +7,13 @@
 #                 '{"file":"foo.txt","count":3}'
 #   All fields (hook, session, duration_ms, result, ts) are always present.
 
-HOOK_LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-hooks"
+# Empty when neither XDG_STATE_HOME nor HOME is set: logging is then skipped
+# instead of an unbound-variable error ending a `set -u` hook with exit 1.
+HOOK_LOG_DIR="${XDG_STATE_HOME:-${HOME:+$HOME/.local/state}}"
+HOOK_LOG_DIR="${HOOK_LOG_DIR:+$HOOK_LOG_DIR/claude-hooks}"
 
 log_hook() {
+  [ -n "$HOOK_LOG_DIR" ] || return 0
   local hook="$1" result="$2" duration_ms="$3"
   local extras="${4:-}"
 

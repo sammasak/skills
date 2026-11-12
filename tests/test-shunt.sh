@@ -309,6 +309,43 @@ check "unreadable state file allows" 0 - $R "$(rd "$F/big.txt" null null locked)
 [ -s "$TMP/err" ] && bad "unreadable state file printed '$(cat "$TMP/err")'" || ok
 chmod 600 "$XDG_RUNTIME_DIR/claude-shunt-shunttest-locked.seen"
 
+# ── v2 review: LINES, physical paths, 2000-line cap, int bounds, no HOME, source list ──
+# LINES is bash's terminal-rows variable: under a sized pty the hook must still use the file's line count
+if command -v script >/dev/null 2>&1; then
+  rd "$F/big.txt" null null pty > "$TMP/pty.json"
+  script -qec "stty rows 24 cols 80; '$HOOKS/$R' < '$TMP/pty.json'" "$TMP/pty.log" >/dev/null 2>&1
+  grep -q "Read at most 520 lines" "$TMP/pty.log" && ok || bad "pty: range advice wrong: $(grep -o 'Read at most [0-9]* lines' "$TMP/pty.log")"
+  grep -q '"session":"shunttest-pty".*"lines":2000' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "pty: logged line count is not the file's"
+else
+  echo "SKIP: pty test (no script(1) on PATH)"
+fi
+mkdir -p "$TMP/fakehome"; ln -s "$HOOKS" "$TMP/fakehome/hooks"; ln -s "$HOOKS/$R" "$TMP/fakehome/read-hook.sh"
+fill 2000 > "$TMP/fakehome/notes.txt"
+for h in "$TMP/fakehome/hooks/$R" "$TMP/fakehome/read-hook.sh"; do
+  printf '%s' "$(rd "$TMP/fakehome/notes.txt")" | "$h" >/dev/null 2>"$TMP/err"; code=$?
+  [ "$code" -eq 2 ] && ok || bad "symlinked hook $h exempted a foreign tree (exit $code)"
+  grep -qF "$ROOT/scripts/bulk-read.sh --question" "$TMP/err" && ok || bad "symlinked hook $h named the wrong script: $(cat "$TMP/err")"
+done
+fill 5000 8 > "$F/narrow.txt"
+check "5000 x 8 B whole Read (capped at 2000 lines, ~6.8k tokens) allowed" 0 - $R "$(rd "$F/narrow.txt")"
+grep -q '"lines":5000,"bytes":40000,"returned":2000' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "2000-line cap not reflected in the log"
+check "the same file with limit 5000 redirected (no cap with an explicit limit)" 2 "shunt:" $R "$(rd "$F/narrow.txt" null 5000)"
+SHUNT_MIN_TOKENS=9999999999999999999 check "a threshold over 15 digits falls back to 8000" 2 "threshold of 8000" $R "$(rd "$F/t8003.txt")"
+SHUNT_MIN_TOKENS=999999999999999 check "a 15-digit threshold is used" 0 - $R "$(rd "$F/big.txt")"
+for h in $R $B; do
+  if [ "$h" = "$R" ]; then j=$(rd "$F/big.txt"); else j=$(bc "cat big.txt"); fi
+  printf '%s' "$j" | env -u HOME -u XDG_STATE_HOME -u XDG_RUNTIME_DIR "$HOOKS/$h" >/dev/null 2>"$TMP/err"; code=$?
+  [ "$code" -eq 0 ] && [ ! -s "$TMP/err" ] && ok || bad "$h with HOME and XDG dirs unset: exit $code, stderr '$(cat "$TMP/err")'"
+done
+for e in sql css v r m s pl; do
+  fill 2000 > "$F/data.$e"
+  check "large .$e is not exempt as source" 2 "shunt:" $R "$(rd "$F/data.$e")"
+done
+fill 2000 > "$F/bundle.min.js"; fill 2000 > "$F/site.min.css"; fill 2000 > "$F/app.js"
+check "*.min.js is not source" 2 "shunt:" $R "$(rd "$F/bundle.min.js")"
+check "*.min.css is not source" 2 "shunt:" $R "$(rd "$F/site.min.css")"
+check "plain .js is still source" 0 - $R "$(rd "$F/app.js")"
+
 # ── composition: validate-bash, check-loop and shunt on one input, in sequence ──
 # each decides alone; a shunt redirect then repeat stays far under check-loop's
 # advisory (5) and block (12); a force push stays blocked by validate-bash.
@@ -530,6 +567,7 @@ grep -q '"hook":"bulk-read".*"result":"private"' "$XDG_STATE_HOME"/claude-hooks/
 grep -q '"hook":"bulk-read".*"result":"secret"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "secret refusal not logged"
 grep -q '"hook":"bulk-read".*"result":"sensitive"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "sensitive refusal not logged"
 # ── v2: bulk-read plumbing ──
+HOME='' XDG_CACHE_HOME='' br "no HOME and no XDG_CACHE_HOME: clear refusal" 1 "neither XDG_CACHE_HOME nor HOME is set" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=notloggedin br "'Not logged in' on stdout reaches the message" 1 "claude exited 1: Not logged in" - --question "$Q" --paths small.txt
 NOJQ_PATH=""
 IFS=: read -ra pdirs <<< "$PATH"

@@ -14,7 +14,8 @@
 # shellcheck source-path=SCRIPTDIR/../hooks/lib
 set -uo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE=$(realpath -e -- "$0" 2>/dev/null) || { echo "bulk-read: cannot locate itself; refusing to run." >&2; exit 1; }
+HERE="${HERE%/*}"
 LIB="$HERE/../hooks/lib"
 FALLBACK="Fall back: Read the file with offset/limit ranges, or repeat the full Read."
 # The sensitive-path list is the guard: without it nothing is sent.
@@ -119,7 +120,9 @@ SYSTEM="You answer one question about files for a coding agent. You have no tool
 # then fails; --max-budget-usd caps the cost instead. The parent session's and
 # Herdr's identity variables are removed so the child is not mistaken for
 # (or attached to) the calling agent.
-CHILD_CWD="${XDG_CACHE_HOME:-$HOME/.cache}/shunt-bulk-read"
+CHILD_CWD="${XDG_CACHE_HOME:-${HOME:+$HOME/.cache}}"
+[ -n "$CHILD_CWD" ] || fail error "neither XDG_CACHE_HOME nor HOME is set; no place for the child's working directory."
+CHILD_CWD="$CHILD_CWD/shunt-bulk-read"
 { mkdir -p "$CHILD_CWD" && chmod 700 "$CHILD_CWD"; } 2>/dev/null || fail error "cannot create $CHILD_CWD."
 UNSET=(-u CLAUDE_CODE_MAX_OUTPUT_TOKENS -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION
   -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN -u CLAUDE_CODE_SESSION_ATTENDED -u CLAUDE_PID -u CLAUDE_EFFORT)

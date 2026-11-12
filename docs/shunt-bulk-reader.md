@@ -42,14 +42,14 @@ Both hooks, in order (first match wins). Every row except "redirect" exits 0 sil
 | Sensitive or `SHUNT_EXCLUDE` path (given or resolved) | allow (`sensitive`) |
 | Image, PDF, notebook, or a NUL byte in the first 64 KiB | allow (`nontext`, Bash skips that file) |
 | `CLAUDE.md`, `AGENTS.md`, `ROLE.md`, `SKILL.md`, `MEMORY.md`, anything under a `.claude/` directory, anything in the skills repo the hooks live in | allow (`instructions`) |
-| Source code (`.rs .nix .py .ts .tsx .js .go .sh .c .java .kt .rb .lua .sql .tf .zig .swift .cs .ex .hs`, about 60 more, `Makefile`, `Dockerfile`, `justfile`) unless `SHUNT_INCLUDE_SOURCE=1` | allow (`source`) |
+| Source code (`.rs .nix .py .ts .tsx .js .go .sh .c .java .kt .rb .lua .tf .zig .swift .cs .ex .hs`, about 50 more, `Makefile`, `Dockerfile`, `justfile`; not `.sql .css .v .r .m .s .pl` or `*.min.js`/`*.min.css`, which are often data) unless `SHUNT_INCLUDE_SOURCE=1` | allow (`source`) |
 | Estimated tokens <= `SHUNT_MIN_TOKENS` | allow (`allow`, or `targeted` for a range) |
 | Would redirect, but the file is private-mode or holds key material (the script would refuse it) | allow (`private`, `secret`) |
 | No session id, or one that is not `[A-Za-z0-9_-]+`, or the state file is unusable | allow (`nostate`) |
 | This resolved file was already redirected this session, by either hook | allow (`bypass`) |
 | Otherwise | exit 2 with the redirect message (`redirect`) |
 
-Estimated tokens are `bytes*2/7 + lines*11/10` over the part the read returns. Returned lines: Read is `min(limit if > 0, total - offset + 1 if offset > 0, else total)`; head/tail use `-n N`, `-N`, `-nN`, `--lines=N`, `-c`/`--bytes` (byte mode), `tail -n +K`, `head -n -K`, default 10; the others return the whole file. Returned bytes are pro rata. Bash decides per file and names the file with the largest estimate. The repeat key is the `realpath` of the file, in one state file shared by both hooks, so the second read of a file in any shape (whole, `offset: 1`, `cat  f`, a symlink) passes.
+Estimated tokens are `bytes*2/7 + lines*11/10` over the part the read returns. Returned lines: Read is `min(limit if > 0, total - offset + 1 if offset > 0, else total)`, capped at 2000 when no limit is given (Read's own default); head/tail use `-n N`, `-N`, `-nN`, `--lines=N`, `-c`/`--bytes` (byte mode), `tail -n +K`, `head -n -K`, default 10; the others return the whole file. Returned bytes are pro rata. Bash decides per file and names the file with the largest estimate. The repeat key is the `realpath` of the file, in one state file shared by both hooks, so the second read of a file in any shape (whole, `offset: 1`, `cat  f`, a symlink) passes.
 
 The message gives the script command, or, for a file over `SHUNT_MAX_PAYLOAD_BYTES`, says to use Grep or a range instead. It names the most lines one ranged Read can return under the threshold (omitted for files under 5 lines or with a single line over the threshold), says to Read the range you will change if you will edit the file, and says that repeating the read is enough (no `allow_large` needed).
 

@@ -12,7 +12,10 @@ set -uo pipefail
 
 [ "${SHUNT_DISABLE:-0}" = "1" ] && exit 0
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Physical location (symlinks resolved): a symlinked hooks dir or script must neither
+# exempt a foreign tree as "the skills repo" nor name a bulk-read.sh that is not there.
+SCRIPT_DIR=$(realpath -e -- "$0" 2>/dev/null) || exit 0
+SCRIPT_DIR="${SCRIPT_DIR%/*}"
 source "$SCRIPT_DIR/lib/input.sh" 2>/dev/null || exit 0
 source "$SCRIPT_DIR/lib/shunt.sh" 2>/dev/null || exit 0
 source "$SCRIPT_DIR/lib/state.sh" 2>/dev/null || exit 0
@@ -25,7 +28,7 @@ START_MS=$(($(date +%s%N) / 1000000))
 # shellcheck disable=SC2034
 SHUNT_HOOK=shunt-bash
 T=$(shunt_threshold)
-LINES=0 BYTES=0 RETURNED=0 TOKENS=0
+NLINES=0 BYTES=0 RETURNED=0 TOKENS=0
 
 CMD=$(hook_command)
 [ -n "$CMD" ] || exit 0
@@ -163,7 +166,7 @@ if [ -z "$BEST" ]; then
   [ "$KIND" = whole ] && shunt_done allow
   shunt_done targeted
 fi
-LINES=$BEST_LINES BYTES=$BEST_BYTES RETURNED=$BEST_RET TOKENS=$BEST_TOK
+NLINES=$BEST_LINES BYTES=$BEST_BYTES RETURNED=$BEST_RET TOKENS=$BEST_TOK
 
 shunt_redirect "$SCRIPT_DIR" "$BEST" "$BEST_REAL" \
-  "shunt: this $TOOL would print about $RETURNED lines of $BEST ($LINES lines, $BYTES bytes), about $TOKENS tokens, over the threshold of $T."
+  "shunt: this $TOOL would print about $RETURNED lines of $BEST ($NLINES lines, $BYTES bytes), about $TOKENS tokens, over the threshold of $T."

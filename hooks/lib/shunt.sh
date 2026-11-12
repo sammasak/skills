@@ -14,6 +14,7 @@ SHUNT_DEFAULT_SKIP_AGENTS="Explore,claude-code-guide,statusline-setup"
 shunt_int() {
   case "$1" in
     '' | *[!0-9]*) echo "$2" ;;
+    ????????????????*) echo "$2" ;;   # over 15 digits: beyond safe shell arithmetic
     *) echo "$((10#$1))" ;;
   esac
 }
@@ -60,15 +61,16 @@ shunt_source() {
   local b="${1##*/}"
   b="${b,,}"
   case "$b" in
+    *.min.js | *.min.css | *.min.mjs) return 1 ;;   # minified: data, not source to edit
     makefile | gnumakefile | dockerfile | justfile | rakefile | gemfile | *.mk) return 0 ;;
   esac
   case "$b" in
     *.rs | *.nix | *.py | *.pyi | *.ts | *.tsx | *.mts | *.cts | *.js | *.jsx | *.mjs | *.cjs | *.go | \
-    *.sh | *.bash | *.zsh | *.fish | *.c | *.h | *.cc | *.cpp | *.cxx | *.hpp | *.hh | *.m | *.mm | \
-    *.java | *.kt | *.kts | *.scala | *.groovy | *.gradle | *.rb | *.lua | *.sql | *.tf | *.hcl | *.zig | \
+    *.sh | *.bash | *.zsh | *.fish | *.c | *.h | *.cc | *.cpp | *.cxx | *.hpp | *.hh | *.mm | \
+    *.java | *.kt | *.kts | *.scala | *.groovy | *.gradle | *.rb | *.lua | *.tf | *.hcl | *.zig | \
     *.swift | *.cs | *.fs | *.ex | *.exs | *.erl | *.hrl | *.hs | *.ml | *.mli | *.elm | *.dart | *.php | \
-    *.pl | *.pm | *.r | *.jl | *.clj | *.cljs | *.nim | *.v | *.vue | *.svelte | *.css | *.scss | *.sass | \
-    *.proto | *.cmake | *.ps1 | *.vim | *.el | *.asm | *.s | *.cu | *.wgsl | *.glsl) return 0 ;;
+    *.pm | *.jl | *.clj | *.cljs | *.nim | *.vue | *.svelte | *.scss | *.sass | \
+    *.proto | *.cmake | *.ps1 | *.vim | *.el | *.asm | *.cu | *.wgsl | *.glsl) return 0 ;;
   esac
   return 1
 }
@@ -206,13 +208,13 @@ shunt_count_lines() {
 
 shunt_count_bytes() { wc -c 2>/dev/null < "$1"; }
 
-shunt_script_path() { printf '%s/scripts/bulk-read.sh\n' "$(cd "$1/.." && pwd)"; }
+shunt_script_path() { printf '%s/scripts/bulk-read.sh\n' "$(cd "$1/.." && pwd -P)"; }
 
 # Shared hook tail (needs lib/log.sh and lib/state.sh). Callers set SHUNT_HOOK,
-# START_MS, T, LINES, BYTES, RETURNED and TOKENS.
+# START_MS, T, NLINES, BYTES, RETURNED and TOKENS.
 shunt_done() { # shunt_done <result> [exit]: log the decision and exit
   log_hook "$SHUNT_HOOK" "$1" "$(( ($(date +%s%N) / 1000000) - START_MS ))" \
-    "{\"lines\":$LINES,\"bytes\":$BYTES,\"returned\":$RETURNED,\"tokens\":$TOKENS,\"threshold\":$T}" 2>/dev/null || true
+    "{\"lines\":$NLINES,\"bytes\":$BYTES,\"returned\":$RETURNED,\"tokens\":$TOKENS,\"threshold\":$T}" 2>/dev/null || true
   exit "${2:-0}"
 }
 
@@ -228,7 +230,7 @@ shunt_redirect() {
     *) shunt_done nostate ;;
   esac
   cap=$(shunt_max_payload)
-  fit=$(shunt_fit_lines "$BYTES" "$LINES" "$T")
+  fit=$(shunt_fit_lines "$BYTES" "$NLINES" "$T")
   {
     printf '%s\n' "$4"
     if [ "$BYTES" -gt "$cap" ]; then
@@ -237,7 +239,7 @@ shunt_redirect() {
       printf 'To explore or summarise it, run this via Bash instead (see the bulk-reader skill):\n'
       printf '  %s --question "<what you need to know>" --paths %q\n' "$(shunt_script_path "$1")" "$2"
     fi
-    if [ "$LINES" -ge 5 ] && [ "$fit" -ge 1 ]; then
+    if [ "$NLINES" -ge 5 ] && [ "$fit" -ge 1 ]; then
       printf 'For exact content, Read at most %s lines at a time (offset/limit).\n' "$fit"
     fi
     printf 'If you will edit this file, Read the range you will change, or repeat this read.\n'

@@ -61,7 +61,8 @@ inc_state() {
 # PreToolUse hooks run in parallel, and check-loop's update_state would clobber
 # a concurrent write to the shared state file.
 seen_before() {
-  local dir="${XDG_RUNTIME_DIR:-$HOME/.cache}" file hash line
+  local dir="${XDG_RUNTIME_DIR:-${HOME:+$HOME/.cache}}" file hash line
+  [ -n "$dir" ] || return 2
   [ -n "${CLAUDE_SESSION_ID:-}" ] && [ "$CLAUDE_SESSION_ID" != "nosession" ] || return 2
   case "$CLAUDE_SESSION_ID" in *[!A-Za-z0-9_-]*) return 2 ;; esac
   file="$dir/claude-$1-${CLAUDE_SESSION_ID}.seen"
