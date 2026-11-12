@@ -31,6 +31,10 @@ in
       description = "Shunt redirect hooks and scripts/bulk-read.sh against fixtures with a fake claude CLI (offline, no model calls)";
       exec = "bash tests/test-shunt.sh";
     };
+    "skills:test:work-ref" = {
+      description = "emit-work-ref hook against temp git repos and a loopback OTLP receiver (no gh, no model)";
+      exec = "bash tests/test-work-ref.sh";
+    };
     "skills:test:manifests".exec = "bash tests/test-plugin-manifests.sh";
     "skills:test:bundles".exec = "bash tests/test-bundles.sh";
     "skills:test:bundle-sandbox" = {
