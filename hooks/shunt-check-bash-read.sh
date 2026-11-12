@@ -20,15 +20,10 @@ command -v jq >/dev/null 2>&1 || exit 0
 read_hook_input
 START_MS=$(($(date +%s%N) / 1000000))
 
+SHUNT_HOOK=shunt-bash
 T=$(shunt_threshold)
 MINB=$(shunt_min_bytes)
 LINES=0 BYTES=0 RETURNED=0
-
-done_hook() { # done_hook <result> [exit]
-  log_hook "shunt-bash" "$1" "$(( ($(date +%s%N) / 1000000) - START_MS ))" \
-    "{\"lines\":$LINES,\"bytes\":$BYTES,\"returned\":$RETURNED,\"threshold\":$T}" 2>/dev/null || true
-  exit "${2:-0}"
-}
 
 CMD=$(hook_command)
 [ -n "$CMD" ] || exit 0
@@ -38,7 +33,7 @@ case "$CMD" in
 esac
 # Anything beyond one simple invocation is out of scope: allow.
 case "$CMD" in
-  *[\|\>\<\;\&\$\`\{\}\(\)\\~\*\?\[\]]* | *$'\n'* | *$'\r'*) done_hook compound ;;
+  *[\|\>\<\;\&\$\`\{\}\(\)\\~\*\?\[\]]* | *$'\n'* | *$'\r'*) shunt_done compound ;;
 esac
 
 # Words: bare, or wrapped whole in one pair of single or double quotes.
@@ -52,7 +47,7 @@ while [ -n "${rest//[[:space:]]/}" ]; do
     TOKENS+=("${BASH_REMATCH[1]}")
     rest="${rest:${#BASH_REMATCH[0]}}"
   else
-    done_hook compound
+    shunt_done compound
   fi
 done
 TOOL="${TOKENS[0]}"
@@ -64,7 +59,8 @@ FILES=()
 set_bound() { # set_bound <value>: [+-]digits, else allow
   local v="$1" sign=""
   case "$v" in +*) sign=+; v="${v#+}" ;; -*) sign=-; v="${v#-}" ;; esac
-  case "$v" in '' | *[!0-9]*) done_hook unparsed ;; esac
+  case "$v" in '' | *[!0-9]*) shunt_done unparsed ;; esac
+  [ "${#v}" -le 12 ] || v=1000000000000   # beyond shell arithmetic: just "huge"
   N=$((10#$v))
   if [ "$TOOL" = head ]; then
     [ "$sign" = - ] && KIND=allbut || KIND=first
@@ -83,7 +79,7 @@ while [ "$i" -lt "${#ARGS[@]}" ]; do
   case "$TOOL" in
     head | tail)
       case "$a" in
-        -f | -F | --follow | --follow=* | --retry | --pid=* | -s | --sleep-interval=*) done_hook follow ;;
+        -f | -F | --follow | --follow=* | --retry | --pid=* | -s | --sleep-interval=*) shunt_done follow ;;
         -n | --lines) set_bound "$nxt"; i=$((i + 1)) ;;
         -c | --bytes) MODE=bytes; set_bound "$nxt"; i=$((i + 1)) ;;
         --lines=*) set_bound "${a#--lines=}" ;;
@@ -92,7 +88,7 @@ while [ "$i" -lt "${#ARGS[@]}" ]; do
         -c*) MODE=bytes; set_bound "${a#-c}" ;;
         -q | -v | -z | --quiet | --silent | --verbose | --zero-terminated) ;;
         -[0-9]*) set_bound "${a#-}" ;;
-        -* | +*) done_hook unparsed ;;
+        -* | +*) shunt_done unparsed ;;
         *) FILES+=("$a") ;;
       esac ;;
     cat)
@@ -101,19 +97,19 @@ while [ "$i" -lt "${#ARGS[@]}" ]; do
       case "$a" in
         -[bdfhilnsvw]) i=$((i + 1)) ;;
         --*=* | -p | --no-renumber | -[bdfhilnsvw]?*) ;;
-        -*) done_hook unparsed ;;
+        -*) shunt_done unparsed ;;
         *) FILES+=("$a") ;;
       esac ;;
     less | more)
       case "$a" in
         -N | -R | -S | -n | -r | -X | -F | -d | -c | -s | -u | -f) ;;
-        -* | +*) done_hook unparsed ;;
+        -* | +*) shunt_done unparsed ;;
         *) FILES+=("$a") ;;
       esac ;;
     bat)
       case "$a" in
         -p | -pp | -n | -A | -P | -u | --plain | --number | --show-all | --no-paging | --paging=* | --color=* | --style=* | --theme=*) ;;
-        -*) done_hook unparsed ;;
+        -*) shunt_done unparsed ;;
         *) FILES+=("$a") ;;
       esac ;;
   esac
@@ -138,7 +134,7 @@ BEST="" BEST_RET=-1 BEST_LINES=0 BEST_BYTES=0
 for f in "${FILES[@]}"; do
   abs=$(shunt_abs "$f" "$CWD")
   [ -f "$abs" ] || continue
-  shunt_sensitive "$f" "$CWD" && done_hook sensitive
+  shunt_sensitive "$f" "$CWD" && shunt_done sensitive
   shunt_nontext "$abs" && continue
   l=$(shunt_count_lines "$abs") || continue
   b=$(shunt_count_bytes "$abs") || continue
@@ -151,23 +147,9 @@ for f in "${FILES[@]}"; do
     BEST=$abs BEST_RET=$rl BEST_LINES=$l BEST_BYTES=$b
   fi
 done
-[ -n "$BEST" ] || { [ "$KIND" = whole ] && done_hook allow; done_hook targeted; }
+[ -n "$BEST" ] || { [ "$KIND" = whole ] && shunt_done allow; shunt_done targeted; }
 LINES=$BEST_LINES BYTES=$BEST_BYTES RETURNED=$BEST_RET
 
-seen_before shunt-bash "$CWD|$CMD"
-case $? in
-  0) done_hook bypass ;;
-  1) ;;
-  *) done_hook nostate ;;
-esac
-
-SCRIPT=$(shunt_script_path "$SCRIPT_DIR")
-QFILE=$(printf '%q' "$BEST")
-cat >&2 <<EOF
-shunt: this $TOOL would print about $RETURNED lines of $BEST ($LINES lines, $BYTES bytes), over the threshold of $T lines (or $MINB bytes).
-To explore or summarise it, run this via Bash instead (see the bulk-reader skill):
-  $SCRIPT --question "<what you need to know>" --paths $QFILE
-For exact content, use the Read tool with offset/limit of at most $T lines.
-Repeating this same command will be allowed if the whole output is truly required.
-EOF
-done_hook redirect 2
+shunt_redirect "$SCRIPT_DIR" "$CWD|$CMD" \
+  "shunt: this $TOOL would print about $RETURNED lines of $BEST ($LINES lines, $BYTES bytes), over the threshold of $T lines (or $MINB bytes)." \
+  "$BEST" "For exact content, use the Read tool with offset/limit of at most $T lines." command output

@@ -37,4 +37,4 @@ The answer is not ground truth. Before you edit, quote, or rely on a line number
 
 ## On failure
 
-The script exits non-zero with a one-line reason (timeout, usage limit, auth, model unavailable, empty answer). Do not retry in a loop: Read the file in offset/limit ranges, or repeat the original full Read (an identical repeat is allowed by the hook).
+The script exits non-zero with a one-line reason (timeout, budget ceiling, usage limit, auth, model unavailable, empty answer). Do not retry in a loop: Read the file in offset/limit ranges, or repeat the original full Read (an identical repeat is allowed by the hook).

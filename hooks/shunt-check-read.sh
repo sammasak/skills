@@ -21,27 +21,32 @@ command -v jq >/dev/null 2>&1 || exit 0
 read_hook_input
 START_MS=$(($(date +%s%N) / 1000000))
 
+SHUNT_HOOK=shunt-read
 T=$(shunt_threshold)
 LINES=0 BYTES=0 RETURNED=0
-
-done_hook() { # done_hook <result> [exit]
-  log_hook "shunt-read" "$1" "$(( ($(date +%s%N) / 1000000) - START_MS ))" \
-    "{\"lines\":$LINES,\"bytes\":$BYTES,\"returned\":$RETURNED,\"threshold\":$T}" 2>/dev/null || true
-  exit "${2:-0}"
-}
 
 FILE=$(hook_file_path)
 [ -n "$FILE" ] || exit 0
 CWD=$(hook_cwd)
-OFFSET=$(echo "$HOOK_INPUT" | jq -r '.tool_input.offset // 0 | if type == "number" then floor else 0 end' 2>/dev/null)
-LIMIT=$(echo "$HOOK_INPUT" | jq -r '.tool_input.limit // 0 | if type == "number" then floor else 0 end' 2>/dev/null)
-OFFSET=$(shunt_int "$OFFSET" 0)
-LIMIT=$(shunt_int "$LIMIT" 0)
+# A whole non-negative number (or digit string) is a range bound; anything else
+# (a word, a fraction, a negative) cannot be judged and allows. A limit too big
+# for shell arithmetic is capped (still "huge"); such an offset is "cannot tell".
+range_arg() { # range_arg <name>: the number, 0 when absent, x when unparseable
+  echo "$HOOK_INPUT" | jq -r --arg k "$1" '.tool_input[$k]
+    | if . == null then 0
+      elif type == "number" and . >= 0 and . == floor then (if . < 1e12 then . else "big" end)
+      elif type == "string" and test("^[0-9]+$") then (if length <= 12 then tonumber else "big" end)
+      else "x" end' 2>/dev/null || echo x
+}
+OFFSET=$(range_arg offset)
+LIMIT=$(range_arg limit)
+case "$OFFSET" in '' | x | big) shunt_done unparsed ;; esac
+case "$LIMIT" in '' | x) shunt_done unparsed ;; big) LIMIT=1000000000000 ;; esac
 
 ABS=$(shunt_abs "$FILE" "${CWD:-$PWD}")
 [ -f "$ABS" ] || exit 0
-shunt_sensitive "$FILE" "${CWD:-$PWD}" && done_hook sensitive
-shunt_nontext "$ABS" && done_hook nontext
+shunt_sensitive "$FILE" "${CWD:-$PWD}" && shunt_done sensitive
+shunt_nontext "$ABS" && shunt_done nontext
 
 LINES=$(shunt_count_lines "$ABS") || exit 0
 BYTES=$(shunt_count_bytes "$ABS") || exit 0
@@ -58,24 +63,10 @@ RET_BYTES=0
 [ "$LINES" -gt 0 ] && RET_BYTES=$(( BYTES * RETURNED / LINES ))
 
 if [ "$RETURNED" -le "$T" ] && [ "$RET_BYTES" -le "$MINB" ]; then
-  if [ "$OFFSET" -gt 0 ] || [ "$LIMIT" -gt 0 ]; then done_hook targeted; fi
-  done_hook allow
+  if [ "$OFFSET" -gt 0 ] || [ "$LIMIT" -gt 0 ]; then shunt_done targeted; fi
+  shunt_done allow
 fi
 
-seen_before shunt-read "$ABS|$OFFSET|$LIMIT"
-case $? in
-  0) done_hook bypass ;;
-  1) ;;
-  *) done_hook nostate ;;
-esac
-
-SCRIPT=$(shunt_script_path "$SCRIPT_DIR")
-QFILE=$(printf '%q' "$ABS")
-cat >&2 <<EOF
-shunt: $ABS is $LINES lines ($BYTES bytes); this Read would return about $RETURNED lines, over the threshold of $T lines (or $MINB bytes).
-To explore or summarise it, run this via Bash instead (see the bulk-reader skill):
-  $SCRIPT --question "<what you need to know>" --paths $QFILE
-For exact content, Read a range with offset/limit of at most $T lines.
-Repeating this same Read will be allowed if the whole file is truly required.
-EOF
-done_hook redirect 2
+shunt_redirect "$SCRIPT_DIR" "$ABS|$OFFSET|$LIMIT" \
+  "shunt: $ABS is $LINES lines ($BYTES bytes); this Read would return about $RETURNED lines, over the threshold of $T lines (or $MINB bytes)." \
+  "$ABS" "For exact content, Read a range with offset/limit of at most $T lines." Read file

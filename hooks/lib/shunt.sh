@@ -27,18 +27,22 @@ shunt_abs() {
   esac
 }
 
+# The refusal list, matched on the lowercased path. Over-matching is deliberate:
+# a false positive only means the file is read normally instead of delegated.
 _shunt_sensitive_one() {
-  local p="$1" b pat
-  b="${p##*/}"
-  b="${b,,}"
+  local p="$1" lp b pat
+  lp="${p,,}"
+  b="${lp##*/}"
   case "$b" in
-    .env | .env.* | *.pem | *.key | *.p12 | *.pfx | *.kdbx | \
-    id_rsa* | id_ed25519* | id_ecdsa* | *.secret.yaml | *.secret.yml | *.sops.* | \
-    .netrc | .npmrc | .pypirc | credentials* | *token*)
+    .env* | *.pem* | *.key* | *.p12* | *.pfx* | *.kdbx* | *.jks | *.gpg | *.asc | *.age | *.ovpn | \
+    id_rsa* | id_dsa* | id_ecdsa* | id_ed25519* | *.sops.* | keys.* | \
+    *secret* | *credential* | *token* | *passw* | .netrc | .npmrc | .pypirc | .pgpass | .boto | .s3cfg | \
+    kubeconfig* | *.tfstate* | *.tfvars | shadow | gshadow)
       return 0 ;;
   esac
-  case "/$p/" in
-    */secrets/* | */.ssh/* | */.gnupg/* | */.aws/* | */.kube/* | */.config/gh/* | */.config/sops/* | \
+  case "/$lp/" in
+    */secrets/* | */secret/* | */.ssh/* | */.gnupg/* | */.aws/* | */.azure/* | */.kube/* | */.docker/* | \
+    */.config/gh/* | */.config/sops/* | */.config/gcloud/* | */.password-store/* | */.local/share/keyrings/* | \
     //run/secrets* | //run/agent-runtime/credentials* | //run/egress* | \
     //etc/shadow* | //etc/gshadow* | //etc/sudoers* | //etc/ssh/ssh_host_*)
       return 0 ;;
@@ -87,3 +91,30 @@ shunt_count_lines() {
 shunt_count_bytes() { wc -c < "$1" 2>/dev/null; }
 
 shunt_script_path() { printf '%s/scripts/bulk-read.sh\n' "$(cd "$1/.." && pwd)"; }
+
+# Shared hook tail (needs lib/log.sh and lib/state.sh). Callers set SHUNT_HOOK,
+# START_MS, T, LINES, BYTES and RETURNED.
+shunt_done() { # shunt_done <result> [exit]: log the decision and exit
+  log_hook "$SHUNT_HOOK" "$1" "$(( ($(date +%s%N) / 1000000) - START_MS ))" \
+    "{\"lines\":$LINES,\"bytes\":$BYTES,\"returned\":$RETURNED,\"threshold\":$T}" 2>/dev/null || true
+  exit "${2:-0}"
+}
+
+# shunt_redirect <hooks_dir> <key> <first line> <file> <exact-content line> <repeat noun> <whole noun>:
+# deny the first attempt per session key with the bulk-read command; allow an identical repeat.
+shunt_redirect() {
+  seen_before "$SHUNT_HOOK" "$2"
+  case $? in
+    0) shunt_done bypass ;;
+    1) ;;
+    *) shunt_done nostate ;;
+  esac
+  cat >&2 <<MSG
+$3
+To explore or summarise it, run this via Bash instead (see the bulk-reader skill):
+  $(shunt_script_path "$1") --question "<what you need to know>" --paths $(printf '%q' "$4")
+$5
+Repeating this same $6 will be allowed if the whole $7 is truly required.
+MSG
+  shunt_done redirect 2
+}

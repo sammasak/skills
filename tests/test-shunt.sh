@@ -15,7 +15,9 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 export XDG_RUNTIME_DIR="$TMP/run" XDG_STATE_HOME="$TMP/state"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_STATE_HOME"
-unset SHUNT_DISABLE SHUNT_MIN_LINES SHUNT_MIN_BYTES SHUNT_EXCLUDE SHUNT_GATEWAY_KEY SHUNT_GATEWAY_KEY_FILE SHUNT_MODEL
+# No inherited SHUNT_* (a live SHUNT_CLAUDE_BIN would beat the fake and call a real model); each case sets its own.
+for v in "${!SHUNT_@}"; do unset "$v"; done
+unset CLAUDE_CODE_MAX_OUTPUT_TOKENS
 F="$TMP/f"; mkdir -p "$F"
 
 PASS=0
@@ -70,7 +72,19 @@ check "huge limit redirected" 2 "shunt:" $R "$(rd "$F/big.txt" 1 100000)"
 check "offset near end allowed" 0 - $R "$(rd "$F/big.txt" 1800)"
 check "offset with bounded limit allowed" 0 - $R "$(rd "$F/big.txt" 500 300)"
 check "offset leaving too much redirected" 2 "shunt:" $R "$(rd "$F/big.txt" 1000)"
-check "non-numeric offset/limit ignored" 2 "shunt:" $R "$(jq -nc --arg p "$F/big.txt" '{session_id:"shunttest-nn",tool_input:{file_path:$p,offset:"x",limit:"y"}}')"
+rdj() { jq -nc --arg p "$F/big.txt" --arg s "shunttest-j$RANDOM$RANDOM" --argjson ti "$1" '{session_id:$s,tool_input:({file_path:$p} + $ti)}'; }
+check "non-numeric offset cannot be judged: allowed" 0 - $R "$(rdj '{"offset":"x"}')"
+check "non-numeric limit cannot be judged: allowed" 0 - $R "$(rdj '{"limit":"y"}')"
+check "negative offset cannot be judged: allowed" 0 - $R "$(rdj '{"offset":-5}')"
+check "overflowing offset cannot be judged: allowed" 0 - $R "$(rdj '{"offset":1e30}')"
+check "overflowing digit-string offset: allowed" 0 - $R "$(rdj '{"offset":"99999999999999999999999"}')"
+check "overflowing limit is still huge: redirected" 2 "shunt:" $R "$(rdj '{"limit":1e30}')"
+check "digit-string offset near end allowed" 0 - $R "$(rdj '{"offset":"1800"}')"
+for sid in '../escape' 'a/b' 'x y' 'semi;colon'; do
+  check "session id '$sid' keeps no state: allowed" 0 - $R "$(jq -nc --arg p "$F/big.txt" --arg s "$sid" '{session_id:$s,tool_input:{file_path:$p}}')"
+done
+[ -z "$(find "$TMP" / -maxdepth 2 -name '*escape*.seen' 2>/dev/null)" ] && ok || bad "an unsafe session id wrote state"
+grep -q '"result":"nostate"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "nostate not logged"
 # ── Read hook: shapes that always allow ──
 check "nonexistent path allowed" 0 - $R "$(rd "$F/nope.txt")"
 check "directory allowed" 0 - $R "$(rd "$F/dir")"
@@ -130,6 +144,7 @@ check "head -c 1000 allowed" 0 - $B "$(bc "head -c 1000 minified.js")"
 check "cat minified redirected" 2 "70000 bytes" $B "$(bc "cat minified.js")"
 check "tail -f allowed" 0 - $B "$(bc "tail -f big.txt")"
 check "tail -F allowed" 0 - $B "$(bc "tail -F big.txt")"
+check "head -n with an overflowing count redirected" 2 "shunt:" $B "$(bc "head -n 99999999999999999999999 big.txt")"
 check "unknown suffix allowed" 0 - $B "$(bc "head -n 1K big.txt")"
 check "pipe allowed" 0 - $B "$(bc "cat big.txt | grep 5")"
 check "redirect allowed" 0 - $B "$(bc "cat big.txt > /tmp/x")"
@@ -195,8 +210,8 @@ cat > "$FB/claude" <<'FAKE'
 printf '%s\n' "$@" > "$FAKE_DIR/argv"
 cat > "$FAKE_DIR/stdin"
 printf 'SHUNT_DISABLE=%s\nSHUNT_DEPTH=%s\nCLAUDE_CODE_MAX_OUTPUT_TOKENS=%s\nPWD=%s\n' \
-  "${SHUNT_DISABLE:-}" "${SHUNT_DEPTH:-}" "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}" "$PWD" > "$FAKE_DIR/env"
-res() { jq -nc --arg r "$1" --argjson e "${2:-false}" '{type:"result",subtype:"success",is_error:$e,result:$r,duration_ms:900,total_cost_usd:0.0012,
+  "${SHUNT_DISABLE:-}" "${SHUNT_DEPTH:-}" "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-unset}" "$PWD" > "$FAKE_DIR/env"
+res() { jq -nc --arg r "$1" --argjson e "${2:-false}" '{type:"result",subtype:"success",is_error:$e,result:$r,duration_ms:900,num_turns:1,total_cost_usd:0.0012,
   usage:{input_tokens:7,output_tokens:56,cache_creation_input_tokens:1234,cache_read_input_tokens:10},modelUsage:{"claude-haiku-test":{}}}'; }
 case "${FAKE_CLAUDE_MODE:-ok}" in
   ok) res "- answer at big.txt:42" ;;
@@ -207,6 +222,8 @@ case "${FAKE_CLAUDE_MODE:-ok}" in
   rate) res "Claude AI usage limit reached" true; exit 1 ;;
   model) res "There's an issue with the selected model (nonesuch). It may not exist or you may not have access to it." true; exit 1 ;;
   maxturns) jq -nc '{type:"result",subtype:"error_max_turns",is_error:true}' ;;
+  budget) jq -nc '{type:"result",subtype:"error_max_budget_usd",is_error:true,total_cost_usd:0.07,errors:["Reached maximum budget ($0.05)"]}'; exit 1 ;;
+  outlimit) jq -nc '{type:"result",subtype:"success",is_error:true,api_error:"max_output_tokens",result:"API Error: response exceeded the 1500 output token maximum."}'; exit 1 ;;
   garbage) echo "<html>oops</html>" ;;
   empty) res "  " ;;
   nested) "$BULK" --question q --paths "$F/small.txt" 2> "$FAKE_DIR/nested-err"; echo "$?" > "$FAKE_DIR/nested-rc"; res "x" ;;
@@ -224,11 +241,12 @@ br() {
 }
 Q="Where is the retry budget set?"
 FB_MSG="Fall back: Read the file with offset/limit ranges, or repeat the full Read"
-br "success" 0 "model=claude-haiku-test input_tokens=7 output_tokens=56 cache_read=10 cache_write=1234 cost_usd=0.0012" "answer at big.txt:42" --question "$Q" --paths big.txt small.txt
+br "success" 0 "model=claude-haiku-test input_tokens=7 output_tokens=56 cache_read=10 cache_write=1234 turns=1 cost_usd=0.0012" "answer at big.txt:42" --question "$Q" --paths big.txt small.txt
 argv=$(cat "$FAKE_DIR/argv")
 grep -qxF -- "-p" <<<"$argv" && ok || bad "bulk-read: not headless (-p)"
 grep -A1 -xF -- "--model" <<<"$argv" | grep -qx haiku && ok || bad "bulk-read: default model is not haiku"
 grep -A1 -xF -- "--tools" <<<"$argv" | sed -n 2p | grep -qx '' && ok || bad "bulk-read: tools not disabled (--tools \"\")"
+grep -A1 -xF -- "--max-budget-usd" <<<"$argv" | grep -qx 0.05 && ok || bad "bulk-read: default budget ceiling not 0.05"
 for fl in --output-format --no-session-persistence --safe-mode --strict-mcp-config --disable-slash-commands --system-prompt; do
   grep -qxF -- "$fl" <<<"$argv" && ok || bad "bulk-read: missing $fl"
 done
@@ -240,14 +258,16 @@ grep -qF "untrusted" <<<"$argv" && grep -qF "not found in the provided files" <<
 D=$(grep -oE '<<<BEGIN FILE-[0-9a-f]+ path=big.txt' "$FAKE_DIR/stdin" | sed 's/<<<BEGIN //; s/ path=.*//')
 [ -n "$D" ] && grep -qxF "<<<END $D>>>" "$FAKE_DIR/stdin" && ok || bad "bulk-read: delimiter wrapper"
 grep -qx "SHUNT_DISABLE=1" "$FAKE_DIR/env" && grep -qx "SHUNT_DEPTH=1" "$FAKE_DIR/env" && ok || bad "bulk-read: child env lacks SHUNT_DISABLE=1/SHUNT_DEPTH=1"
-grep -qx "CLAUDE_CODE_MAX_OUTPUT_TOKENS=1500" "$FAKE_DIR/env" && ok || bad "bulk-read: output token bound not passed"
+grep -qx "CLAUDE_CODE_MAX_OUTPUT_TOKENS=unset" "$FAKE_DIR/env" && ok || bad "bulk-read: CLAUDE_CODE_MAX_OUTPUT_TOKENS reached the child"
 grep -q "^PWD=$TMP/tmpd/bulk-read\." "$FAKE_DIR/env" && ok || bad "bulk-read: child not run in the private temp dir"
 grep -q '"hook":"bulk-read".*"result":"ok".*"files":2.*"cost_usd":0.0012.*"input_tokens":7.*"output_tokens":56.*"cache_creation_input_tokens":1234' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: success not logged"
-SHUNT_MODEL=sonnet SHUNT_MAX_OUTPUT_TOKENS=99 br "model and max tokens configurable" 0 - - --question "$Q" --paths small.txt
-grep -A1 -xF -- "--model" "$FAKE_DIR/argv" | grep -qx sonnet && grep -qx "CLAUDE_CODE_MAX_OUTPUT_TOKENS=99" "$FAKE_DIR/env" && ok || bad "bulk-read: SHUNT_MODEL/SHUNT_MAX_OUTPUT_TOKENS ignored"
+CLAUDE_CODE_MAX_OUTPUT_TOKENS=99 SHUNT_MODEL=sonnet SHUNT_MAX_BUDGET_USD=0.2 br "model and budget configurable" 0 - - --question "$Q" --paths small.txt
+grep -A1 -xF -- "--model" "$FAKE_DIR/argv" | grep -qx sonnet && grep -A1 -xF -- "--max-budget-usd" "$FAKE_DIR/argv" | grep -qx 0.2 && ok || bad "bulk-read: SHUNT_MODEL/SHUNT_MAX_BUDGET_USD ignored"
+grep -qx "CLAUDE_CODE_MAX_OUTPUT_TOKENS=unset" "$FAKE_DIR/env" && ok || bad "bulk-read: an inherited CLAUDE_CODE_MAX_OUTPUT_TOKENS reached the child"
+SHUNT_MAX_BUDGET_USD='1;rm' br "malformed budget falls back" 0 - - --question "$Q" --paths small.txt
+grep -A1 -xF -- "--max-budget-usd" "$FAKE_DIR/argv" | grep -qx 0.05 && ok || bad "bulk-read: malformed budget passed through"
 FAKE_CLAUDE_MODE=nested br "nested call inside the child" 0 - - --question "$Q" --paths small.txt
 [ "$(cat "$FAKE_DIR/nested-rc" 2>/dev/null)" = 1 ] && grep -qF "inside a bulk-read child" "$FAKE_DIR/nested-err" && ok || bad "bulk-read: depth guard did not refuse a nested call"
-SHUNT_DEPTH=1 br "depth guard" 1 "refusing to run inside a bulk-read child" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=long br "long answer truncated" 0 - "answer truncated at 12000 of 20000 bytes" --question "$Q" --paths small.txt
 [ "$(head -n 1 "$TMP/out" | wc -c)" -le 12001 ] && ok || bad "bulk-read: truncation exceeded the limit"
 SHUNT_TIMEOUT_SECONDS=1 FAKE_CLAUDE_MODE=sleep br "timeout" 1 "timed out after 1s. $FB_MSG" - --question "$Q" --paths small.txt
@@ -256,24 +276,43 @@ FAKE_CLAUDE_MODE=auth br "auth failure" 1 "could not authenticate: Invalid API k
 FAKE_CLAUDE_MODE=rate br "usage limit" 1 "rate or usage limit: Claude AI usage limit reached. $FB_MSG" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=model br "model unavailable" 1 "model 'haiku' is unavailable" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=maxturns br "error subtype" 1 "claude reported an error (exit 0): error_max_turns" - --question "$Q" --paths small.txt
+FAKE_CLAUDE_MODE=budget br "budget exceeded" 1 "cost more than SHUNT_MAX_BUDGET_USD=0.05 (cost 0.07) and the answer was discarded" - --question "$Q" --paths small.txt
+FAKE_CLAUDE_MODE=outlimit br "output token limit" 1 "hit an output token limit" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=garbage br "non-JSON output" 1 "non-JSON output. $FB_MSG" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=empty br "empty answer" 1 "empty answer. $FB_MSG" - --question "$Q" --paths small.txt
 grep -q '"hook":"bulk-read".*"result":"timeout"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: failure not logged"
 # validation: nothing reaches claude
-SHUNT_CLAUDE_BIN="$TMP/no-such-claude" br "claude binary missing" 1 "was not found; set SHUNT_CLAUDE_BIN" - --question "$Q" --paths small.txt
 SHUNT_CLAUDE_BIN="$FB/claude" br "SHUNT_CLAUDE_BIN used" 0 - - --question "$Q" --paths small.txt
-br "missing question" 1 "missing --question" - --paths small.txt
-br "missing paths" 1 "missing --paths" - --question "$Q"
-br "nonexistent path" 1 "nope.txt does not exist" - --question "$Q" --paths nope.txt
-br "directory" 1 "not a regular file" - --question "$Q" --paths dir
-br "sensitive path" 1 "not delegated; read it directly if you are permitted to" - --question "$Q" --paths .env
-br "symlink to sensitive file" 1 "not delegated" - --question "$Q" --paths innocent.txt
-br "sensitive directory" 1 "not delegated" - --question "$Q" --paths secrets/db.yaml
-SHUNT_EXCLUDE="*.log" br "excluded path" 1 "not delegated" - --question "$Q" --paths vendor.log
-br "binary" 1 "binary or non-text" - --question "$Q" --paths blob.bin
-SHUNT_MAX_PAYLOAD_BYTES=5000 br "oversized request" 1 "split" - --question "$Q" --paths big.txt
-SHUNT_MAX_FILES=2 br "too many files" 1 "over SHUNT_MAX_FILES=2" - --question "$Q" --paths small.txt big.txt l350.txt
-[ -e "$FAKE_DIR/argv" ] && bad "bulk-read: claude ran for an invalid request" || ok
+# refusals: each must end with the fallback line and never start claude
+brx() { # brx <name> <stderr_pattern> <args...>
+  local name="$1" pat="$2"; shift 2
+  br "$name" 1 "$pat" - "$@"
+  grep -qF "$FB_MSG" "$TMP/err" && ok || bad "bulk-read: $name: no fallback line"
+  [ -e "$FAKE_DIR/argv" ] && bad "bulk-read: $name: claude ran" || ok
+}
+brx "missing question" "missing --question" --paths small.txt
+brx "missing paths" "missing --paths" --question "$Q"
+brx "nonexistent path" "nope.txt does not exist" --question "$Q" --paths nope.txt
+brx "directory" "not a regular file" --question "$Q" --paths dir
+brx "sensitive path" "not delegated; read it directly if you are permitted to" --question "$Q" --paths .env
+brx "symlink to sensitive file" "not delegated" --question "$Q" --paths innocent.txt
+brx "sensitive directory" "not delegated" --question "$Q" --paths secrets/db.yaml
+SHUNT_EXCLUDE="*.log" brx "excluded path" "not delegated" --question "$Q" --paths vendor.log
+brx "binary" "binary or non-text" --question "$Q" --paths blob.bin
+SHUNT_MAX_PAYLOAD_BYTES=5000 brx "oversized request" "split" --question "$Q" --paths big.txt
+SHUNT_MAX_FILES=2 brx "too many files" "over SHUNT_MAX_FILES=2" --question "$Q" --paths small.txt big.txt l350.txt
+SHUNT_DEPTH=1 brx "depth guard" "refusing to run inside a bulk-read child" --question "$Q" --paths small.txt
+SHUNT_CLAUDE_BIN="$TMP/no-such-claude" brx "claude binary missing" "was not found; set SHUNT_CLAUDE_BIN" --question "$Q" --paths small.txt
+# the refusal list, table-driven: each spelling alone and as the second path
+SENS=(.claude/.credentials.json .git-credentials .pgpass kubeconfig terraform.tfstate secrets.yaml Secrets/db.yaml
+  .docker/config.json .htpasswd secrets.nix private.key.bak .env-prod passwords.txt keys.txt .env server.pem
+  id_ed25519 app.sops.yaml .netrc .npmrc .pypirc api_token.txt .ssh/config .aws/credentials .kube/config
+  .gnupg/pubring.kbx SECRET/notes.md prod.tfvars vault.gpg cert.p12 store.jks client.ovpn backup.age)
+for s in "${SENS[@]}"; do
+  mkdir -p "$F/sens/$(dirname "$s")"; seq 1 10 > "$F/sens/$s"
+  brx "refuse $s" "not delegated" --question "$Q" --paths "sens/$s"
+  brx "refuse $s as second path" "sens/$s is a sensitive" --question "$Q" --paths small.txt "sens/$s"
+done
 grep -q '"hook":"bulk-read".*"result":"invalid"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: validation failure not logged"
 [ -n "$(ls -A "$TMP/tmpd")" ] && bad "bulk-read: temp dir left behind" || ok
 

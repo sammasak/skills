@@ -28,7 +28,7 @@ in
     # the two pre-existing hook-framework suites keep their scripts; everything the roles added is a task
     "skills:test:hooks".exec = "bash tests/test-hooks.sh";
     "skills:test:shunt" = {
-      description = "Shunt redirect hooks and scripts/bulk-read.sh against fixtures and a fake gateway (offline)";
+      description = "Shunt redirect hooks and scripts/bulk-read.sh against fixtures with a fake claude CLI (offline, no model calls)";
       exec = "bash tests/test-shunt.sh";
     };
     "skills:test:manifests".exec = "bash tests/test-plugin-manifests.sh";

@@ -55,13 +55,15 @@ inc_state() {
 }
 
 # seen_before <kind> <key>: 0 when <key> was already recorded this session,
-# 1 after recording it now, 2 when no state can be kept (no session id, or the
-# file is not writable). Kept in its own append-only file, not the JSON above:
+# 1 after recording it now, 2 when no state can be kept (no session id, one
+# that is not [A-Za-z0-9_-]+ and so could leave the state dir, or the file is
+# not writable). Kept in its own append-only file, not the JSON above:
 # PreToolUse hooks run in parallel, and check-loop's update_state would clobber
 # a concurrent write to the shared state file.
 seen_before() {
   local dir="${XDG_RUNTIME_DIR:-$HOME/.cache}" file hash line
   [ -n "${CLAUDE_SESSION_ID:-}" ] && [ "$CLAUDE_SESSION_ID" != "nosession" ] || return 2
+  case "$CLAUDE_SESSION_ID" in *[!A-Za-z0-9_-]*) return 2 ;; esac
   file="$dir/claude-$1-${CLAUDE_SESSION_ID}.seen"
   mkdir -p "$dir" 2>/dev/null || return 2
   find "$dir" -maxdepth 1 -name "claude-$1-*.seen" -mtime +2 -delete 2>/dev/null || true
