@@ -32,7 +32,7 @@ The answer is not ground truth. Before you edit, quote, or rely on a line number
 
 - You need exact content for an edit: Read the range (at most ~350 lines) instead.
 - Small files: just Read them.
-- Sensitive files (`.env`, keys, tokens, credentials, shell history, kubeconfigs, anything under `secrets/` or `.ssh/`, anything holding a private key, base64 key data, a Kubernetes Secret or sops data): the script refuses them; Read directly only if you are permitted to. Private-mode (0600) files are refused only under a permissive umask; with umask 077 (the default on these machines) only the name and content checks guard delegation, so do not delegate a file you know is secret.
+- Sensitive files (`.env`, keys, tokens, credentials, shell history, kubeconfigs named or located as such (`kubeconfig*`, `kube*config*`, `.kube/`) or holding a client key or token, anything under `secrets/` or `.ssh/`, anything holding a private key, base64 key data, a Kubernetes Secret, a WireGuard key, a GitHub/Anthropic/Nix token or sops data): the script refuses them; Read directly only if you are permitted to. Private-mode (0600) files are refused only under a permissive umask; with umask 077 (the default on these machines) only the name and content checks guard delegation, so do not delegate a file you know is secret.
 - Debugging where every line matters (a failing test's exact assertion, a subtle off-by-one).
 
 ## On failure

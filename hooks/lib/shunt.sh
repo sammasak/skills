@@ -91,17 +91,29 @@ shunt_private() { # shunt_private <file> [umask]: umask defaults to the current 
   [ $(( 8#$mode & 8#044 )) -eq 0 ]
 }
 
-# shunt_secret_marker <file>: 0 when the first 64 KiB hold a private key (PEM or its
-# base64 form, as in kubeconfig client-key-data, Talos configs and TLS Secrets, so
-# certificates match too), sops-encrypted data, or a plaintext Kubernetes Secret.
+# shunt_secret_marker <file>: 0 when the first 64 KiB look like secret material:
+# a private key (PEM or its base64 form, as in kubeconfig client-key-data, Talos
+# configs and TLS Secrets, so certificates match too), sops-encrypted data, a
+# Kubernetes Secret (also as a List item, quoted, or JSON), a token-auth
+# kubeconfig, a WireGuard key, or a GitHub/Anthropic/Nix access token.
+# Line-anchored forms only match at a line start (after spaces or "- "), so a
+# manifest that merely mentions "kind: Secret" mid-line is still delegated.
+_SHUNT_NL=$'\n'
+_SHUNT_SECRET_KIND="(^|${_SHUNT_NL})[[:blank:]-]*kind:[[:blank:]]*[\"']?Secret[\"']?[[:blank:]]*(${_SHUNT_NL}|\$)"
+_SHUNT_CONFIG_KIND="(^|${_SHUNT_NL})[[:blank:]-]*kind:[[:blank:]]*[\"']?Config[\"']?[[:blank:]]*(${_SHUNT_NL}|\$)"
+_SHUNT_TOKEN_LINE="(^|${_SHUNT_NL})[[:blank:]-]*token:[[:blank:]]*[^[:space:]]"
+_SHUNT_WG_KEY="(^|${_SHUNT_NL})[[:blank:]]*(PrivateKey|PresharedKey)[[:blank:]]*="
+_SHUNT_JSON_SECRET="\"kind\"[[:blank:]]*:[[:blank:]]*\"Secret\""
 shunt_secret_marker() {
   local head
   head=$(head -c 65536 -- "$1" 2>/dev/null | tr -d '\000') || return 1
   case "$head" in
     *"PRIVATE KEY-----"* | *"-----BEGIN PGP PRIVATE KEY BLOCK-----"* | *"AGE-SECRET-KEY-1"* | *"ENC[AES256_GCM,"* | \
-    *"LS0tLS1CRUdJTi"* | "kind: Secret"* | *$'\n'"kind: Secret"* | *'"kind": "Secret"'* | *'"kind":"Secret"'*) return 0 ;;
+    *"LS0tLS1CRUdJTi"* | *ghp_* | *github_pat_* | *sk-ant-* | *access-tokens*) return 0 ;;
   esac
   case "$head" in *"sops:"*"ENC["* | *"ENC["*"sops:"*) return 0 ;; esac
+  [[ "$head" =~ $_SHUNT_SECRET_KIND || "$head" =~ $_SHUNT_JSON_SECRET || "$head" =~ $_SHUNT_WG_KEY ]] && return 0
+  [[ "$head" =~ $_SHUNT_CONFIG_KIND && "$head" =~ $_SHUNT_TOKEN_LINE ]] && return 0
   return 1
 }
 

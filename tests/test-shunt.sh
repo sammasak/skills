@@ -367,7 +367,7 @@ for m in "-----BEGIN RSA PRIVATE KEY-----" "-----BEGIN PRIVATE KEY-----" "-----B
   "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQ" $'data: ENC[AES256_GCM,data:x,iv:y]\nsops:\n  version: 3' \
   $'{"a": "ENC[AES256_GCM,data:x]", "sops": {}}' $'sops:\n  age: []\nkey: ENC[x]'; do
   i=$((i + 1)); { echo "intro"; printf '%s\n' "$m"; echo "outro"; } > "$F/notes-$i.md"
-  brx "marker $i refused under an innocent name" "contains private key or sops-encrypted material" --question "$Q" --paths "notes-$i.md"
+  brx "marker $i refused under an innocent name" "looks like secret material by content" --question "$Q" --paths "notes-$i.md"
 done
 printf 'the word sops: appears, and so does the word PRIVATE KEY, but no marker\n' > "$F/prose.md"
 br "prose mentioning sops: without ENC[ is sent" 0 - - --question "$Q" --paths prose.md
@@ -396,13 +396,34 @@ for r in sensitive secret; do
 done
 { echo "data:"; echo "  tls.key: $B64KEY"; seq 1 400 | sed 's/^/# /'; } > "$F/tls-bundle.yaml"; chmod 644 "$F/tls-bundle.yaml"
 check "umask 022: base64 key at 0644 allowed by the Read hook" 0 - $R "$(rd "$F/tls-bundle.yaml")"
-brx "umask 022: base64 key at 0644 refused" "contains private key or sops-encrypted material" --question "$Q" --paths tls-bundle.yaml
+brx "umask 022: base64 key at 0644 refused" "looks like secret material by content" --question "$Q" --paths tls-bundle.yaml
 printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: db\nstringData:\n  password: hunter2\n' > "$F/db-manifest.yaml"
-brx "plaintext Kubernetes Secret refused" "contains private key" --question "$Q" --paths db-manifest.yaml
+brx "plaintext Kubernetes Secret refused" "looks like secret material by content" --question "$Q" --paths db-manifest.yaml
 printf '{"apiVersion": "v1", "kind": "Secret", "data": {}}\n' > "$F/db-manifest.json"
-brx "JSON Kubernetes Secret refused" "contains private key" --question "$Q" --paths db-manifest.json
+brx "JSON Kubernetes Secret refused" "looks like secret material by content" --question "$Q" --paths db-manifest.json
 printf 'kind: Deployment\n# mentions a Secret by name only\n' > "$F/deploy.yaml"
 br "manifest mentioning a Secret is sent" 0 - - --question "$Q" --paths deploy.yaml
+# fourth review: more content markers, under umask 077 at 0600 (mode check off)
+umask 077
+i=0
+for body in $'apiVersion: v1\nkind: List\nitems:\n  - apiVersion: v1\n    kind: Secret\n    data: {}' \
+  $'items:\n- kind: Secret\n  data: {}' $'apiVersion: v1\nkind: "Secret"\ndata: {}' $'kind: \'Secret\'' \
+  '{"kind" : "Secret", "data": {}}' $'{\n  "kind":"Secret"\n}' \
+  $'[Interface]\nPrivateKey = aGVsbG8=\nAddress = 10.0.0.2/32' $'[Peer]\nPresharedKey = aGVsbG8=' \
+  'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789' 'pat: github_pat_11ABCDEF_xyz' 'ANTHROPIC_API_KEY=sk-ant-api03-xyz' \
+  'access-tokens = github.com=ghp_x' $'apiVersion: v1\nkind: Config\nusers:\n- name: admin\n  user:\n    token: abc.def.ghi'; do
+  i=$((i + 1)); { echo "# fixture"; printf '%s\n' "$body"; seq 1 400 | sed 's/^/# /'; } > "$F/m4-$i.txt"
+  [ "$(stat -c %a "$F/m4-$i.txt")" = 600 ] && ok || bad "m4-$i fixture not 0600"
+  check "umask 077: Read of marker file m4-$i allowed" 0 - $R "$(rd "$F/m4-$i.txt")"
+  brx "umask 077: marker m4-$i refused" "looks like secret material by content" --question "$Q" --paths "m4-$i.txt"
+done
+printf 'kind: Deployment\nspec:\n  envFrom:\n  - secretRef: {name: db}  # a kind: Secret named db\n# this mounts a kind: Secret\n' > "$F/deploy2.yaml"
+br "umask 077: Deployment mentioning kind: Secret mid-line is sent" 0 - - --question "$Q" --paths deploy2.yaml
+printf 'apiVersion: v1\nkind: Config\nusers:\n- name: admin\n  user:\n    exec: {command: kubelogin}\n' > "$F/execconfig.yaml"
+br "umask 077: kubeconfig without a token is sent" 0 - - --question "$Q" --paths execconfig.yaml
+printf 'auth:\n  token: abc\n' > "$F/notconfig.yaml"
+br "umask 077: token line without kind: Config is sent" 0 - - --question "$Q" --paths notconfig.yaml
+umask 022
 seq 1 2000 > "$F/locked.txt"; chmod 000 "$F/locked.txt"
 check "unreadable file allowed silently" 0 - $R "$(rd "$F/locked.txt")"
 [ -s "$TMP/err" ] && bad "unreadable file printed '$(cat "$TMP/err")'" || ok
