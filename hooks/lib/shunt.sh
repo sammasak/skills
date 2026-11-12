@@ -39,7 +39,8 @@ shunt_sensitive_name() {
     .env* | *.env | *.pem* | *.key* | *.p12* | *.pfx* | *.p8 | *.der | *.kdbx* | *.jks | *.gpg | *.asc | *.age | *.ovpn | \
     id_rsa* | id_dsa* | id_ecdsa* | id_ed25519* | ssh_host_* | *private*key* | *key.txt | keys.* | *.sops.* | \
     *passw* | .netrc | .npmrc | .pypirc | .pgpass | .boto | .s3cfg | .my.cnf | .dev.vars | auth.json | \
-    wg*.conf | rclone.conf | kube*config* | k3s.yaml | admin.conf | *.tfstate* | *.tfvars | shadow | gshadow)
+    wg*.conf | rclone.conf | *history* | .histfile | talosconfig | .msmtprc | .mbsyncrc | .authinfo* | .claude.json | \
+    kube*config* | k3s.yaml | admin.conf | *.tfstate* | *.tfvars | shadow | gshadow)
       return 0 ;;
   esac
   # Any path component (or the name) naming a secret, credential or token (so /run/secrets and
@@ -47,7 +48,7 @@ shunt_sensitive_name() {
   case "/$lp/" in
     *secret* | *credential* | *token* | \
     */.ssh/* | */.gnupg/* | */.aws/* | */.azure/* | */.kube/* | */.docker/* | */.codex/* | */.password-store/* | \
-    */.config/gh/* | */.config/sops/* | */.config/gcloud/* | */.config/age/* | */.config/rclone/* | */.local/share/keyrings/* | \
+    */.config/gh/* | */.config/sops/* | */.config/gcloud/* | */.config/age/* | */.config/talos/* | */.config/rclone/* | */.local/share/keyrings/* | \
     */etc/wireguard/* | */etc/rancher/* | */var/lib/sops-nix/* | \
     //run/egress* | \
     //etc/shadow* | //etc/gshadow* | //etc/sudoers* | //etc/ssh/ssh_host_*)
@@ -90,12 +91,15 @@ shunt_private() { # shunt_private <file> [umask]: umask defaults to the current 
   [ $(( 8#$mode & 8#044 )) -eq 0 ]
 }
 
-# shunt_secret_marker <file>: 0 when the first 64 KiB hold a private key or sops-encrypted data.
+# shunt_secret_marker <file>: 0 when the first 64 KiB hold a private key (PEM or its
+# base64 form, as in kubeconfig client-key-data, Talos configs and TLS Secrets, so
+# certificates match too), sops-encrypted data, or a plaintext Kubernetes Secret.
 shunt_secret_marker() {
   local head
   head=$(head -c 65536 -- "$1" 2>/dev/null | tr -d '\000') || return 1
   case "$head" in
-    *"PRIVATE KEY-----"* | *"-----BEGIN PGP PRIVATE KEY BLOCK-----"* | *"AGE-SECRET-KEY-1"* | *"ENC[AES256_GCM,"*) return 0 ;;
+    *"PRIVATE KEY-----"* | *"-----BEGIN PGP PRIVATE KEY BLOCK-----"* | *"AGE-SECRET-KEY-1"* | *"ENC[AES256_GCM,"* | \
+    *"LS0tLS1CRUdJTi"* | "kind: Secret"* | *$'\n'"kind: Secret"* | *'"kind": "Secret"'* | *'"kind":"Secret"'*) return 0 ;;
   esac
   case "$head" in *"sops:"*"ENC["* | *"ENC["*"sops:"*) return 0 ;; esac
   return 1
@@ -115,12 +119,12 @@ shunt_nontext() {
 # shunt_count_lines <file>: lines as a reader sees them (a final unterminated line counts).
 shunt_count_lines() {
   local n
-  n=$(wc -l < "$1" 2>/dev/null) || return 1
+  n=$(wc -l 2>/dev/null < "$1") || return 1   # 2> first: a failed < must stay silent
   if [ -s "$1" ] && [ "$(tail -c 1 -- "$1" | wc -l)" -eq 0 ]; then n=$((n + 1)); fi
   echo "$n"
 }
 
-shunt_count_bytes() { wc -c < "$1" 2>/dev/null; }
+shunt_count_bytes() { wc -c 2>/dev/null < "$1"; }
 
 shunt_script_path() { printf '%s/scripts/bulk-read.sh\n' "$(cd "$1/.." && pwd)"; }
 

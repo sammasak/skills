@@ -117,14 +117,17 @@ check "vendor.log redirected before exclusion" 2 "shunt:" $R "$(rd "$F/vendor.lo
 SHUNT_EXCLUDE="/nowhere/*:*.log" check "SHUNT_EXCLUDE allows silently" 0 - $R "$(rd "$F/vendor.log")"
 # a pattern that also matches a file in the cwd must stay a pattern (no pathname expansion)
 mkdir -p "$TMP/globcwd/g"; : > "$TMP/globcwd/unrelated.log"; seq 1 2000 > "$TMP/globcwd/g/vendor.log"
-(cd "$TMP/globcwd" && SHUNT_EXCLUDE='*.log' check "SHUNT_EXCLUDE not glob-expanded against cwd (Read)" 0 - $R "$(rd "$TMP/globcwd/g/vendor.log")")
+# (no subshells around assertions: the PASS/FAIL counters must survive)
+cd "$TMP/globcwd" || exit 1
+SHUNT_EXCLUDE='*.log' check "SHUNT_EXCLUDE not glob-expanded against cwd (Read)" 0 - $R "$(rd "$TMP/globcwd/g/vendor.log")"
+cd "$ROOT" || exit 1
 [ -s "$TMP/err" ] && bad "SHUNT_EXCLUDE glob: Read hook redirected" || ok
 # file guards in the hooks: a large file bulk-read.sh would refuse is read normally, never redirected
 seq 1 2000 > "$F/private-notes.txt"; chmod 600 "$F/private-notes.txt"
 check "private-mode large file allowed (umask 022)" 0 - $R "$(rd "$F/private-notes.txt")"
 seq 1 2000 > "$F/open-notes.txt"; chmod 644 "$F/open-notes.txt"
 check "same content at 0644 redirected" 2 "shunt:" $R "$(rd "$F/open-notes.txt")"
-(umask 077; check "private-mode guard stands down under umask 077" 2 "shunt:" $R "$(rd "$F/private-notes.txt")")
+umask 077; check "private-mode guard stands down under umask 077" 2 "shunt:" $R "$(rd "$F/private-notes.txt")"; umask 022
 { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; seq 1 2000; } > "$F/notes-a.txt"
 check "key marker in a large file allowed (Read)" 0 - $R "$(rd "$F/notes-a.txt")"
 check "key marker in a large file allowed (Bash)" 0 - $B "$(bc "cat notes-a.txt")"
@@ -338,7 +341,9 @@ SENS=(.claude/.credentials.json .git-credentials .pgpass kubeconfig terraform.tf
   prod.env docker.env app.env key.txt age-key.txt .config/age/key.txt var/lib/sops-nix/key.txt
   .secrets/db.yaml my-secrets/db.yaml credentials/aws.json tokens/gh.json wg0.conf etc/wireguard/wg0.conf
   rclone.conf .config/rclone/rclone.conf .my.cnf auth.json .codex/auth.json k3s.yaml admin.conf
-  kube-config.yaml .dev.vars AuthKey_ABC.p8 cert.der private_key ssh_host_ed25519_key etc/rancher/k3s/k3s.yaml)
+  kube-config.yaml .dev.vars AuthKey_ABC.p8 cert.der private_key ssh_host_ed25519_key etc/rancher/k3s/k3s.yaml
+  .bash_history .zsh_history .histfile .local/share/fish/fish_history talosconfig .config/talos/config
+  .msmtprc .mbsyncrc .authinfo .authinfo.gpg .envrc .claude.json)
 for s in "${SENS[@]}"; do
   mkdir -p "$F/sens/$(dirname "$s")"; seq 1 10 > "$F/sens/$s"
   brx "refuse $s" "not delegated" --question "$Q" --paths "sens/$s"
@@ -354,7 +359,7 @@ br "same content at 0644 sent" 0 - - --question "$Q" --paths plain-a.txt
 chmod 640 "$F/plain-a.txt"
 br "group-readable 0640 sent" 0 - - --question "$Q" --paths plain-a.txt
 chmod 600 "$F/plain-a.txt"
-(umask 077; br "private mode not a signal under umask 077: sent" 0 - - --question "$Q" --paths plain-a.txt)
+umask 077; br "private mode not a signal under umask 077: sent" 0 - - --question "$Q" --paths plain-a.txt; umask 022
 chmod 644 "$F/plain-a.txt"
 i=0
 for m in "-----BEGIN RSA PRIVATE KEY-----" "-----BEGIN PRIVATE KEY-----" "-----BEGIN EC PRIVATE KEY-----" \
@@ -367,6 +372,41 @@ done
 printf 'the word sops: appears, and so does the word PRIVATE KEY, but no marker\n' > "$F/prose.md"
 br "prose mentioning sops: without ENC[ is sent" 0 - - --question "$Q" --paths prose.md
 BR_CWD="$TMP/globcwd" SHUNT_EXCLUDE='*.log' brx "SHUNT_EXCLUDE not glob-expanded against cwd" "not delegated" --question "$Q" --paths g/vendor.log
+# third review probe: umask 077, every file 0600, so only names and content guard
+P="$TMP/probe"; mkdir -p "$P/.local/share/fish" "$P/.config/talos" "$P/clusters/homelab"
+B64KEY='LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUJhc2U2NGtleQo='
+(
+  umask 077
+  seq 1 400 > "$P/.bash_history"
+  seq 1 400 > "$P/.local/share/fish/fish_history"
+  seq 1 400 > "$P/.config/talos/config"
+  { echo "machine:"; echo "  ca:"; echo "    key: $B64KEY"; seq 1 400 | sed 's/^/  # /'; } > "$P/clusters/homelab/controlplane.yaml"
+  { echo "apiVersion: v1"; echo "kind: Config"; echo "users:"; echo "- user:"; echo "    client-key-data: $B64KEY"; seq 1 400 | sed 's/^/# /'; } > "$P/homelab.yaml"
+)
+umask 077
+for f in .bash_history .local/share/fish/fish_history .config/talos/config clusters/homelab/controlplane.yaml homelab.yaml; do
+  [ "$(stat -c %a "$P/$f")" = 600 ] && ok || bad "probe fixture $f is not 0600"
+  check "umask 077: Read of $f allowed" 0 - $R "$(rd "$P/$f")"
+  [ -s "$TMP/err" ] && bad "umask 077: Read of $f printed '$(cat "$TMP/err")'" || ok
+  BR_CWD="$P" brx "umask 077: bulk-read refuses $f" "not delegated" --question "$Q" --paths "$f"
+done
+umask 022
+for r in sensitive secret; do
+  grep -q "\"hook\":\"shunt-read\".*\"result\":\"$r\"" "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "Read hook did not log $r"
+done
+{ echo "data:"; echo "  tls.key: $B64KEY"; seq 1 400 | sed 's/^/# /'; } > "$F/tls-bundle.yaml"; chmod 644 "$F/tls-bundle.yaml"
+check "umask 022: base64 key at 0644 allowed by the Read hook" 0 - $R "$(rd "$F/tls-bundle.yaml")"
+brx "umask 022: base64 key at 0644 refused" "contains private key or sops-encrypted material" --question "$Q" --paths tls-bundle.yaml
+printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: db\nstringData:\n  password: hunter2\n' > "$F/db-manifest.yaml"
+brx "plaintext Kubernetes Secret refused" "contains private key" --question "$Q" --paths db-manifest.yaml
+printf '{"apiVersion": "v1", "kind": "Secret", "data": {}}\n' > "$F/db-manifest.json"
+brx "JSON Kubernetes Secret refused" "contains private key" --question "$Q" --paths db-manifest.json
+printf 'kind: Deployment\n# mentions a Secret by name only\n' > "$F/deploy.yaml"
+br "manifest mentioning a Secret is sent" 0 - - --question "$Q" --paths deploy.yaml
+seq 1 2000 > "$F/locked.txt"; chmod 000 "$F/locked.txt"
+check "unreadable file allowed silently" 0 - $R "$(rd "$F/locked.txt")"
+[ -s "$TMP/err" ] && bad "unreadable file printed '$(cat "$TMP/err")'" || ok
+chmod 644 "$F/locked.txt"
 grep -q '"hook":"bulk-read".*"result":"private"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "private refusal not logged"
 grep -q '"hook":"bulk-read".*"result":"secret"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "secret refusal not logged"
 grep -q '"hook":"bulk-read".*"result":"sensitive"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "sensitive refusal not logged"
