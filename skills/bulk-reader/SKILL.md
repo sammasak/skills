@@ -22,7 +22,7 @@ Each call is independent: for a follow-up, ask again with the same `--paths`. Li
 
 ## Saved command output
 
-A `[shunt] command output was N chars ...` notice means a large command result was saved to the named log and you see only its head and tail. Grep or Read a range of that log (or ask `bulk-read.sh` about it); do not re-run the command to see more.
+A `[shunt] command succeeded; its stdout was N chars ...` notice means a large command result was saved to the named log and you see only its head and tail. Grep or Read a range of that log (or ask `bulk-read.sh` about it); do not re-run the command to see more.
 
 ## Ask well
 

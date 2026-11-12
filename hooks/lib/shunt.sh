@@ -225,9 +225,9 @@ _SHUNT_CONFIG_KIND="(^|${_SHUNT_NL})[[:blank:]-]*kind:[[:blank:]]*[\"']?Config[\
 _SHUNT_TOKEN_LINE="(^|${_SHUNT_NL})[[:blank:]-]*token:[[:blank:]]*[^[:space:]]"
 _SHUNT_WG_KEY="(^|${_SHUNT_NL})[[:blank:]]*(PrivateKey|PresharedKey)[[:blank:]]*="
 _SHUNT_JSON_SECRET="\"kind\"[[:blank:]]*:[[:blank:]]*\"Secret\""
-shunt_secret_marker() {
+shunt_secret_marker() { # shunt_secret_marker <file> [bytes to scan, default 65536]
   local head
-  head=$(head -c 65536 -- "$1" 2>/dev/null | tr -d '\000') || return 1
+  head=$(head -c "${2:-65536}" -- "$1" 2>/dev/null | tr -d '\000') || return 1
   case "$head" in
     *"PRIVATE KEY-----"* | *"-----BEGIN PGP PRIVATE KEY BLOCK-----"* | *"AGE-SECRET-KEY-1"* | *"ENC[AES256_GCM,"* | \
     *"LS0tLS1CRUdJTi"* | *ghp_* | *github_pat_* | *sk-ant-* | *access-tokens*) return 0 ;;
@@ -235,6 +235,30 @@ shunt_secret_marker() {
   case "$head" in *"sops:"*"ENC["* | *"ENC["*"sops:"*) return 0 ;; esac
   [[ "$head" =~ $_SHUNT_SECRET_KIND || "$head" =~ $_SHUNT_JSON_SECRET || "$head" =~ $_SHUNT_WG_KEY ]] && return 0
   [[ "$head" =~ $_SHUNT_CONFIG_KIND && "$head" =~ $_SHUNT_TOKEN_LINE ]] && return 0
+  return 1
+}
+
+# shunt_secret_marker_stream <file>: the same markers over the whole file, in one
+# streamed grep pass (spill logs can be many megabytes; the hooks may use grep).
+shunt_secret_marker_stream() {
+  local m sops=0 enc=0 config=0 token=0
+  while IFS= read -r m; do
+    case "$m" in
+      *"PRIVATE KEY-----"* | *"PGP PRIVATE KEY BLOCK"* | AGE-SECRET-KEY-1 | "ENC[AES256_GCM," | LS0tLS1CRUdJTi | \
+      ghp_ | github_pat_ | sk-ant- | access-tokens | *PrivateKey* | *PresharedKey* | *Secret*) return 0 ;;
+      sops:) sops=1 ;;
+      "ENC[") enc=1 ;;
+      *Config*) config=1 ;;
+      *token:*) token=1 ;;
+    esac
+    { [ "$sops" = 1 ] && [ "$enc" = 1 ]; } || { [ "$config" = 1 ] && [ "$token" = 1 ]; } && return 0
+  done < <(LC_ALL=C grep -aoE \
+    -e 'PRIVATE KEY-----' -e 'PGP PRIVATE KEY BLOCK' -e 'AGE-SECRET-KEY-1' -e 'ENC\[AES256_GCM,' -e 'LS0tLS1CRUdJTi' \
+    -e 'ghp_' -e 'github_pat_' -e 'sk-ant-' -e 'access-tokens' \
+    -e "^[[:blank:]-]*kind:[[:blank:]]*[\"']?Secret[\"']?[[:blank:]]*\$" -e '"kind"[[:blank:]]*:[[:blank:]]*"Secret"' \
+    -e '^[[:blank:]]*(PrivateKey|PresharedKey)[[:blank:]]*=' -e 'sops:' -e 'ENC\[' \
+    -e "^[[:blank:]-]*kind:[[:blank:]]*[\"']?Config[\"']?[[:blank:]]*\$" -e '^[[:blank:]-]*token:[[:blank:]]*[^[:space:]]' \
+    -- "$1" 2>/dev/null | LC_ALL=C sort -u)
   return 1
 }
 

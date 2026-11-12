@@ -96,7 +96,8 @@ for f in "${FILES[@]}"; do
   shunt_nontext "$real" && invalid "$f is binary or non-text; not delegated."
   shunt_private "$real" "$CALLER_UMASK" && fail private "$f is private (mode $(stat -c %a -- "$real"), no group or other read): not delegated; read it directly if you are permitted to."
   shunt_no_delegate "$real" && fail secret "$f is a saved command output that looked like secret material: not delegated; Grep or Read a range of it instead."
-  shunt_secret_marker "$real" && fail secret "$f looks like secret material by content (a key, token, Kubernetes Secret or sops data): not delegated; read it directly if you are permitted to."
+  # Whole file: every delegated byte is scanned (the payload cap keeps this small).
+  shunt_secret_marker "$real" "$MAX_PAYLOAD" && fail secret "$f looks like secret material by content (a key, token, Kubernetes Secret or sops data): not delegated; read it directly if you are permitted to."
   b=$(shunt_count_bytes "$real"); l=$(shunt_count_lines "$real")
   TOTAL_BYTES=$((TOTAL_BYTES + b)); TOTAL_LINES=$((TOTAL_LINES + l))
   [ "$TOTAL_BYTES" -le "$MAX_PAYLOAD" ] || invalid "the files total over SHUNT_MAX_PAYLOAD_BYTES=$MAX_PAYLOAD bytes; split them across several calls (fewer files, or ask about one file at a time)."

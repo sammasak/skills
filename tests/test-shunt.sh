@@ -380,8 +380,9 @@ grep -qxF "$(head -n 1 "$TMP/gen.out")" "$TMP/sp.txt" && grep -qxF "$(tail -n 1 
 [ "$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout | length' "$TMP/sp.out")" -le 4500 ] && ok || bad "spill: excerpt over 4500 chars"
 grep -q "MIDDLE-MARKER-7f3a9" "$TMP/sp.txt" && bad "spill: the middle leaked into the excerpt" || ok
 grep -q "MIDDLE-MARKER-7f3a9" "$(splog)" && ok || bad "spill: the middle is not in the log"
-grep -qF "[shunt] command output was $(wc -c < "$TMP/gen.out") chars, 3000 lines (exit 0); full output saved to $(splog)." "$TMP/sp.txt" && ok || bad "spill: header wrong: $(head -n 1 "$TMP/sp.txt")"
-grep -qF "Do not re-run the command just to see more." "$TMP/sp.txt" && grep -qF "over the bulk-read payload cap" "$TMP/sp.txt" && ok || bad "spill: a log over the payload cap must not suggest bulk-read"
+grep -qF "[shunt] command succeeded; its stdout was $(wc -c < "$TMP/gen.out") chars, 3000 lines, saved in full to $(splog)." "$TMP/sp.txt" && ok || bad "spill: header wrong: $(head -n 1 "$TMP/sp.txt")"
+grep -q "exit 0" "$TMP/sp.txt" && bad "spill: the notice asserts an exit status" || ok
+grep -qF "Do not re-run the command just to see more." "$TMP/sp.txt" && ! grep -q "bulk-read.sh --question" "$TMP/sp.txt" && ok || bad "spill: a log over the payload cap must not suggest bulk-read"
 seq -f 'mid-size line %06g ......................................' 1 400 > "$TMP/mid.out"
 spin "$TMP/mid.out"; sprun >/dev/null; MIDLOG=$(splog)
 sptext | grep -qF "$ROOT/scripts/bulk-read.sh --question \"<what you need>\" --paths $MIDLOG" && ok || bad "spill: guidance line wrong: $(sptext | sed -n 2p)"
@@ -417,15 +418,17 @@ spin "$TMP/gen.out" '{}' "$TMP/short.err"; sprun >/dev/null
 jq -e '.hookSpecificOutput.updatedToolOutput.stderr == "warning: short\n"' "$TMP/sp.out" >/dev/null && ok || bad "spill: short stderr not kept"
 seq -f 'stderr line %g ------------------------------------------' 1 300 > "$TMP/long.err"
 spin "$TMP/gen.out" '{}' "$TMP/long.err"; sprun >/dev/null
-jq -e '.hookSpecificOutput.updatedToolOutput.stderr == ""' "$TMP/sp.out" >/dev/null && sptext | grep -q 'stderr (last 20 lines' && sptext | grep -qF "stderr line 300 " \
-  && grep -qx -- '--- stderr ---' "$(splog)" && grep -qF "stderr line 1 " "$(splog)" && ok || bad "spill: long stderr not folded"
+jq -e '.hookSpecificOutput.updatedToolOutput.stderr == ""' "$TMP/sp.out" >/dev/null && sptext | grep -q -- '--- stderr (last lines' && sptext | grep -qF "stderr line 300 " \
+  && cmp -s "$TMP/gen.out" "$(splog)" && cmp -s "$TMP/long.err" "${SPLOG_ERR:=$(splog | sed 's/\.log$/.stderr.log/')}" && ok || bad "spill: long stderr not in its own log"
+unset SPLOG_ERR
 # Claude Code's own saved output: use it, no copy, real tail
 mkdir -p "$TMP/home/.claude/projects/p/sess/tool-results"
 PERS="$TMP/home/.claude/projects/p/sess/tool-results/big-out.txt"
 seq -f 'persisted line %g ..........' 1 5000 > "$PERS"
 head -c 30000 "$PERS" > "$TMP/cut.out"
 spin "$TMP/cut.out" "$(jq -nc --arg p "$PERS" '{tool_response:{persistedOutputPath:$p,persistedOutputSize:1}}')"; sprun >/dev/null
-sptext | grep -qF "full output saved to $PERS." && sptext | grep -qxF "persisted line 5000 .........." && ok || bad "spill: persisted output not used: $(sptext | head -n 1)"
+jq -e '.hookSpecificOutput.updatedToolOutput | has("persistedOutputPath") or has("persistedOutputSize") | not' "$TMP/sp.out" >/dev/null && ok || bad "spill: persisted fields kept in the replacement"
+sptext | grep -qF "saved in full to $PERS." && sptext | grep -qxF "persisted line 5000 .........." && ok || bad "spill: persisted output not used: $(sptext | head -n 1)"
 [ ! -e "$(splog)" ] && ok || bad "spill: persisted output was copied"
 # diff index
 { for i in 1 2 3; do printf 'diff --git a/src/f%s.c b/src/f%s.c\nindex 1..2 100644\n' "$i" "$i"; seq -f '+added line %g in a hunk of the diff ..........' 1 400; done; } > "$TMP/diff.out"
@@ -460,6 +463,66 @@ spin "$TMP/gen.out"; sprun >/dev/null
 mkdir -p "$SPROOT/old-sess2"; touch -d '3 days ago' "$SPROOT/old-sess2"
 spin "$TMP/gen.out"; sprun >/dev/null
 [ -d "$SPROOT/old-sess2" ] && ok || bad "spill cleanup ran twice within an hour"
+# stderr stays separate: the log is stdout byte for byte, each tail is its own stream
+seq -f 'out line %g' 1 500 > "$TMP/o500.out"
+for i in 1 2 3 4 5; do printf 'ERR%s %s\n' "$i" "$(head -c 900 /dev/zero | tr '\0' 'e')"; done > "$TMP/e5.err"
+spin "$TMP/o500.out" '{}' "$TMP/e5.err"; SHUNT_SPILL_MIN_CHARS=5000 sprun >/dev/null
+EL=$(splog | sed 's/\.log$/.stderr.log/')
+cmp -s "$TMP/o500.out" "$(splog)" && cmp -s "$TMP/e5.err" "$EL" && ok || bad "spill 500+5: logs are not the separate streams"
+sptext > "$TMP/sp.txt"
+grep -qx "out line 500" "$TMP/sp.txt" && ok || bad "spill 500+5: the true end of stdout is not shown"
+sed -n '/^--- stderr (last lines/,$p' "$TMP/sp.txt" > "$TMP/errblock.txt"
+grep -q '^ERR5 ' "$TMP/errblock.txt" && ! grep -q '^out line' "$TMP/errblock.txt" && ok || bad "spill 500+5: stderr block holds stdout lines"
+grep -qF "stderr was $(wc -c < "$TMP/e5.err") chars, saved in full to $EL" "$TMP/sp.txt" && grep -qF "its stdout was $(wc -c < "$TMP/o500.out") chars, 500 lines" "$TMP/sp.txt" && ok || bad "spill 500+5: counts wrong: $(head -n 2 "$TMP/sp.txt")"
+head -c 6001 /dev/zero | tr '\0' 'o' | fold -w 100 > "$TMP/o6001.out"; head -c 6000 /dev/zero | tr '\0' 'r' | fold -w 100 > "$TMP/e6000.err"
+spin "$TMP/o6001.out" '{}' "$TMP/e6000.err"; c=$(sprun)
+EL=$(splog | sed 's/\.log$/.stderr.log/')
+[ "$c" = 0 ] && cmp -s "$TMP/o6001.out" "$(splog)" && cmp -s "$TMP/e6000.err" "$EL" && ok || bad "spill 6001+6000: logs wrong"
+sptext > "$TMP/sp.txt"
+grep -qxF "$(tail -n 1 "$TMP/o6001.out")" "$TMP/sp.txt" && [ "$(sed -n '/^--- stderr (last lines/,$p' "$TMP/sp.txt" | grep -v '^$' | tail -n 1)" = "$(tail -n 1 "$TMP/e6000.err")" ] && ok || bad "spill 6001+6000: tails wrong"
+# the original tool_response survives; no exit status is asserted
+spin "$TMP/gen.out" '{"tool_input":{"command":"diff a b"},"tool_response":{"returnCodeInterpretation":"Files differ","noOutputExpected":false}}'; sprun >/dev/null
+jq -e '.hookSpecificOutput.updatedToolOutput | .returnCodeInterpretation == "Files differ" and .noOutputExpected == false and .interrupted == false and .isImage == false' "$TMP/sp.out" >/dev/null && ok || bad "spill: tool_response fields lost"
+sptext | head -n 1 | grep -qF "[shunt] command succeeded (Files differ); its stdout was" && ! sptext | grep -q "exit 0" && ok || bad "spill: interpretation missing: $(sptext | head -n 1)"
+spin "$TMP/gen.out" '{"tool_response":{"backgroundTaskId":"bg_123"}}'; untouched "backgroundTaskId untouched"
+grep -q '"hook":"shunt-spill".*"result":"background"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "spill: background not logged"
+printf 'hello' > "$TMP/five.out"
+spin "$TMP/five.out" "$(jq -nc --arg p "$TMP/nowhere/persisted.txt" '{tool_response:{persistedOutputPath:$p,persistedOutputSize:99999}}')"; untouched "unreadable persisted path untouched"
+[ ! -e "$(splog)" ] && ok || bad "spill: unreadable persisted path still wrote a log"
+# a 5 MB single-line persisted file stays fast (lines are bounded before the shell reads them)
+head -c 5000000 /dev/zero | tr '\0' 'z' > "$TMP/home/.claude/projects/p/sess/tool-results/one-line.txt"
+head -c 30000 "$TMP/home/.claude/projects/p/sess/tool-results/one-line.txt" > "$TMP/cut1.out"
+spin "$TMP/cut1.out" "$(jq -nc --arg p "$TMP/home/.claude/projects/p/sess/tool-results/one-line.txt" '{tool_response:{persistedOutputPath:$p,persistedOutputSize:1}}')"
+t0=$(date +%s%N); sprun >/dev/null; t1=$(date +%s%N)
+ms=$(( (t1 - t0) / 1000000 ))
+[ "$ms" -lt 1000 ] && sptext | grep -q '…\[cut\]' && [ "$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout | length' "$TMP/sp.out")" -le 4500 ] && ok || bad "spill: 5 MB single line took ${ms} ms or was not cut"
+echo "info: spill of a 5 MB single-line persisted file ${ms} ms"
+# a late secret is found by the whole-log scan
+{ cat "$TMP/gen.out"; echo "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789"; } > "$TMP/late.out"
+spin "$TMP/late.out"; sprun >/dev/null; LATE_LOG=$(splog)
+sptext | grep -qF "do not delegate it" && grep -qxF "$LATE_LOG" "$(dirname "$LATE_LOG")/no-delegate.list" && ok || bad "spill: late secret not flagged"
+# modes that cannot or should not run bulk-read: spilled, but no suggestion
+for m in dontAsk plan; do
+  spin "$TMP/mid.out" "{\"permission_mode\":\"$m\"}"; sprun >/dev/null
+  [ -s "$TMP/sp.out" ] && ! sptext | grep -q "bulk-read.sh" && ok || bad "spill: $m got a bulk-read suggestion"
+done
+fill 4000 49 > "$TMP/near-cap.out"
+spin "$TMP/near-cap.out"; sprun >/dev/null
+! sptext | grep -q "bulk-read.sh --question" && ok || bad "spill: a log near the payload cap (with numbering) still suggested bulk-read"
+# KEEP_DAYS is at least 1; symlinked stamp and list are never followed
+mkdir -p "$SPROOT/half-day"; touch -d '12 hours ago' "$SPROOT/half-day"; rm -f "$SPROOT/.cleanup-stamp"
+spin "$TMP/gen.out"; SHUNT_SPILL_KEEP_DAYS=0 sprun >/dev/null
+[ -d "$SPROOT/half-day" ] && ok || bad "spill: SHUNT_SPILL_KEEP_DAYS=0 deleted a 12-hour-old session"
+: > "$TMP/stamp-target"; touch -d '2 days ago' "$TMP/stamp-target"; rm -f "$SPROOT/.cleanup-stamp"; ln -s "$TMP/stamp-target" "$SPROOT/.cleanup-stamp"
+mkdir -p "$SPROOT/old-sess3"; touch -d '3 days ago' "$SPROOT/old-sess3"
+spin "$TMP/gen.out"; sprun >/dev/null
+[ -d "$SPROOT/old-sess3" ] && [ -n "$(find "$TMP/stamp-target" -mmin +60)" ] && ok || bad "spill: a symlinked stamp was followed"
+rm -f "$SPROOT/.cleanup-stamp"
+spin "$TMP/secret.out" '{"session_id":"listlink"}'; mkdir -p "$SPROOT/listlink"; : > "$TMP/list-target"
+ln -s "$TMP/list-target" "$SPROOT/listlink/no-delegate.list"
+untouched "symlinked no-delegate.list: untouched"
+[ ! -s "$TMP/list-target" ] && ok || bad "spill: wrote through a symlinked no-delegate.list"
+
 # the small path stays fast
 spin "$TMP/small.out"
 t0=$(date +%s%N); for _ in 1 2 3 4 5; do "$HOOKS/$SP" < "$TMP/sp.json" >/dev/null 2>&1; done; t1=$(date +%s%N)
@@ -689,6 +752,9 @@ grep -q '"hook":"bulk-read".*"result":"secret"' "$XDG_STATE_HOME"/claude-hooks/*
 grep -q '"hook":"bulk-read".*"result":"sensitive"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "sensitive refusal not logged"
 # ── v2: bulk-read plumbing ──
 # spill logs through bulk-read: listed secret logs refused, content check applies, clean logs sent
+{ fill 2000; echo "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789"; } > "$F/late-notes.txt"
+brx "a secret past 64 KiB is found (whole-file scan)" "looks like secret material by content" --question "$Q" --paths late-notes.txt
+brx "spill log with a late secret refused" "saved command output that looked like secret material" --question "$Q" --paths "$LATE_LOG"
 brx "spill log listed do-not-delegate is refused" "saved command output that looked like secret material" --question "$Q" --paths "$SECRET_LOG"
 mkdir -p "$SPROOT/manual"; { echo "-----BEGIN RSA PRIVATE KEY-----"; fill 50; } > "$SPROOT/manual/toolu_m.log"; chmod 644 "$SPROOT/manual/toolu_m.log"
 brx "spill log with key material refused by the content check" "looks like secret material by content" --question "$Q" --paths "$SPROOT/manual/toolu_m.log"
