@@ -65,6 +65,7 @@ MAX_OUT=$(shunt_int "${SHUNT_MAX_OUTPUT_BYTES:-}" 12000)
 
 [ "$NFILES" -le "$MAX_FILES" ] || invalid "$NFILES files is over SHUNT_MAX_FILES=$MAX_FILES; ask about fewer files per call."
 
+CALLER_UMASK=$(umask)   # the private-mode guard judges files against the caller's umask, not ours
 TMPD=$(mktemp -d "${TMPDIR:-/tmp}/bulk-read.XXXXXX") || fail error "cannot create a temp dir."
 trap 'rm -rf "$TMPD"' EXIT
 umask 077
@@ -75,11 +76,16 @@ PAYLOAD="$TMPD/payload"
 printf 'Question: %s\n\nFiles:\n\n' "$QUESTION" > "$PAYLOAD"
 for f in "${FILES[@]}"; do
   [ -e "$f" ] || [ -L "$f" ] || invalid "$f does not exist."
-  shunt_sensitive "$f" "$PWD" && invalid "$f is a sensitive or excluded path: not delegated; read it directly if you are permitted to."
+  shunt_sensitive_name "$f" || shunt_sensitive_name "$(shunt_abs "$f" "$PWD")" &&
+    fail sensitive "$f is a sensitive or excluded path: not delegated; read it directly if you are permitted to."
+  # The one resolution: every check below and the cat use this same string.
   real=$(realpath -e -- "$f" 2>/dev/null) || invalid "$f does not resolve to an existing file."
+  shunt_sensitive_name "$real" && fail sensitive "$f resolves to a sensitive or excluded path ($real): not delegated; read it directly if you are permitted to."
   [ -f "$real" ] || invalid "$f is not a regular file."
   [ -r "$real" ] || invalid "$f is not readable."
   shunt_nontext "$real" && invalid "$f is binary or non-text; not delegated."
+  shunt_private "$real" "$CALLER_UMASK" && fail private "$f is private (mode $(stat -c %a -- "$real"), no group or other read): not delegated; read it directly if you are permitted to."
+  shunt_secret_marker "$real" && fail secret "$f contains private key or sops-encrypted material: not delegated; read it directly if you are permitted to."
   b=$(shunt_count_bytes "$real"); l=$(shunt_count_lines "$real")
   TOTAL_BYTES=$((TOTAL_BYTES + b)); TOTAL_LINES=$((TOTAL_LINES + l))
   [ "$TOTAL_BYTES" -le "$MAX_PAYLOAD" ] || invalid "the files total over SHUNT_MAX_PAYLOAD_BYTES=$MAX_PAYLOAD bytes; split them across several calls (fewer files, or ask about one file at a time)."

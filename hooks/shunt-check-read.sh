@@ -28,20 +28,22 @@ LINES=0 BYTES=0 RETURNED=0
 FILE=$(hook_file_path)
 [ -n "$FILE" ] || exit 0
 CWD=$(hook_cwd)
-# A whole non-negative number (or digit string) is a range bound; anything else
-# (a word, a fraction, a negative) cannot be judged and allows. A limit too big
+# A non-negative number (floored, so 1700.0 and 1e3 work) or digit string is a
+# range bound; anything else (a word, a negative) cannot be judged and allows. A limit too big
 # for shell arithmetic is capped (still "huge"); such an offset is "cannot tell".
 range_arg() { # range_arg <name>: the number, 0 when absent, x when unparseable
   echo "$HOOK_INPUT" | jq -r --arg k "$1" '.tool_input[$k]
     | if . == null then 0
-      elif type == "number" and . >= 0 and . == floor then (if . < 1e12 then . else "big" end)
+      elif type == "number" then (if . < 0 then "x" elif . >= 1e12 then "big" else floor end)
       elif type == "string" and test("^[0-9]+$") then (if length <= 12 then tonumber else "big" end)
       else "x" end' 2>/dev/null || echo x
 }
 OFFSET=$(range_arg offset)
 LIMIT=$(range_arg limit)
-case "$OFFSET" in '' | x | big) shunt_done unparsed ;; esac
-case "$LIMIT" in '' | x) shunt_done unparsed ;; big) LIMIT=1000000000000 ;; esac
+[ "$LIMIT" = big ] && LIMIT=1000000000000
+# Anything still not a plain integer (jq printing 1e+03, say) cannot be judged: allow.
+[[ "$OFFSET" =~ ^[0-9]+$ ]] || shunt_done unparsed
+[[ "$LIMIT" =~ ^[0-9]+$ ]] || shunt_done unparsed
 
 ABS=$(shunt_abs "$FILE" "${CWD:-$PWD}")
 [ -f "$ABS" ] || exit 0
@@ -66,6 +68,11 @@ if [ "$RETURNED" -le "$T" ] && [ "$RET_BYTES" -le "$MINB" ]; then
   if [ "$OFFSET" -gt 0 ] || [ "$LIMIT" -gt 0 ]; then shunt_done targeted; fi
   shunt_done allow
 fi
+
+# Only a read that would be redirected pays for these: a file bulk-read.sh would
+# refuse (private mode, key material) is read normally, never sent toward it.
+shunt_private "$ABS" && shunt_done private
+shunt_secret_marker "$ABS" && shunt_done secret
 
 shunt_redirect "$SCRIPT_DIR" "$ABS|$OFFSET|$LIMIT" \
   "shunt: $ABS is $LINES lines ($BYTES bytes); this Read would return about $RETURNED lines, over the threshold of $T lines (or $MINB bytes)." \

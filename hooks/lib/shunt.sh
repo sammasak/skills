@@ -29,27 +29,34 @@ shunt_abs() {
 
 # The refusal list, matched on the lowercased path. Over-matching is deliberate:
 # a false positive only means the file is read normally instead of delegated.
-_shunt_sensitive_one() {
-  local p="$1" lp b pat
+# A name list always has another gap, so shunt_private and shunt_secret_marker
+# back it with checks on the file itself.
+shunt_sensitive_name() {
+  local p="$1" lp b pat pats
   lp="${p,,}"
   b="${lp##*/}"
   case "$b" in
-    .env* | *.pem* | *.key* | *.p12* | *.pfx* | *.kdbx* | *.jks | *.gpg | *.asc | *.age | *.ovpn | \
-    id_rsa* | id_dsa* | id_ecdsa* | id_ed25519* | *.sops.* | keys.* | \
-    *secret* | *credential* | *token* | *passw* | .netrc | .npmrc | .pypirc | .pgpass | .boto | .s3cfg | \
-    kubeconfig* | *.tfstate* | *.tfvars | shadow | gshadow)
+    .env* | *.env | *.pem* | *.key* | *.p12* | *.pfx* | *.p8 | *.der | *.kdbx* | *.jks | *.gpg | *.asc | *.age | *.ovpn | \
+    id_rsa* | id_dsa* | id_ecdsa* | id_ed25519* | ssh_host_* | *private*key* | *key.txt | keys.* | *.sops.* | \
+    *passw* | .netrc | .npmrc | .pypirc | .pgpass | .boto | .s3cfg | .my.cnf | .dev.vars | auth.json | \
+    wg*.conf | rclone.conf | kube*config* | k3s.yaml | admin.conf | *.tfstate* | *.tfvars | shadow | gshadow)
       return 0 ;;
   esac
+  # Any path component (or the name) naming a secret, credential or token (so /run/secrets and
+  # /run/agent-runtime/credentials too), and known secret locations.
   case "/$lp/" in
-    */secrets/* | */secret/* | */.ssh/* | */.gnupg/* | */.aws/* | */.azure/* | */.kube/* | */.docker/* | \
-    */.config/gh/* | */.config/sops/* | */.config/gcloud/* | */.password-store/* | */.local/share/keyrings/* | \
-    //run/secrets* | //run/agent-runtime/credentials* | //run/egress* | \
+    *secret* | *credential* | *token* | \
+    */.ssh/* | */.gnupg/* | */.aws/* | */.azure/* | */.kube/* | */.docker/* | */.codex/* | */.password-store/* | \
+    */.config/gh/* | */.config/sops/* | */.config/gcloud/* | */.config/age/* | */.config/rclone/* | */.local/share/keyrings/* | \
+    */etc/wireguard/* | */etc/rancher/* | */var/lib/sops-nix/* | \
+    //run/egress* | \
     //etc/shadow* | //etc/gshadow* | //etc/sudoers* | //etc/ssh/ssh_host_*)
       return 0 ;;
   esac
   if [ -n "${SHUNT_EXCLUDE:-}" ]; then
-    local IFS=':'
-    for pat in $SHUNT_EXCLUDE; do
+    # read -ra splits on ':' without pathname expansion (a bare `for pat in $X` would glob against cwd).
+    IFS=: read -ra pats <<< "$SHUNT_EXCLUDE"
+    for pat in "${pats[@]}"; do
       [ -n "$pat" ] || continue
       # shellcheck disable=SC2053  # $pat is a glob on purpose
       if [[ "$p" == $pat ]] || [[ "${p##*/}" == $pat ]]; then return 0; fi
@@ -63,10 +70,35 @@ _shunt_sensitive_one() {
 shunt_sensitive() {
   local p="$1" abs real
   abs=$(shunt_abs "$p" "${2:-$PWD}")
-  _shunt_sensitive_one "$p" && return 0
-  _shunt_sensitive_one "$abs" && return 0
+  shunt_sensitive_name "$p" && return 0
+  shunt_sensitive_name "$abs" && return 0
   real=$(realpath -e -- "$abs" 2>/dev/null) || return 1
-  _shunt_sensitive_one "$real"
+  shunt_sensitive_name "$real"
+}
+
+# shunt_private: 0 when the file grants read to neither group nor other
+# (0600/0400 style) AND the process umask would normally grant one of them, so
+# the mode was chosen on purpose. Under a private umask (077) every file is 0600
+# and the mode says nothing, so the check stands down rather than refuse everything.
+shunt_private() { # shunt_private <file> [umask]: umask defaults to the current one
+  local mode um="${2:-}"
+  [ -n "$um" ] || um=$(umask 2>/dev/null) || return 1
+  case "$um" in '' | *[!0-7]*) return 1 ;; esac
+  [ $(( 8#$um & 8#044 )) -ne $(( 8#044 )) ] || return 1
+  mode=$(stat -c %a -- "$1" 2>/dev/null) || return 1
+  case "$mode" in '' | *[!0-7]*) return 1 ;; esac
+  [ $(( 8#$mode & 8#044 )) -eq 0 ]
+}
+
+# shunt_secret_marker <file>: 0 when the first 64 KiB hold a private key or sops-encrypted data.
+shunt_secret_marker() {
+  local head
+  head=$(head -c 65536 -- "$1" 2>/dev/null | tr -d '\000') || return 1
+  case "$head" in
+    *"PRIVATE KEY-----"* | *"-----BEGIN PGP PRIVATE KEY BLOCK-----"* | *"AGE-SECRET-KEY-1"* | *"ENC[AES256_GCM,"*) return 0 ;;
+  esac
+  case "$head" in *"sops:"*"ENC["* | *"ENC["*"sops:"*) return 0 ;; esac
+  return 1
 }
 
 # shunt_nontext <file>: 0 for images, PDFs, notebooks, or a NUL byte in the first 64 KiB.

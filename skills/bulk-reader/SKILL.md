@@ -32,7 +32,7 @@ The answer is not ground truth. Before you edit, quote, or rely on a line number
 
 - You need exact content for an edit: Read the range (at most ~350 lines) instead.
 - Small files: just Read them.
-- Sensitive files (`.env`, keys, tokens, anything under `secrets/`, `.ssh/`, credentials): the script refuses them; Read directly only if you are permitted to.
+- Sensitive files (`.env`, keys, tokens, credentials, anything under `secrets/` or `.ssh/`, private-mode files, anything holding a private key or sops data): the script refuses them; Read directly only if you are permitted to.
 - Debugging where every line matters (a failing test's exact assertion, a subtle off-by-one).
 
 ## On failure

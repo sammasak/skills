@@ -143,8 +143,11 @@ for f in "${FILES[@]}"; do
   else
     rl=$(returned "$l"); rb=0; [ "$l" -gt 0 ] && rb=$(( b * rl / l ))
   fi
-  if { [ "$rl" -gt "$T" ] || [ "$rb" -gt "$MINB" ]; } && [ "$rl" -gt "$BEST_RET" ]; then
-    BEST=$abs BEST_RET=$rl BEST_LINES=$l BEST_BYTES=$b
+  if [ "$rl" -gt "$T" ] || [ "$rb" -gt "$MINB" ]; then
+    # bulk-read.sh would refuse it: read normally, never redirect toward a refusal.
+    shunt_private "$abs" && shunt_done private
+    shunt_secret_marker "$abs" && shunt_done secret
+    [ "$rl" -gt "$BEST_RET" ] && BEST=$abs BEST_RET=$rl BEST_LINES=$l BEST_BYTES=$b
   fi
 done
 [ -n "$BEST" ] || { [ "$KIND" = whole ] && shunt_done allow; shunt_done targeted; }

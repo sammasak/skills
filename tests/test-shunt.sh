@@ -18,6 +18,8 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_STATE_HOME"
 # No inherited SHUNT_* (a live SHUNT_CLAUDE_BIN would beat the fake and call a real model); each case sets its own.
 for v in "${!SHUNT_@}"; do unset "$v"; done
 unset CLAUDE_CODE_MAX_OUTPUT_TOKENS
+# 022: fixtures are 0644, so the private-mode guard is active (it stands down under 077; tested below).
+umask 022
 F="$TMP/f"; mkdir -p "$F"
 
 PASS=0
@@ -80,6 +82,17 @@ check "overflowing offset cannot be judged: allowed" 0 - $R "$(rdj '{"offset":1e
 check "overflowing digit-string offset: allowed" 0 - $R "$(rdj '{"offset":"99999999999999999999999"}')"
 check "overflowing limit is still huge: redirected" 2 "shunt:" $R "$(rdj '{"limit":1e30}')"
 check "digit-string offset near end allowed" 0 - $R "$(rdj '{"offset":"1800"}')"
+check "float offset near end allowed" 0 - $R "$(rdj '{"offset":1800.0}')"
+check "exponent offset near end allowed" 0 - $R "$(rdj '{"offset":1.8e3}')"
+check "float offset leaving too much redirected" 2 "shunt:" $R "$(rdj '{"offset":10.0}')"
+check "float limit bounded allowed" 0 - $R "$(rdj '{"limit":200.0}')"
+check "exponent limit bounded allowed" 0 - $R "$(rdj '{"limit":2e2}')"
+check "exponent limit too large redirected" 2 "shunt:" $R "$(rdj '{"limit":5e3}')"
+check "fractional offset floored" 0 - $R "$(rdj '{"offset":1800.7}')"
+for v in 1700.0 1e3 2e2; do
+  printf '%s' "$(rdj "{\"offset\":$v}")" | "$HOOKS/$R" >/dev/null 2>"$TMP/err"
+  grep -q "integer expected" "$TMP/err" && bad "offset $v: shell arithmetic error" || ok
+done
 for sid in '../escape' 'a/b' 'x y' 'semi;colon'; do
   check "session id '$sid' keeps no state: allowed" 0 - $R "$(jq -nc --arg p "$F/big.txt" --arg s "$sid" '{session_id:$s,tool_input:{file_path:$p}}')"
 done
@@ -102,6 +115,20 @@ for s in .env .env.local server.pem api_token.txt secrets/db.yaml home/.ssh/conf
 done
 check "vendor.log redirected before exclusion" 2 "shunt:" $R "$(rd "$F/vendor.log")"
 SHUNT_EXCLUDE="/nowhere/*:*.log" check "SHUNT_EXCLUDE allows silently" 0 - $R "$(rd "$F/vendor.log")"
+# a pattern that also matches a file in the cwd must stay a pattern (no pathname expansion)
+mkdir -p "$TMP/globcwd/g"; : > "$TMP/globcwd/unrelated.log"; seq 1 2000 > "$TMP/globcwd/g/vendor.log"
+(cd "$TMP/globcwd" && SHUNT_EXCLUDE='*.log' check "SHUNT_EXCLUDE not glob-expanded against cwd (Read)" 0 - $R "$(rd "$TMP/globcwd/g/vendor.log")")
+[ -s "$TMP/err" ] && bad "SHUNT_EXCLUDE glob: Read hook redirected" || ok
+# file guards in the hooks: a large file bulk-read.sh would refuse is read normally, never redirected
+seq 1 2000 > "$F/private-notes.txt"; chmod 600 "$F/private-notes.txt"
+check "private-mode large file allowed (umask 022)" 0 - $R "$(rd "$F/private-notes.txt")"
+seq 1 2000 > "$F/open-notes.txt"; chmod 644 "$F/open-notes.txt"
+check "same content at 0644 redirected" 2 "shunt:" $R "$(rd "$F/open-notes.txt")"
+(umask 077; check "private-mode guard stands down under umask 077" 2 "shunt:" $R "$(rd "$F/private-notes.txt")")
+{ echo "-----BEGIN OPENSSH PRIVATE KEY-----"; seq 1 2000; } > "$F/notes-a.txt"
+check "key marker in a large file allowed (Read)" 0 - $R "$(rd "$F/notes-a.txt")"
+check "key marker in a large file allowed (Bash)" 0 - $B "$(bc "cat notes-a.txt")"
+check "private-mode file allowed (Bash)" 0 - $B "$(bc "cat private-notes.txt")"
 # ── Read hook: switches ──
 SHUNT_DISABLE=1 check "SHUNT_DISABLE allows" 0 - $R "$(rd "$F/big.txt")"
 SHUNT_MIN_LINES=abc check "non-numeric threshold falls back to 350 (351 redirected)" 2 "threshold of 350" $R "$(rd "$F/l351.txt")"
@@ -235,7 +262,7 @@ export FAKE_DIR="$TMP/fake" BULK F; mkdir -p "$FAKE_DIR" "$TMP/tmpd"
 br() {
   local name="$1" want="$2" ep="$3" op="$4" code; shift 4
   rm -f "$FAKE_DIR"/*
-  (cd "$F" && TMPDIR="$TMP/tmpd" PATH="$FB:$PATH" "$BULK" "$@") >"$TMP/out" 2>"$TMP/err"; code=$?
+  (cd "${BR_CWD:-$F}" && TMPDIR="$TMP/tmpd" PATH="$FB:$PATH" "$BULK" "$@") >"$TMP/out" 2>"$TMP/err"; code=$?
   if [ "$code" -eq "$want" ] && { [ "$ep" = - ] || grep -qF -- "$ep" "$TMP/err"; } && { [ "$op" = - ] || grep -qF -- "$op" "$TMP/out"; }; then ok; else
     bad "bulk-read: $name (exit=$code want=$want; stderr='$(cat "$TMP/err")' stdout='$(head -c 300 "$TMP/out")')"; fi
 }
@@ -307,12 +334,42 @@ SHUNT_CLAUDE_BIN="$TMP/no-such-claude" brx "claude binary missing" "was not foun
 SENS=(.claude/.credentials.json .git-credentials .pgpass kubeconfig terraform.tfstate secrets.yaml Secrets/db.yaml
   .docker/config.json .htpasswd secrets.nix private.key.bak .env-prod passwords.txt keys.txt .env server.pem
   id_ed25519 app.sops.yaml .netrc .npmrc .pypirc api_token.txt .ssh/config .aws/credentials .kube/config
-  .gnupg/pubring.kbx SECRET/notes.md prod.tfvars vault.gpg cert.p12 store.jks client.ovpn backup.age)
+  .gnupg/pubring.kbx SECRET/notes.md prod.tfvars vault.gpg cert.p12 store.jks client.ovpn backup.age
+  prod.env docker.env app.env key.txt age-key.txt .config/age/key.txt var/lib/sops-nix/key.txt
+  .secrets/db.yaml my-secrets/db.yaml credentials/aws.json tokens/gh.json wg0.conf etc/wireguard/wg0.conf
+  rclone.conf .config/rclone/rclone.conf .my.cnf auth.json .codex/auth.json k3s.yaml admin.conf
+  kube-config.yaml .dev.vars AuthKey_ABC.p8 cert.der private_key ssh_host_ed25519_key etc/rancher/k3s/k3s.yaml)
 for s in "${SENS[@]}"; do
   mkdir -p "$F/sens/$(dirname "$s")"; seq 1 10 > "$F/sens/$s"
   brx "refuse $s" "not delegated" --question "$Q" --paths "sens/$s"
   brx "refuse $s as second path" "sens/$s is a sensitive" --question "$Q" --paths small.txt "sens/$s"
 done
+# structural guards, independent of names
+printf 'line %s\n' 1 2 3 > "$F/plain-a.txt"; chmod 600 "$F/plain-a.txt"
+brx "private mode refused (umask 022)" "is private (mode 600" --question "$Q" --paths plain-a.txt
+chmod 400 "$F/plain-a.txt"
+brx "0400 refused" "is private (mode 400" --question "$Q" --paths plain-a.txt
+chmod 644 "$F/plain-a.txt"
+br "same content at 0644 sent" 0 - - --question "$Q" --paths plain-a.txt
+chmod 640 "$F/plain-a.txt"
+br "group-readable 0640 sent" 0 - - --question "$Q" --paths plain-a.txt
+chmod 600 "$F/plain-a.txt"
+(umask 077; br "private mode not a signal under umask 077: sent" 0 - - --question "$Q" --paths plain-a.txt)
+chmod 644 "$F/plain-a.txt"
+i=0
+for m in "-----BEGIN RSA PRIVATE KEY-----" "-----BEGIN PRIVATE KEY-----" "-----BEGIN EC PRIVATE KEY-----" \
+  "-----BEGIN OPENSSH PRIVATE KEY-----" "-----BEGIN ENCRYPTED PRIVATE KEY-----" "-----BEGIN PGP PRIVATE KEY BLOCK-----" \
+  "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQ" $'data: ENC[AES256_GCM,data:x,iv:y]\nsops:\n  version: 3' \
+  $'{"a": "ENC[AES256_GCM,data:x]", "sops": {}}' $'sops:\n  age: []\nkey: ENC[x]'; do
+  i=$((i + 1)); { echo "intro"; printf '%s\n' "$m"; echo "outro"; } > "$F/notes-$i.md"
+  brx "marker $i refused under an innocent name" "contains private key or sops-encrypted material" --question "$Q" --paths "notes-$i.md"
+done
+printf 'the word sops: appears, and so does the word PRIVATE KEY, but no marker\n' > "$F/prose.md"
+br "prose mentioning sops: without ENC[ is sent" 0 - - --question "$Q" --paths prose.md
+BR_CWD="$TMP/globcwd" SHUNT_EXCLUDE='*.log' brx "SHUNT_EXCLUDE not glob-expanded against cwd" "not delegated" --question "$Q" --paths g/vendor.log
+grep -q '"hook":"bulk-read".*"result":"private"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "private refusal not logged"
+grep -q '"hook":"bulk-read".*"result":"secret"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "secret refusal not logged"
+grep -q '"hook":"bulk-read".*"result":"sensitive"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "sensitive refusal not logged"
 grep -q '"hook":"bulk-read".*"result":"invalid"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: validation failure not logged"
 [ -n "$(ls -A "$TMP/tmpd")" ] && bad "bulk-read: temp dir left behind" || ok
 
