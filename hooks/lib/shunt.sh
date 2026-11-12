@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Shunt policy shared by hooks/shunt-check-*.sh and scripts/bulk-read.sh:
-# thresholds, the sensitive-path list, non-text detection and line counting.
+# the token estimate, exemptions, the sensitive-path list, non-text detection,
+# line counting, and the hooks' shared tail.
 # coreutils only (no grep/sed/awk) so the delegating script needs nothing more.
 # The hooks are an optimisation and fail open; bulk-read.sh's refusal of
 # shunt_sensitive paths is the real guard on what leaves the machine.
 
-SHUNT_DEFAULT_MIN_LINES=350
-SHUNT_DEFAULT_MIN_BYTES=60000
+SHUNT_DEFAULT_MIN_TOKENS=8000
+SHUNT_DEFAULT_MAX_PAYLOAD_BYTES=200000
+SHUNT_DEFAULT_SKIP_AGENTS="Explore,claude-code-guide,statusline-setup"
 
 # shunt_int <value> <default>: the value when it is a plain non-negative integer.
 shunt_int() {
@@ -16,8 +18,74 @@ shunt_int() {
   esac
 }
 
-shunt_threshold() { shunt_int "${SHUNT_MIN_LINES:-}" "$SHUNT_DEFAULT_MIN_LINES"; }
-shunt_min_bytes() { shunt_int "${SHUNT_MIN_BYTES:-}" "$SHUNT_DEFAULT_MIN_BYTES"; }
+shunt_threshold() { shunt_int "${SHUNT_MIN_TOKENS:-}" "$SHUNT_DEFAULT_MIN_TOKENS"; }
+shunt_max_payload() { shunt_int "${SHUNT_MAX_PAYLOAD_BYTES:-}" "$SHUNT_DEFAULT_MAX_PAYLOAD_BYTES"; }
+
+# shunt_tokens <bytes> <lines>: tokens a read of that many bytes and lines puts in
+# context (bytes*2/7 + lines*11/10; lines alone under-count markdown about 2x).
+shunt_tokens() { echo $(( $1 * 2 / 7 + $2 * 11 / 10 )); }
+
+# shunt_fit_lines <bytes> <lines> <threshold>: the most lines of this file one
+# ranged read can return and stay at or under the threshold (0: not even one).
+shunt_fit_lines() {
+  local b="$1" l="$2" t="$3" n est
+  [ "$l" -gt 0 ] || { echo 0; return; }
+  est=$(( b * 2 / 7 + l * 11 / 10 ))
+  [ "$est" -gt "$t" ] || { echo "$l"; return; }
+  n=$(( t * l / est + 1 ))
+  while [ "$n" -gt 0 ] && [ $(( (b * n / l) * 2 / 7 + n * 11 / 10 )) -gt "$t" ]; do n=$((n - 1)); done
+  echo "$n"
+}
+
+# shunt_context_gate: "mode" for a permission mode that cannot run bulk-read.sh
+# (dontAsk) or should not be steered (plan), "subagent" for an agent type in
+# SHUNT_SKIP_AGENTS (comma separated; set it empty to cover every agent), else nothing.
+shunt_context_gate() {
+  local pm at a list
+  pm=$(echo "${HOOK_INPUT:-}" | jq -r '.permission_mode // ""' 2>/dev/null)
+  case "$pm" in dontAsk | plan) echo mode; return ;; esac
+  at=$(echo "${HOOK_INPUT:-}" | jq -r '.agent_type // ""' 2>/dev/null)
+  [ -n "$at" ] || return 0
+  IFS=, read -ra list <<< "${SHUNT_SKIP_AGENTS-$SHUNT_DEFAULT_SKIP_AGENTS}"
+  for a in "${list[@]}"; do
+    a="${a#"${a%%[![:space:]]*}"}"; a="${a%"${a##*[![:space:]]}"}"
+    [ -n "$a" ] && [ "$a" = "$at" ] && { echo subagent; return; }
+  done
+}
+
+# shunt_source <path>: 0 for source code, which is exempt unless SHUNT_INCLUDE_SOURCE=1
+# (a large source read is often followed by an Edit, where delegating is waste).
+shunt_source() {
+  [ "${SHUNT_INCLUDE_SOURCE:-0}" = 1 ] && return 1
+  local b="${1##*/}"
+  b="${b,,}"
+  case "$b" in
+    makefile | gnumakefile | dockerfile | justfile | rakefile | gemfile | *.mk) return 0 ;;
+  esac
+  case "$b" in
+    *.rs | *.nix | *.py | *.pyi | *.ts | *.tsx | *.mts | *.cts | *.js | *.jsx | *.mjs | *.cjs | *.go | \
+    *.sh | *.bash | *.zsh | *.fish | *.c | *.h | *.cc | *.cpp | *.cxx | *.hpp | *.hh | *.m | *.mm | \
+    *.java | *.kt | *.kts | *.scala | *.groovy | *.gradle | *.rb | *.lua | *.sql | *.tf | *.hcl | *.zig | \
+    *.swift | *.cs | *.fs | *.ex | *.exs | *.erl | *.hrl | *.hs | *.ml | *.mli | *.elm | *.dart | *.php | \
+    *.pl | *.pm | *.r | *.jl | *.clj | *.cljs | *.nim | *.v | *.vue | *.svelte | *.css | *.scss | *.sass | \
+    *.proto | *.cmake | *.ps1 | *.vim | *.el | *.asm | *.s | *.cu | *.wgsl | *.glsl) return 0 ;;
+  esac
+  return 1
+}
+
+# shunt_instructions <path> <resolved> <hooks_dir>: 0 for files an agent must read
+# verbatim: CLAUDE.md, AGENTS.md, ROLE.md, SKILL.md, MEMORY.md, anything under a
+# .claude/ directory, and anything in the skills repo these hooks live in.
+shunt_instructions() {
+  local root
+  case "${1##*/}" in CLAUDE.md | AGENTS.md | ROLE.md | SKILL.md | MEMORY.md) return 0 ;; esac
+  case "${2##*/}" in CLAUDE.md | AGENTS.md | ROLE.md | SKILL.md | MEMORY.md) return 0 ;; esac
+  case "$1/" in */.claude/*) return 0 ;; esac
+  case "$2/" in */.claude/*) return 0 ;; esac
+  root=$(cd "$3/.." 2>/dev/null && pwd -P) || return 1
+  case "$2" in "$root"/*) return 0 ;; esac
+  return 1
+}
 
 # shunt_abs <path> <cwd>: lexical absolute path (symlinks are NOT resolved here).
 shunt_abs() {
@@ -141,28 +209,39 @@ shunt_count_bytes() { wc -c 2>/dev/null < "$1"; }
 shunt_script_path() { printf '%s/scripts/bulk-read.sh\n' "$(cd "$1/.." && pwd)"; }
 
 # Shared hook tail (needs lib/log.sh and lib/state.sh). Callers set SHUNT_HOOK,
-# START_MS, T, LINES, BYTES and RETURNED.
+# START_MS, T, LINES, BYTES, RETURNED and TOKENS.
 shunt_done() { # shunt_done <result> [exit]: log the decision and exit
   log_hook "$SHUNT_HOOK" "$1" "$(( ($(date +%s%N) / 1000000) - START_MS ))" \
-    "{\"lines\":$LINES,\"bytes\":$BYTES,\"returned\":$RETURNED,\"threshold\":$T}" 2>/dev/null || true
+    "{\"lines\":$LINES,\"bytes\":$BYTES,\"returned\":$RETURNED,\"tokens\":$TOKENS,\"threshold\":$T}" 2>/dev/null || true
   exit "${2:-0}"
 }
 
-# shunt_redirect <hooks_dir> <key> <first line> <file> <exact-content line> <repeat noun> <whole noun>:
-# deny the first attempt per session key with the bulk-read command; allow an identical repeat.
+# shunt_redirect <hooks_dir> <file> <resolved> <first line>: deny the first large read
+# of a file per session; any later read of the same resolved file, by Read or
+# Bash in any shape, is allowed (one state file shared by both hooks).
 shunt_redirect() {
-  seen_before "$SHUNT_HOOK" "$2"
+  local cap fit
+  seen_before shunt "$3"
   case $? in
     0) shunt_done bypass ;;
     1) ;;
     *) shunt_done nostate ;;
   esac
-  cat >&2 <<MSG
-$3
-To explore or summarise it, run this via Bash instead (see the bulk-reader skill):
-  $(shunt_script_path "$1") --question "<what you need to know>" --paths $(printf '%q' "$4")
-$5
-Repeating this same $6 will be allowed if the whole $7 is truly required.
-MSG
+  cap=$(shunt_max_payload)
+  fit=$(shunt_fit_lines "$BYTES" "$LINES" "$T")
+  {
+    printf '%s\n' "$4"
+    if [ "$BYTES" -gt "$cap" ]; then
+      printf 'It is over the bulk-read payload cap (%s bytes), so do not delegate it: use Grep for what you need, or Read a range.\n' "$cap"
+    else
+      printf 'To explore or summarise it, run this via Bash instead (see the bulk-reader skill):\n'
+      printf '  %s --question "<what you need to know>" --paths %q\n' "$(shunt_script_path "$1")" "$2"
+    fi
+    if [ "$LINES" -ge 5 ] && [ "$fit" -ge 1 ]; then
+      printf 'For exact content, Read at most %s lines at a time (offset/limit).\n' "$fit"
+    fi
+    printf 'If you will edit this file, Read the range you will change, or repeat this read.\n'
+    printf 'Repeating a read of this file (in any form) will be allowed; allow_large is not needed.\n'
+  } >&2
   shunt_done redirect 2
 }

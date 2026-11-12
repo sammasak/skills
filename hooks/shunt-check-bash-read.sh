@@ -4,8 +4,9 @@
 # like shunt-check-read.sh does for Read. Simple patterns only, never a shell
 # parser: any pipe, redirect, list, substitution, expansion, glob, escape,
 # newline, env/sudo prefix or unknown option allows. Nothing from the command is
-# evaluated or glob-expanded. Same fail-open, sensitive, non-text, repeat-bypass
-# and logging rules as the Read hook; the repeat key is cwd + the command.
+# evaluated or glob-expanded. Same token threshold, exemptions, fail-open,
+# repeat-bypass and logging rules as the Read hook, sharing its state: the
+# repeat key is the resolved file, whichever hook saw it first.
 # shellcheck source-path=SCRIPTDIR
 set -uo pipefail
 
@@ -18,12 +19,13 @@ source "$SCRIPT_DIR/lib/state.sh" 2>/dev/null || exit 0
 source "$SCRIPT_DIR/lib/log.sh" 2>/dev/null || true
 command -v jq >/dev/null 2>&1 || exit 0
 read_hook_input
+# shellcheck disable=SC2034  # START_MS and SHUNT_HOOK are read by shunt_done (lib/shunt.sh)
 START_MS=$(($(date +%s%N) / 1000000))
 
+# shellcheck disable=SC2034
 SHUNT_HOOK=shunt-bash
 T=$(shunt_threshold)
-MINB=$(shunt_min_bytes)
-LINES=0 BYTES=0 RETURNED=0
+LINES=0 BYTES=0 RETURNED=0 TOKENS=0
 
 CMD=$(hook_command)
 [ -n "$CMD" ] || exit 0
@@ -35,23 +37,25 @@ esac
 case "$CMD" in
   *[\|\>\<\;\&\$\`\{\}\(\)\\~\*\?\[\]]* | *$'\n'* | *$'\r'*) shunt_done compound ;;
 esac
+GATE=$(shunt_context_gate)
+[ -n "$GATE" ] && shunt_done "$GATE"
 
 # Words: bare, or wrapped whole in one pair of single or double quotes.
-TOKENS=()
+WORDS=()
 rest="$CMD"
 re_sq="^[[:space:]]*'([^']*)'([[:space:]]+|\$)"
 re_dq='^[[:space:]]*"([^"]*)"([[:space:]]+|$)'
 re_w="^[[:space:]]*([^[:space:]'\"]+)([[:space:]]+|\$)"
 while [ -n "${rest//[[:space:]]/}" ]; do
   if [[ $rest =~ $re_sq ]] || [[ $rest =~ $re_dq ]] || [[ $rest =~ $re_w ]]; then
-    TOKENS+=("${BASH_REMATCH[1]}")
+    WORDS+=("${BASH_REMATCH[1]}")
     rest="${rest:${#BASH_REMATCH[0]}}"
   else
     shunt_done compound
   fi
 done
-TOOL="${TOKENS[0]}"
-ARGS=("${TOKENS[@]:1}")
+TOOL="${WORDS[0]}"
+ARGS=("${WORDS[@]:1}")
 
 # Parse the bound: MODE lines|bytes; KIND first|last|from|allbut|whole; N count.
 MODE=lines KIND=whole N=0
@@ -130,29 +134,36 @@ returned() {
   echo "$r"
 }
 
-BEST="" BEST_RET=-1 BEST_LINES=0 BEST_BYTES=0
+BEST="" BEST_REAL="" BEST_TOK=-1 BEST_RET=0 BEST_LINES=0 BEST_BYTES=0 SKIPPED=""
 for f in "${FILES[@]}"; do
   abs=$(shunt_abs "$f" "$CWD")
   [ -f "$abs" ] || continue
+  real=$(realpath -e -- "$abs" 2>/dev/null) || continue
   shunt_sensitive "$f" "$CWD" && shunt_done sensitive
-  shunt_nontext "$abs" && continue
-  l=$(shunt_count_lines "$abs") || continue
-  b=$(shunt_count_bytes "$abs") || continue
+  shunt_nontext "$real" && continue
+  shunt_instructions "$abs" "$real" "$SCRIPT_DIR" && { SKIPPED=instructions; continue; }
+  shunt_source "$real" && { SKIPPED=source; continue; }
+  l=$(shunt_count_lines "$real") || continue
+  b=$(shunt_count_bytes "$real") || continue
   if [ "$MODE" = bytes ]; then
     rb=$(returned "$b"); rl=0; [ "$b" -gt 0 ] && rl=$(( l * rb / b ))
   else
     rl=$(returned "$l"); rb=0; [ "$l" -gt 0 ] && rb=$(( b * rl / l ))
   fi
-  if [ "$rl" -gt "$T" ] || [ "$rb" -gt "$MINB" ]; then
+  tok=$(shunt_tokens "$rb" "$rl")
+  if [ "$tok" -gt "$T" ]; then
     # bulk-read.sh would refuse it: read normally, never redirect toward a refusal.
-    shunt_private "$abs" && shunt_done private
-    shunt_secret_marker "$abs" && shunt_done secret
-    [ "$rl" -gt "$BEST_RET" ] && BEST=$abs BEST_RET=$rl BEST_LINES=$l BEST_BYTES=$b
+    shunt_private "$real" && shunt_done private
+    shunt_secret_marker "$real" && shunt_done secret
+    [ "$tok" -gt "$BEST_TOK" ] && BEST=$abs BEST_REAL=$real BEST_TOK=$tok BEST_RET=$rl BEST_LINES=$l BEST_BYTES=$b
   fi
 done
-[ -n "$BEST" ] || { [ "$KIND" = whole ] && shunt_done allow; shunt_done targeted; }
-LINES=$BEST_LINES BYTES=$BEST_BYTES RETURNED=$BEST_RET
+if [ -z "$BEST" ]; then
+  [ -n "$SKIPPED" ] && shunt_done "$SKIPPED"
+  [ "$KIND" = whole ] && shunt_done allow
+  shunt_done targeted
+fi
+LINES=$BEST_LINES BYTES=$BEST_BYTES RETURNED=$BEST_RET TOKENS=$BEST_TOK
 
-shunt_redirect "$SCRIPT_DIR" "$CWD|$CMD" \
-  "shunt: this $TOOL would print about $RETURNED lines of $BEST ($LINES lines, $BYTES bytes), over the threshold of $T lines (or $MINB bytes)." \
-  "$BEST" "For exact content, use the Read tool with offset/limit of at most $T lines." command output
+shunt_redirect "$SCRIPT_DIR" "$BEST" "$BEST_REAL" \
+  "shunt: this $TOOL would print about $RETURNED lines of $BEST ($LINES lines, $BYTES bytes), about $TOKENS tokens, over the threshold of $T."

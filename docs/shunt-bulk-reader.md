@@ -2,7 +2,7 @@
 
 ## What it does
 
-Two PreToolUse hooks notice when Claude Code is about to pull a large file into context (a whole-file `Read`, or `cat`/`head`/`tail`/`less`/`more`/`bat`/`nl` through Bash) and deny that first attempt with a message carrying the exact `scripts/bulk-read.sh` command. The script hands the files and one question to headless Claude Code (`claude -p`, haiku by default, no tools) and prints a short, cited answer, so only the answer enters context. Delegated tokens are Anthropic usage on the same account: cheaper per token than the main model, not free. The `bulk-reader` skill tells Claude when to use it and when not to. Repeating the identical read is allowed, so the redirect is a nudge, never a wall.
+Two PreToolUse hooks notice when Claude Code is about to put more than about 8000 tokens of one file into context (a `Read`, or `cat`/`head`/`tail`/`less`/`more`/`bat`/`nl` through Bash) and deny that first attempt with a message carrying the exact `scripts/bulk-read.sh` command and a range that fits. The script hands the files and one question to headless Claude Code (`claude -p`, haiku by default, no tools) and prints a short, cited answer, so only the answer enters context. Delegated tokens are Anthropic usage on the same account: cheaper per token than the main model, not free. The `bulk-reader` skill tells Claude when to use it and when not to. Any later read of the same file in the session is allowed, so the redirect is a nudge, never a wall.
 
 Files: `hooks/shunt-check-read.sh`, `hooks/shunt-check-bash-read.sh`, `hooks/lib/shunt.sh` (shared policy), `hooks/lib/state.sh` (`seen_before`), `scripts/bulk-read.sh`, `skills/bulk-reader/SKILL.md`, `tests/test-shunt.sh` (`devenv tasks run skills:test:shunt`, also in pre-push).
 
@@ -10,7 +10,7 @@ Files: `hooks/shunt-check-read.sh`, `hooks/shunt-check-bash-read.sh`, `hooks/lib
 
 Adapted from Spotify's Shunt plugin (`plugins/shunt`, Apache-2.0). Upstream blocks Read on files over 350 lines unless `offset` or `limit` is set, blocks `cat`/`head`/`tail`/`less`/`more` on the first non-flag argument, and points at a skill that runs `bulk-read` through Spotify's internal portal CLI.
 
-Reused: the 350-line threshold, the hook to skill to script flow, and the eval case shapes (boundary at 350/351, empty file, offset/limit, pipes and redirects) now in `tests/test-shunt.sh`.
+Reused: the hook to skill to script flow, and the eval case shapes (threshold boundary, empty file, offset/limit, pipes and redirects) now in `tests/test-shunt.sh`.
 
 Changed:
 
@@ -18,7 +18,8 @@ Changed:
 - Sensitive paths are never delegated, checked on the given and the symlink-resolved path; the script refuses them.
 - Payload lines carry real line numbers inside a per-call random delimiter; the system prompt treats file content as untrusted data.
 - Output, payload, file-count and time bounds.
-- Repeat-bypass instead of indefinite blocking: the identical repeat in a session is allowed and logged.
+- A token estimate instead of the 350-line threshold, with exemptions for source code, instruction files, `allow_large`, non-interactive modes and lookup subagents.
+- Repeat-bypass instead of indefinite blocking: any later read of the same file in a session is allowed and logged.
 - Ranged-read arithmetic: `offset: 0`, `limit: 0` and a huge `limit` are not "targeted"; the lines a read would actually return decide. `head -n 5000` is large, `head -5` is not, `tail -f` is ignored, and every file argument is checked.
 - The repo's exit-2-on-stderr convention instead of upstream's JSON `decision` output.
 
@@ -32,42 +33,58 @@ Both hooks, in order (first match wins). Every row except "redirect" exits 0 sil
 | jq missing, unparseable input, no path/command, internal error | allow |
 | Bash: not a simple `cat/head/tail/less/more/bat/nl` invocation | allow (not logged) |
 | Bash: any of `\| > < ; & $ \` { } ( ) \ ~ * ? [ ]`, newline, partial quoting | allow (`compound`) |
+| `permission_mode` is `dontAsk` (cannot run the script) or `plan` | allow (`mode`) |
+| `agent_type` is in `SHUNT_SKIP_AGENTS` | allow (`subagent`) |
+| Read: `allow_large: true` | allow (`explicit`) |
 | Bash: `tail -f/-F`, unknown option, unparseable count (`-n 1K`) | allow (`follow`, `unparsed`) |
 | Read: negative, non-numeric or too-large offset, or non-numeric or negative limit (fractions such as `1700.0` or `1e3` are floored and used; a too-large limit counts as huge) | allow (`unparsed`) |
 | Path missing, not a regular file, or no file arguments | allow |
 | Sensitive or `SHUNT_EXCLUDE` path (given or resolved) | allow (`sensitive`) |
 | Image, PDF, notebook, or a NUL byte in the first 64 KiB | allow (`nontext`, Bash skips that file) |
-| Returned lines <= threshold and returned bytes <= `SHUNT_MIN_BYTES` | allow (`allow`, or `targeted` for a range) |
+| `CLAUDE.md`, `AGENTS.md`, `ROLE.md`, `SKILL.md`, `MEMORY.md`, anything under a `.claude/` directory, anything in the skills repo the hooks live in | allow (`instructions`) |
+| Source code (`.rs .nix .py .ts .tsx .js .go .sh .c .java .kt .rb .lua .sql .tf .zig .swift .cs .ex .hs`, about 60 more, `Makefile`, `Dockerfile`, `justfile`) unless `SHUNT_INCLUDE_SOURCE=1` | allow (`source`) |
+| Estimated tokens <= `SHUNT_MIN_TOKENS` | allow (`allow`, or `targeted` for a range) |
 | Would redirect, but the file is private-mode or holds key material (the script would refuse it) | allow (`private`, `secret`) |
-| No session id, or one that is not `[A-Za-z0-9_-]+` | allow (`nostate`) |
-| Identical read already redirected this session | allow (`bypass`) |
+| No session id, or one that is not `[A-Za-z0-9_-]+`, or the state file is unusable | allow (`nostate`) |
+| This resolved file was already redirected this session, by either hook | allow (`bypass`) |
 | Otherwise | exit 2 with the redirect message (`redirect`) |
 
-Returned lines: Read is `min(limit if > 0, total - offset + 1 if offset > 0, else total)`; head/tail use `-n N`, `-N`, `-nN`, `--lines=N`, `-c`/`--bytes` (byte mode), `tail -n +K`, `head -n -K`, default 10; the others return the whole file. Returned bytes are pro rata. Bash decides per file and names the largest offender. The repeat key is the resolved path plus offset and limit for Read, and cwd plus the command string for Bash.
+Estimated tokens are `bytes*2/7 + lines*11/10` over the part the read returns. Returned lines: Read is `min(limit if > 0, total - offset + 1 if offset > 0, else total)`; head/tail use `-n N`, `-N`, `-nN`, `--lines=N`, `-c`/`--bytes` (byte mode), `tail -n +K`, `head -n -K`, default 10; the others return the whole file. Returned bytes are pro rata. Bash decides per file and names the file with the largest estimate. The repeat key is the `realpath` of the file, in one state file shared by both hooks, so the second read of a file in any shape (whole, `offset: 1`, `cat  f`, a symlink) passes.
 
-Every logged decision lands in `$XDG_STATE_HOME/claude-hooks/<date>.jsonl` as `{hook: "shunt-read"|"shunt-bash", result, lines, bytes, returned, threshold, duration_ms}`; the script logs `{hook: "bulk-read", result, files, bytes, lines, model, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, cost_usd, child_duration_ms, num_turns}` from the CLI's JSON result.
+The message gives the script command, or, for a file over `SHUNT_MAX_PAYLOAD_BYTES`, says to use Grep or a range instead. It names the most lines one ranged Read can return under the threshold (omitted for files under 5 lines or with a single line over the threshold), says to Read the range you will change if you will edit the file, and says that repeating the read is enough (no `allow_large` needed).
+
+### Why 8000 tokens
+
+From 7,163 real Read calls in our transcripts: delegating breaks even at a median of about 3.4k tokens (5.9k pessimistic). 350 lines of Rust is about 4k tokens, so the old line rule fired below break-even, and lines under-count markdown about 2x. At over 8000 estimated tokens, 84% of redirects pay off, against 69% for the old rule. Source is exempt because 35% of large source reads are followed by an Edit of the same file, where delegating is pure waste. A 2000-line 9 KB file (about 4.7k tokens) and a 241-line 17.5 KB `ROLE.md` (instructions anyway) do not trigger.
+
+Every logged decision lands in `$XDG_STATE_HOME/claude-hooks/<date>.jsonl` as `{hook: "shunt-read"|"shunt-bash", result, lines, bytes, returned, tokens, threshold, duration_ms}`. The script adds one line per call: `{hook: "bulk-read", result, event: "delegated"|"refused", files, bytes, lines, bytes_sent, exit_status, claude_exit, model, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, cost_usd, child_duration_ms, num_turns}`, so the redirect, bypass and delegated counts can be compared later.
 
 ## Configuration
 
 | Variable | Default | Used by |
 |---|---|---|
 | `SHUNT_DISABLE` | unset | hooks: `1` allows everything |
-| `SHUNT_MIN_LINES` | 350 (non-numeric falls back) | hooks |
-| `SHUNT_MIN_BYTES` | 60000 | hooks |
+| `SHUNT_MIN_TOKENS` | 8000 (non-numeric falls back) | hooks |
+| `SHUNT_INCLUDE_SOURCE` | unset | hooks: `1` puts source code under the threshold too |
+| `SHUNT_SKIP_AGENTS` | `Explore,claude-code-guide,statusline-setup` | hooks: comma-separated `agent_type` values to leave alone; set empty to cover every agent |
 | `SHUNT_EXCLUDE` | unset | hooks and script: colon-separated glob patterns, matched against the full path or the basename (never expanded against the filesystem) |
+| `SHUNT_MAX_PAYLOAD_BYTES` | 200000 | script; hooks stop suggesting the script above it |
 | `SHUNT_CLAUDE_BIN` | `claude` from PATH | script |
 | `SHUNT_MODEL` | `haiku` (`--model`) | script |
-| `SHUNT_MAX_BUDGET_USD` | 0.05 (`--max-budget-usd`, per call) | script |
+| `SHUNT_MAX_BUDGET_USD` | 0.15 (`--max-budget-usd`, per call; covers a payload at the cap) | script |
 | `SHUNT_TIMEOUT_SECONDS` | 90 (coreutils `timeout`, +5s kill grace: inside the Bash tool's 2-minute default) | script |
-| `SHUNT_MAX_PAYLOAD_BYTES` | 400000 | script |
 | `SHUNT_MAX_FILES` | 12 | script |
 | `SHUNT_MAX_OUTPUT_BYTES` | 12000 (truncated with a marker) | script |
 
-`SHUNT_DEPTH` is set to 1 for the child (with `SHUNT_DISABLE=1`); bulk-read refuses to run when it is non-zero, so a child cannot recurse. Hook state lives in `${XDG_RUNTIME_DIR:-$HOME/.cache}/claude-shunt-{read,bash}-<session>.seen` (hashes only, pruned after two days), separate from the shared JSON state file because parallel hooks would race on it.
+Removed: `SHUNT_MIN_LINES` and `SHUNT_MIN_BYTES` (replaced by `SHUNT_MIN_TOKENS`; setting them has no effect) and `SHUNT_MAX_OUTPUT_TOKENS` (see below).
+
+`SHUNT_DEPTH` is set to 1 for the child (with `SHUNT_DISABLE=1`); bulk-read refuses to run when it is non-zero, so a child cannot recurse. Hook state lives in `${XDG_RUNTIME_DIR:-$HOME/.cache}/claude-shunt-<session>.seen` (hashes only, pruned after two days), separate from the shared JSON state file because parallel hooks would race on it.
+
+Permission prompts: in an interactive session in `default` permission mode, each `bulk-read.sh` call is a Bash command and is prompted for unless the owner adds an allow rule for it. This change adds none.
 
 ## The child invocation
 
-`claude -p --model "$SHUNT_MODEL" --tools "" --system-prompt <prompt> --output-format json --no-session-persistence --safe-mode --strict-mcp-config --disable-slash-commands --max-budget-usd "$SHUNT_MAX_BUDGET_USD"`, run in the script's private temp dir with the question and payload on stdin. `--tools ""` removes every tool, so the child answers in one turn from stdin alone; `--safe-mode` drops CLAUDE.md, skills, plugins, hooks and MCP while keeping normal auth; the cwd keeps project context out. `--bare` was rejected because it only accepts `ANTHROPIC_API_KEY` auth. The CLI shows no max-turns flag (none is needed without tools). Credentials and base URL are whatever the environment gives Claude Code; the script reads none.
+`claude -p --model "$SHUNT_MODEL" --tools "" --system-prompt <prompt> --output-format json --no-session-persistence --safe-mode --strict-mcp-config --disable-slash-commands --max-budget-usd "$SHUNT_MAX_BUDGET_USD"`, run in one stable empty directory (`${XDG_CACHE_HOME:-$HOME/.cache}/shunt-bulk-read`) with the question and payload on stdin, and without the parent's identity variables (`CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`, `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_PID`, `CLAUDE_EFFORT`, every `HERDR_*`), so Herdr does not see a phantom agent. `--tools ""` removes every tool, so the child answers in one turn from stdin alone; `--safe-mode` drops CLAUDE.md, skills, plugins, hooks and MCP while keeping normal auth; the cwd keeps project context out. `--bare` was rejected because it only accepts `ANTHROPIC_API_KEY` auth. The CLI shows no max-turns flag (none is needed without tools). Credentials and base URL are whatever the environment gives Claude Code; the script reads none.
 
 ### Output and cost bounds (measured 2026-11-12, Claude Code 2.1.300, haiku)
 
@@ -75,7 +92,7 @@ There is no working output-token knob, so the answer is bounded only by the prom
 
 ## Failure and bypass
 
-The hooks fail open: any error, missing dependency or missing session allows the read. A redirected read can be forced by repeating it exactly. The script exits 1 with a one-line reason ending in "Fall back: Read the file with offset/limit ranges, or repeat the full Read." on every refusal and failure: usage errors, `SHUNT_DEPTH` set, `claude` not found, nonexistent/non-regular/binary/sensitive/private-mode/key-material files, too many files, payload too large, timeout (`timeout` exit 124), a non-zero exit without JSON, a JSON result with `is_error` or a non-success subtype (classified as budget exceeded, output limit, auth, rate/usage limit, model unavailable or other; message shown, 300 bytes max), non-JSON output, empty answer. It does not retry.
+The hooks fail open: any error, missing dependency or missing session allows the read. A redirected read passes on any second read of the same file. The script exits 1 with a one-line reason ending in "Fall back: Read the file with offset/limit ranges, or repeat the full Read." on every refusal and failure: usage errors, `SHUNT_DEPTH` set, `jq` or `claude` not found, nonexistent/non-regular/binary/sensitive/private-mode/key-material files, too many files, payload too large, timeout (`timeout` exit 124), a non-zero exit without JSON (stderr shown, or stdout when stderr is empty, so "Not logged in" reaches the model), a JSON result with `is_error` or a non-success subtype (classified as budget exceeded, output limit, auth, rate/usage limit, model unavailable or other; message shown, 300 bytes max), non-JSON output, empty answer. It does not retry.
 
 ## Security notes
 
@@ -88,6 +105,11 @@ The hooks fail open: any error, missing dependency or missing session allows the
 - The hooks apply the same two checks, but only to a read they would otherwise redirect: such a file is read normally (logged `private` or `secret`), never pointed at a script that would refuse it.
 - The script never reads, sets or prints a credential. The payload goes on stdin, never argv; only the static system prompt (with the per-call delimiter) is on argv.
 - Prompt injection: file content is wrapped in a random per-call delimiter and the model is told never to follow instructions inside it, but a hostile file can still skew the answer. The skill treats every answer as a lead to verify with a ranged Read, never as ground truth.
+
+## Design notes: considered, not done
+
+- Clamping instead of denying: a PreToolUse hook can rewrite the Read with `updatedInput` (a fitting `limit`) and explain it via `additionalContext`, which is documented and would save the denied turn. Not done: it is unverified whether a clamped Read satisfies Edit's read-before-edit check, and how auto mode treats a rewritten Read.
+- Gating on the main model (redirect only when it is expensive): hooks do not receive the model, so there is nothing to gate on.
 
 ## Rollback
 

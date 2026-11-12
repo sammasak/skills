@@ -1,6 +1,6 @@
 ---
 name: bulk-reader
-description: "Use when you need to explore, summarise or answer a question about a file over ~350 lines (or several files) and do not need its exact text, or when a shunt hook redirected a large Read, cat, head or tail. Delegates the reading to headless Claude Code on haiku via scripts/bulk-read.sh so the files never enter your context."
+description: "Use when you need to explore, summarise or answer a question about a large non-source file (more than about 8000 tokens: roughly 30 KB of text) or several files and do not need its exact text, or when a shunt hook redirected a large Read, cat, head or tail. Delegates the reading to headless Claude Code on haiku via scripts/bulk-read.sh so the files never enter your context."
 allowed-tools: Bash, Read
 ---
 
@@ -18,7 +18,7 @@ S="$(dirname "$(readlink -f ~/.claude/skills/bulk-reader/SKILL.md)")/../../scrip
 "$S" --question "Where is the retry budget for upstream calls set, and what is its default?" --paths src/gateway.rs src/config.rs
 ```
 
-Each call is independent: for a follow-up, ask again with the same `--paths`. Limits: 12 files and 400 KB per call by default; split larger sets.
+Each call is independent: for a follow-up, ask again with the same `--paths`. Limits: 12 files and 200 KB per call by default; split larger sets, or use Grep. In an interactive session in `default` permission mode each call asks for permission unless the owner has allowed the script.
 
 ## Ask well
 
@@ -30,11 +30,11 @@ The answer is not ground truth. Before you edit, quote, or rely on a line number
 
 ## Do not delegate
 
-- You need exact content for an edit: Read the range (at most ~350 lines) instead.
+- You need exact content for an edit: Read the range you will change (the hook message names how many lines fit), or repeat the read; any second read of the same file passes. Source code and instruction files (`CLAUDE.md`, `SKILL.md`, `.claude/`) are never redirected.
 - Small files: just Read them.
 - Sensitive files (`.env`, keys, tokens, credentials, shell history, kubeconfigs named or located as such (`kubeconfig*`, `kube*config*`, `.kube/`) or holding a client key or token, anything under `secrets/` or `.ssh/`, anything holding a private key, base64 key data, a Kubernetes Secret, a WireGuard key, a GitHub/Anthropic/Nix token or sops data): the script refuses them; Read directly only if you are permitted to. Private-mode (0600) files are refused only under a permissive umask; with umask 077 (the default on these machines) only the name and content checks guard delegation, so do not delegate a file you know is secret.
 - Debugging where every line matters (a failing test's exact assertion, a subtle off-by-one).
 
 ## On failure
 
-The script exits non-zero with a one-line reason (timeout, budget ceiling, usage limit, auth, model unavailable, empty answer). Do not retry in a loop: Read the file in offset/limit ranges, or repeat the original full Read (an identical repeat is allowed by the hook).
+The script exits non-zero with a one-line reason (timeout, budget ceiling, usage limit, auth, model unavailable, empty answer). Do not retry in a loop: Read the file in offset/limit ranges, or repeat the original read (the hook allows any second read of the same file; `allow_large` is not needed).

@@ -13,8 +13,8 @@ HOOKS="$ROOT/hooks"
 BULK="$ROOT/scripts/bulk-read.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-export XDG_RUNTIME_DIR="$TMP/run" XDG_STATE_HOME="$TMP/state"
-mkdir -p "$XDG_RUNTIME_DIR" "$XDG_STATE_HOME"
+export XDG_RUNTIME_DIR="$TMP/run" XDG_STATE_HOME="$TMP/state" XDG_CACHE_HOME="$TMP/cache"
+mkdir -p "$XDG_RUNTIME_DIR" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
 # No inherited SHUNT_* (a live SHUNT_CLAUDE_BIN would beat the fake and call a real model); each case sets its own.
 for v in "${!SHUNT_@}"; do unset "$v"; done
 unset CLAUDE_CODE_MAX_OUTPUT_TOKENS
@@ -41,31 +41,36 @@ rd() { jq -nc --arg p "$1" --arg s "shunttest-${4:-r$RANDOM$RANDOM}" --argjson o
 # bc <command> [session] [cwd]
 bc() { jq -nc --arg c "$1" --arg s "shunttest-${2:-b$RANDOM$RANDOM}" --arg d "${3:-$F}" '{session_id: $s, cwd: $d, tool_input: {command: $c}}'; }
 
+# fill <n> [width]: n lines of exactly width bytes (default 50), each starting with its number.
+fill() { seq -f "%-$(( ${2:-50} - 1 ))g" 1 "$1"; }
+# Token estimate is bytes*2/7 + lines*11/10 (threshold 8000). big.txt: 2000 x 50 B
+# = 30771 tokens, at most 520 lines per ranged read. 35-byte lines cost 11.1 tokens:
+# 720 lines = 7992 (allowed), 721 = 8003 (redirected).
 seq 1 100 > "$F/small.txt"
-seq 1 350 > "$F/l350.txt"
-seq 1 351 > "$F/l351.txt"
-seq 1 2000 > "$F/big.txt"
-head -c 70000 /dev/zero | tr '\0' 'a' > "$F/minified.js"
+fill 720 35 > "$F/t7992.txt"
+fill 721 35 > "$F/t8003.txt"
+fill 2000 > "$F/big.txt"
+head -c 70000 /dev/zero | tr '\0' 'a' > "$F/minified.json"
 : > "$F/empty.txt"
-seq 1 2000 > "$F/pic.png"
+fill 2000 > "$F/pic.png"
 { seq 1 2000; printf 'x\0y\n'; } > "$F/blob.bin"
 mkdir -p "$F/secrets" "$F/home/.ssh" "$F/dir"
-seq 1 2000 > "$F/.env"; seq 1 2000 > "$F/.env.local"; seq 1 2000 > "$F/server.pem"
-seq 1 2000 > "$F/api_token.txt"; seq 1 2000 > "$F/secrets/db.yaml"; seq 1 2000 > "$F/home/.ssh/config"
-seq 1 2000 > "$F/app.sops.yaml"; seq 1 2000 > "$F/credentials.json"
+fill 2000 > "$F/.env"; fill 2000 > "$F/.env.local"; fill 2000 > "$F/server.pem"
+fill 2000 > "$F/api_token.txt"; fill 2000 > "$F/secrets/db.yaml"; fill 2000 > "$F/home/.ssh/config"
+fill 2000 > "$F/app.sops.yaml"; fill 2000 > "$F/credentials.json"
 ln -s "$F/.env" "$F/innocent.txt"
-seq 1 2000 > "$F/with space.txt"
-seq 1 2000 > "$F/vendor.log"
+fill 2000 > "$F/with space.txt"
+fill 2000 > "$F/vendor.log"
 
 R=shunt-check-read.sh
 B=shunt-check-bash-read.sh
 
 # ── Read hook: size ──
 check "small file allowed" 0 - $R "$(rd "$F/small.txt")"
-check "350 lines allowed" 0 - $R "$(rd "$F/l350.txt")"
-check "351 lines redirected" 2 "is 351 lines" $R "$(rd "$F/l351.txt")"
+check "7992 estimated tokens allowed" 0 - $R "$(rd "$F/t7992.txt")"
+check "8003 estimated tokens redirected" 2 "about 8003 tokens in context, over the threshold of 8000" $R "$(rd "$F/t8003.txt")"
 check "empty file allowed" 0 - $R "$(rd "$F/empty.txt")"
-check "byte-large one-line file redirected" 2 "70000 bytes" $R "$(rd "$F/minified.js")"
+check "byte-large one-line file redirected" 2 "70000 bytes" $R "$(rd "$F/minified.json")"
 # ── Read hook: ranges ──
 check "bounded limit allowed" 0 - $R "$(rd "$F/big.txt" null 200)"
 check "limit 0 is not a range" 2 "shunt:" $R "$(rd "$F/big.txt" null 0)"
@@ -116,37 +121,38 @@ done
 check "vendor.log redirected before exclusion" 2 "shunt:" $R "$(rd "$F/vendor.log")"
 SHUNT_EXCLUDE="/nowhere/*:*.log" check "SHUNT_EXCLUDE allows silently" 0 - $R "$(rd "$F/vendor.log")"
 # a pattern that also matches a file in the cwd must stay a pattern (no pathname expansion)
-mkdir -p "$TMP/globcwd/g"; : > "$TMP/globcwd/unrelated.log"; seq 1 2000 > "$TMP/globcwd/g/vendor.log"
+mkdir -p "$TMP/globcwd/g"; : > "$TMP/globcwd/unrelated.log"; fill 2000 > "$TMP/globcwd/g/vendor.log"
 # (no subshells around assertions: the PASS/FAIL counters must survive)
 cd "$TMP/globcwd" || exit 1
 SHUNT_EXCLUDE='*.log' check "SHUNT_EXCLUDE not glob-expanded against cwd (Read)" 0 - $R "$(rd "$TMP/globcwd/g/vendor.log")"
 cd "$ROOT" || exit 1
 [ -s "$TMP/err" ] && bad "SHUNT_EXCLUDE glob: Read hook redirected" || ok
 # file guards in the hooks: a large file bulk-read.sh would refuse is read normally, never redirected
-seq 1 2000 > "$F/private-notes.txt"; chmod 600 "$F/private-notes.txt"
+fill 2000 > "$F/private-notes.txt"; chmod 600 "$F/private-notes.txt"
 check "private-mode large file allowed (umask 022)" 0 - $R "$(rd "$F/private-notes.txt")"
-seq 1 2000 > "$F/open-notes.txt"; chmod 644 "$F/open-notes.txt"
+fill 2000 > "$F/open-notes.txt"; chmod 644 "$F/open-notes.txt"
 check "same content at 0644 redirected" 2 "shunt:" $R "$(rd "$F/open-notes.txt")"
 umask 077; check "private-mode guard stands down under umask 077" 2 "shunt:" $R "$(rd "$F/private-notes.txt")"; umask 022
-{ echo "-----BEGIN OPENSSH PRIVATE KEY-----"; seq 1 2000; } > "$F/notes-a.txt"
+{ echo "-----BEGIN OPENSSH PRIVATE KEY-----"; fill 2000; } > "$F/notes-a.txt"
 check "key marker in a large file allowed (Read)" 0 - $R "$(rd "$F/notes-a.txt")"
 check "key marker in a large file allowed (Bash)" 0 - $B "$(bc "cat notes-a.txt")"
 check "private-mode file allowed (Bash)" 0 - $B "$(bc "cat private-notes.txt")"
 # ── Read hook: switches ──
 SHUNT_DISABLE=1 check "SHUNT_DISABLE allows" 0 - $R "$(rd "$F/big.txt")"
-SHUNT_MIN_LINES=abc check "non-numeric threshold falls back to 350 (351 redirected)" 2 "threshold of 350" $R "$(rd "$F/l351.txt")"
-SHUNT_MIN_LINES=abc check "non-numeric threshold falls back to 350 (350 allowed)" 0 - $R "$(rd "$F/l350.txt")"
-SHUNT_MIN_LINES=5000 check "raised threshold allows" 0 - $R "$(rd "$F/big.txt")"
+SHUNT_MIN_TOKENS=abc check "non-numeric threshold falls back to 8000 (8003 redirected)" 2 "threshold of 8000" $R "$(rd "$F/t8003.txt")"
+SHUNT_MIN_TOKENS=abc check "non-numeric threshold falls back to 8000 (7992 allowed)" 0 - $R "$(rd "$F/t7992.txt")"
+SHUNT_MIN_TOKENS=50000 check "raised threshold allows" 0 - $R "$(rd "$F/big.txt")"
+SHUNT_MIN_LINES=10 SHUNT_MIN_BYTES=10 check "removed SHUNT_MIN_LINES/BYTES have no effect" 0 - $R "$(rd "$F/small.txt")"
 # ── Read hook: message and repeat ──
 check "message names the script" 2 "$ROOT/scripts/bulk-read.sh --question \"<what you need to know>\" --paths $F/big.txt" $R "$(rd "$F/big.txt" null null rep)"
-check "message offers a ranged Read" 2 "offset/limit of at most 350 lines" $R "$(rd "$F/big.txt" null null rep2)"
+check "message offers a ranged Read that fits" 2 "Read at most 520 lines at a time" $R "$(rd "$F/big.txt" null null rep2)"
 check "identical repeat allowed" 0 - $R "$(rd "$F/big.txt" null null rep)"
 check "third repeat still allowed" 0 - $R "$(rd "$F/big.txt" null null rep)"
 check "same file, other session: redirected" 2 "shunt:" $R "$(rd "$F/big.txt" null null rep3)"
-check "same session, different range: redirected" 2 "shunt:" $R "$(rd "$F/big.txt" 1 1000 rep)"
+check "same session, other large range of the same file: allowed (key is the file)" 0 - $R "$(rd "$F/big.txt" 1 1000 rep)"
 check "quoted path with space in message" 2 'with\ space.txt' $R "$(rd "$F/with space.txt")"
 grep -q '"hook":"shunt-read".*"result":"bypass"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bypass not logged"
-grep -q '"hook":"shunt-read".*"result":"redirect".*"lines":2000' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "redirect not logged with line count"
+grep -q '"hook":"shunt-read".*"result":"redirect".*"lines":2000.*"tokens":30771' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "redirect not logged with line count"
 grep -q '"result":"sensitive"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "sensitive not logged"
 
 # ── Bash hook ──
@@ -164,14 +170,14 @@ check "head -5 allowed" 0 - $B "$(bc "head -5 big.txt")"
 check "head -n5 allowed" 0 - $B "$(bc "head -n5 big.txt")"
 check "tail -n 20 allowed" 0 - $B "$(bc "tail -n 20 big.txt")"
 check "tail --lines=20 allowed" 0 - $B "$(bc "tail --lines=20 big.txt")"
-check "head -n 350 allowed" 0 - $B "$(bc "head -n 350 big.txt")"
+check "head -n 520 allowed (exactly 8000 tokens)" 0 - $B "$(bc "head -n 520 big.txt")"
 check "head -n 5000 redirected" 2 "about 2000 lines" $B "$(bc "head -n 5000 big.txt")"
-check "head -n 351 redirected" 2 "about 351 lines" $B "$(bc "head -n 351 big.txt")"
+check "head -n 600 redirected" 2 "about 600 lines" $B "$(bc "head -n 600 big.txt")"
 check "tail -n +1700 allowed" 0 - $B "$(bc "tail -n +1700 big.txt")"
 check "tail -n +2 redirected" 2 "about 1999 lines" $B "$(bc "tail -n +2 big.txt")"
 check "head -n -10 redirected" 2 "about 1990 lines" $B "$(bc "head -n -10 big.txt")"
-check "head -c 1000 allowed" 0 - $B "$(bc "head -c 1000 minified.js")"
-check "cat minified redirected" 2 "70000 bytes" $B "$(bc "cat minified.js")"
+check "head -c 1000 allowed" 0 - $B "$(bc "head -c 1000 minified.json")"
+check "cat minified redirected" 2 "70000 bytes" $B "$(bc "cat minified.json")"
 check "tail -f allowed" 0 - $B "$(bc "tail -f big.txt")"
 check "tail -F allowed" 0 - $B "$(bc "tail -F big.txt")"
 check "head -n with an overflowing count redirected" 2 "shunt:" $B "$(bc "head -n 99999999999999999999999 big.txt")"
@@ -188,7 +194,7 @@ check "newline allowed" 0 - $B "$(bc $'cat big.txt\necho hi')"
 check "sudo prefix allowed" 0 - $B "$(bc "sudo cat big.txt")"
 check "env prefix allowed" 0 - $B "$(bc "LC_ALL=C cat big.txt")"
 check "large file second redirected, names it" 2 "of $F/big.txt" $B "$(bc "cat small.txt big.txt")"
-check "largest offender named" 2 "of $F/big.txt" $B "$(bc "cat l351.txt big.txt small.txt")"
+check "largest offender named" 2 "of $F/big.txt" $B "$(bc "cat t8003.txt big.txt small.txt")"
 check "double-quoted path with space redirected" 2 'with\ space.txt' $B "$(bc 'cat "with space.txt"')"
 check "single-quoted path with space redirected" 2 "shunt:" $B "$(bc "cat 'with space.txt'")"
 check "partial quoting allowed" 0 - $B "$(bc 'cat with" "space.txt')"
@@ -204,14 +210,104 @@ check "image allowed" 0 - $B "$(bc "cat pic.png")"
 check "binary allowed" 0 - $B "$(bc "cat blob.bin")"
 check "nonexistent allowed" 0 - $B "$(bc "cat nope.txt")"
 check "message names the script" 2 "$ROOT/scripts/bulk-read.sh --question" $B "$(bc "cat big.txt")"
-check "message offers a ranged Read" 2 "Read tool with offset/limit of at most 350 lines" $B "$(bc "cat big.txt")"
+check "message offers a ranged Read that fits" 2 "Read at most 520 lines at a time" $B "$(bc "cat big.txt")"
 SHUNT_DISABLE=1 check "SHUNT_DISABLE allows" 0 - $B "$(bc "cat big.txt")"
 check "missing session id allowed" 0 - $B "$(jq -nc --arg d "$F" '{cwd:$d,tool_input:{command:"cat big.txt"}}')"
 check "bash: first attempt redirected" 2 "shunt:" $B "$(bc "cat big.txt" brep)"
 check "bash: identical repeat allowed" 0 - $B "$(bc "cat big.txt" brep)"
 check "bash: other session redirected" 2 "shunt:" $B "$(bc "cat big.txt" brep2)"
-check "bash: same command, other cwd is another key" 2 "shunt:" $B "$(bc "cat $F/big.txt" brep "$F/dir")"
+check "bash: same file from another cwd is the same key: allowed" 0 - $B "$(bc "cat $F/big.txt" brep "$F/dir")"
 grep -q '"hook":"shunt-bash".*"result":"bypass"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bash bypass not logged"
+
+# ── v2: token trigger, exemptions, shared repeat key, advice ──
+seq 1 2000 > "$F/nine-kb.txt"
+check "2000-line 9 KB file allowed (about 4.7k tokens)" 0 - $R "$(rd "$F/nine-kb.txt")"
+check "Bash: cat of a 2000-line 9 KB file allowed" 0 - $B "$(bc "cat nine-kb.txt")"
+fill 241 73 > "$F/role-like.md"
+check "241-line 17.5 KB markdown allowed" 0 - $R "$(rd "$F/role-like.md")"
+mkdir -p "$F/proj/.claude/agents"
+for n in CLAUDE.md AGENTS.md ROLE.md SKILL.md MEMORY.md; do
+  fill 2000 > "$F/proj/$n"
+  check "instruction file $n allowed" 0 - $R "$(rd "$F/proj/$n")"
+done
+fill 2000 > "$F/proj/.claude/agents/notes.txt"
+check "anything under .claude/ allowed" 0 - $R "$(rd "$F/proj/.claude/agents/notes.txt")"
+check "Bash: cat CLAUDE.md allowed" 0 - $B "$(bc "cat proj/CLAUDE.md")"
+fill 2000 > "$F/proj/notes.md"
+check "control: same size, ordinary name redirected" 2 "shunt:" $R "$(rd "$F/proj/notes.md")"
+SHUNT_MIN_TOKENS=50 check "file in the hooks' own repo allowed" 0 - $R "$(rd "$ROOT/README.md")"
+cp "$ROOT/README.md" "$F/readme-copy.md"; chmod 644 "$F/readme-copy.md"
+SHUNT_MIN_TOKENS=50 check "control: the same file outside the repo redirected" 2 "shunt:" $R "$(rd "$F/readme-copy.md")"
+ln -s "$ROOT/README.md" "$F/readme-link.md"
+SHUNT_MIN_TOKENS=50 check "symlink into the hooks' repo allowed (resolved)" 0 - $R "$(rd "$F/readme-link.md")"
+fill 900 > "$F/main.rs"; fill 900 > "$F/Makefile"; fill 900 > "$F/app.tsx"
+check ".rs source allowed by default" 0 - $R "$(rd "$F/main.rs")"
+check ".tsx source allowed by default" 0 - $R "$(rd "$F/app.tsx")"
+check "Makefile allowed by default" 0 - $R "$(rd "$F/Makefile")"
+check "Bash: cat of source allowed by default" 0 - $B "$(bc "cat main.rs")"
+SHUNT_INCLUDE_SOURCE=1 check ".rs redirected with SHUNT_INCLUDE_SOURCE=1" 2 "shunt:" $R "$(rd "$F/main.rs")"
+SHUNT_INCLUDE_SOURCE=1 check "Bash: source redirected with SHUNT_INCLUDE_SOURCE=1" 2 "shunt:" $B "$(bc "cat main.rs")"
+rdx() { jq -nc --arg p "$1" --arg s "shunttest-x$RANDOM$RANDOM" --argjson top "$2" --argjson ti "${3:-{\}}" \
+  '{session_id:$s,cwd:"/",tool_input:({file_path:$p} + $ti)} + $top'; }
+bcx() { jq -nc --arg c "$1" --arg s "shunttest-x$RANDOM$RANDOM" --arg d "$F" --argjson top "$2" '{session_id:$s,cwd:$d,tool_input:{command:$c}} + $top'; }
+check "allow_large: true allowed" 0 - $R "$(rdx "$F/big.txt" '{}' '{"allow_large":true}')"
+check "allow_large: false still redirected" 2 "shunt:" $R "$(rdx "$F/big.txt" '{}' '{"allow_large":false}')"
+for m in dontAsk plan; do
+  check "permission_mode $m allowed (Read)" 0 - $R "$(rdx "$F/big.txt" "{\"permission_mode\":\"$m\"}")"
+  check "permission_mode $m allowed (Bash)" 0 - $B "$(bcx "cat big.txt" "{\"permission_mode\":\"$m\"}")"
+done
+for m in default acceptEdits auto bypassPermissions; do
+  check "permission_mode $m still redirected" 2 "shunt:" $R "$(rdx "$F/big.txt" "{\"permission_mode\":\"$m\"}")"
+done
+for a in Explore claude-code-guide statusline-setup; do
+  check "agent_type $a allowed" 0 - $R "$(rdx "$F/big.txt" "{\"agent_type\":\"$a\"}")"
+done
+check "agent_type Explore allowed (Bash)" 0 - $B "$(bcx "cat big.txt" '{"agent_type":"Explore"}')"
+check "agent_type general-purpose redirected" 2 "shunt:" $R "$(rdx "$F/big.txt" '{"agent_type":"general-purpose"}')"
+SHUNT_SKIP_AGENTS="general-purpose, code-reviewer" check "SHUNT_SKIP_AGENTS list honoured" 0 - $R "$(rdx "$F/big.txt" '{"agent_type":"code-reviewer"}')"
+SHUNT_SKIP_AGENTS="general-purpose" check "SHUNT_SKIP_AGENTS replaces the default" 2 "shunt:" $R "$(rdx "$F/big.txt" '{"agent_type":"Explore"}')"
+SHUNT_SKIP_AGENTS="" check "empty SHUNT_SKIP_AGENTS covers every agent" 2 "shunt:" $R "$(rdx "$F/big.txt" '{"agent_type":"Explore"}')"
+for r in instructions source explicit mode subagent; do
+  grep -q "\"result\":\"$r\"" "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "result $r not logged"
+done
+# one redirect per file per session, whichever hook and shape
+redirects=0
+for step in r-whole r-offset1 b-doublespace r-link; do
+  case $step in
+    r-whole) j=$(rd "$F/big.txt" null null share) h=$R ;;
+    r-offset1) j=$(rd "$F/big.txt" 1 null share) h=$R ;;
+    b-doublespace) j=$(bc "cat  big.txt" share) h=$B ;;
+    r-link) ln -sf "$F/big.txt" "$F/big-link.txt"; j=$(rd "$F/big-link.txt" null null share) h=$R ;;
+  esac
+  printf '%s' "$j" | "$HOOKS/$h" >/dev/null 2>&1; [ $? -eq 2 ] && redirects=$((redirects + 1))
+done
+[ "$redirects" -eq 1 ] && ok || bad "whole, offset:1, 'cat  f' and a symlink in one session gave $redirects redirects, want 1"
+check "Bash first, then Read of the same file: allowed" 2 "shunt:" $B "$(bc "cat big.txt" share2)"
+check "...the Read that follows is allowed" 0 - $R "$(rd "$F/big.txt" null null share2)"
+ls "$XDG_RUNTIME_DIR"/claude-shunt-shunttest-share.seen >/dev/null 2>&1 && ok || bad "one shared state file per session expected"
+# the range advice fits
+fill 300 300 > "$F/wide.txt"
+check "300 x 300 B redirected" 2 "shunt:" $R "$(rd "$F/wide.txt")"
+N=$(sed -n 's/.*Read at most \([0-9]*\) lines.*/\1/p' "$TMP/err")
+[ -n "$N" ] && [ "$N" -ge 1 ] && ok || bad "no range advice for wide.txt"
+check "following the advice from the top is allowed" 0 - $R "$(rd "$F/wide.txt" 1 "${N:-1}")"
+check "following the advice at the end is allowed" 0 - $R "$(rd "$F/wide.txt" $(( 300 - ${N:-1} + 1 )) "${N:-1}")"
+check "one line more than the advice is redirected (advice is the maximum)" 2 "shunt:" $R "$(rd "$F/wide.txt" 1 $(( ${N:-1} + 1 )))"
+head -c 65536 /dev/zero | tr '\0' 'a' > "$F/one-line.json"
+check "one-line 64 KB JSON redirected" 2 "shunt:" $R "$(rd "$F/one-line.json")"
+grep -q "Read at most" "$TMP/err" && bad "one-line file got range advice" || ok
+grep -q "If you will edit this file, Read the range you will change, or repeat this read." "$TMP/err" && ok || bad "edit advice missing"
+grep -q "allow_large is not needed" "$TMP/err" && ok || bad "allow_large note missing"
+fill 5000 > "$F/huge.txt"
+check "file over the payload cap redirected" 2 "over the bulk-read payload cap (200000 bytes)" $R "$(rd "$F/huge.txt")"
+grep -q "bulk-read.sh" "$TMP/err" && bad "file over the payload cap still suggested the script" || ok
+grep -q "use Grep" "$TMP/err" && ok || bad "file over the payload cap: no Grep suggestion"
+SHUNT_MAX_PAYLOAD_BYTES=300000 check "raised payload cap suggests the script again" 2 "bulk-read.sh --question" $R "$(rd "$F/huge.txt")"
+# unreadable state file: allow silently (no "Permission denied" from a failed redirect)
+: > "$XDG_RUNTIME_DIR/claude-shunt-shunttest-locked.seen"; chmod 000 "$XDG_RUNTIME_DIR/claude-shunt-shunttest-locked.seen"
+check "unreadable state file allows" 0 - $R "$(rd "$F/big.txt" null null locked)"
+[ -s "$TMP/err" ] && bad "unreadable state file printed '$(cat "$TMP/err")'" || ok
+chmod 600 "$XDG_RUNTIME_DIR/claude-shunt-shunttest-locked.seen"
 
 # ── composition: validate-bash, check-loop and shunt on one input, in sequence ──
 # each decides alone; a shunt redirect then repeat stays far under check-loop's
@@ -241,6 +337,7 @@ printf '%s\n' "$@" > "$FAKE_DIR/argv"
 cat > "$FAKE_DIR/stdin"
 printf 'SHUNT_DISABLE=%s\nSHUNT_DEPTH=%s\nCLAUDE_CODE_MAX_OUTPUT_TOKENS=%s\nPWD=%s\n' \
   "${SHUNT_DISABLE:-}" "${SHUNT_DEPTH:-}" "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-unset}" "$PWD" > "$FAKE_DIR/env"
+env > "$FAKE_DIR/fullenv"
 res() { jq -nc --arg r "$1" --argjson e "${2:-false}" '{type:"result",subtype:"success",is_error:$e,result:$r,duration_ms:900,num_turns:1,total_cost_usd:0.0012,
   usage:{input_tokens:7,output_tokens:56,cache_creation_input_tokens:1234,cache_read_input_tokens:10},modelUsage:{"claude-haiku-test":{}}}'; }
 case "${FAKE_CLAUDE_MODE:-ok}" in
@@ -255,6 +352,7 @@ case "${FAKE_CLAUDE_MODE:-ok}" in
   budget) jq -nc '{type:"result",subtype:"error_max_budget_usd",is_error:true,total_cost_usd:0.07,errors:["Reached maximum budget ($0.05)"]}'; exit 1 ;;
   outlimit) jq -nc '{type:"result",subtype:"success",is_error:true,api_error:"max_output_tokens",result:"API Error: response exceeded the 1500 output token maximum."}'; exit 1 ;;
   garbage) echo "<html>oops</html>" ;;
+  notloggedin) echo "Not logged in · Please run /login"; exit 1 ;;
   empty) res "  " ;;
   nested) "$BULK" --question q --paths "$F/small.txt" 2> "$FAKE_DIR/nested-err"; echo "$?" > "$FAKE_DIR/nested-rc"; res "x" ;;
 esac
@@ -276,26 +374,26 @@ argv=$(cat "$FAKE_DIR/argv")
 grep -qxF -- "-p" <<<"$argv" && ok || bad "bulk-read: not headless (-p)"
 grep -A1 -xF -- "--model" <<<"$argv" | grep -qx haiku && ok || bad "bulk-read: default model is not haiku"
 grep -A1 -xF -- "--tools" <<<"$argv" | sed -n 2p | grep -qx '' && ok || bad "bulk-read: tools not disabled (--tools \"\")"
-grep -A1 -xF -- "--max-budget-usd" <<<"$argv" | grep -qx 0.05 && ok || bad "bulk-read: default budget ceiling not 0.05"
+grep -A1 -xF -- "--max-budget-usd" <<<"$argv" | grep -qx 0.15 && ok || bad "bulk-read: default budget ceiling not 0.15"
 for fl in --output-format --no-session-persistence --safe-mode --strict-mcp-config --disable-slash-commands --system-prompt; do
   grep -qxF -- "$fl" <<<"$argv" && ok || bad "bulk-read: missing $fl"
 done
 grep -qF "$Q" <<<"$argv" && bad "bulk-read: question on argv" || ok
-grep -qE '^ +42.42$' "$FAKE_DIR/argv" && bad "bulk-read: payload on argv" || ok
+grep -qE '^ +42.42 +$' "$FAKE_DIR/argv" && bad "bulk-read: payload on argv" || ok
 grep -qF "$Q" "$FAKE_DIR/stdin" && ok || bad "bulk-read: question not on stdin"
-grep -qP '^ +42\t42$' "$FAKE_DIR/stdin" && ok || bad "bulk-read: content not line-numbered on stdin"
+grep -qP '^ +42\t42 +$' "$FAKE_DIR/stdin" && ok || bad "bulk-read: content not line-numbered on stdin"
 grep -qF "untrusted" <<<"$argv" && grep -qF "not found in the provided files" <<<"$argv" && ok || bad "bulk-read: system prompt"
 D=$(grep -oE '<<<BEGIN FILE-[0-9a-f]+ path=big.txt' "$FAKE_DIR/stdin" | sed 's/<<<BEGIN //; s/ path=.*//')
 [ -n "$D" ] && grep -qxF "<<<END $D>>>" "$FAKE_DIR/stdin" && ok || bad "bulk-read: delimiter wrapper"
 grep -qx "SHUNT_DISABLE=1" "$FAKE_DIR/env" && grep -qx "SHUNT_DEPTH=1" "$FAKE_DIR/env" && ok || bad "bulk-read: child env lacks SHUNT_DISABLE=1/SHUNT_DEPTH=1"
 grep -qx "CLAUDE_CODE_MAX_OUTPUT_TOKENS=unset" "$FAKE_DIR/env" && ok || bad "bulk-read: CLAUDE_CODE_MAX_OUTPUT_TOKENS reached the child"
-grep -q "^PWD=$TMP/tmpd/bulk-read\." "$FAKE_DIR/env" && ok || bad "bulk-read: child not run in the private temp dir"
+grep -qx "PWD=$XDG_CACHE_HOME/shunt-bulk-read" "$FAKE_DIR/env" && ok || bad "bulk-read: child not run in the stable empty dir"
 grep -q '"hook":"bulk-read".*"result":"ok".*"files":2.*"cost_usd":0.0012.*"input_tokens":7.*"output_tokens":56.*"cache_creation_input_tokens":1234' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: success not logged"
 CLAUDE_CODE_MAX_OUTPUT_TOKENS=99 SHUNT_MODEL=sonnet SHUNT_MAX_BUDGET_USD=0.2 br "model and budget configurable" 0 - - --question "$Q" --paths small.txt
 grep -A1 -xF -- "--model" "$FAKE_DIR/argv" | grep -qx sonnet && grep -A1 -xF -- "--max-budget-usd" "$FAKE_DIR/argv" | grep -qx 0.2 && ok || bad "bulk-read: SHUNT_MODEL/SHUNT_MAX_BUDGET_USD ignored"
 grep -qx "CLAUDE_CODE_MAX_OUTPUT_TOKENS=unset" "$FAKE_DIR/env" && ok || bad "bulk-read: an inherited CLAUDE_CODE_MAX_OUTPUT_TOKENS reached the child"
 SHUNT_MAX_BUDGET_USD='1;rm' br "malformed budget falls back" 0 - - --question "$Q" --paths small.txt
-grep -A1 -xF -- "--max-budget-usd" "$FAKE_DIR/argv" | grep -qx 0.05 && ok || bad "bulk-read: malformed budget passed through"
+grep -A1 -xF -- "--max-budget-usd" "$FAKE_DIR/argv" | grep -qx 0.15 && ok || bad "bulk-read: malformed budget passed through"
 FAKE_CLAUDE_MODE=nested br "nested call inside the child" 0 - - --question "$Q" --paths small.txt
 [ "$(cat "$FAKE_DIR/nested-rc" 2>/dev/null)" = 1 ] && grep -qF "inside a bulk-read child" "$FAKE_DIR/nested-err" && ok || bad "bulk-read: depth guard did not refuse a nested call"
 FAKE_CLAUDE_MODE=long br "long answer truncated" 0 - "answer truncated at 12000 of 20000 bytes" --question "$Q" --paths small.txt
@@ -306,9 +404,9 @@ FAKE_CLAUDE_MODE=auth br "auth failure" 1 "could not authenticate: Invalid API k
 FAKE_CLAUDE_MODE=rate br "usage limit" 1 "rate or usage limit: Claude AI usage limit reached. $FB_MSG" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=model br "model unavailable" 1 "model 'haiku' is unavailable" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=maxturns br "error subtype" 1 "claude reported an error (exit 0): error_max_turns" - --question "$Q" --paths small.txt
-FAKE_CLAUDE_MODE=budget br "budget exceeded" 1 "cost more than SHUNT_MAX_BUDGET_USD=0.05 (cost 0.07) and the answer was discarded" - --question "$Q" --paths small.txt
+FAKE_CLAUDE_MODE=budget br "budget exceeded" 1 "cost more than SHUNT_MAX_BUDGET_USD=0.15 (cost 0.07) and the answer was discarded" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=outlimit br "output token limit" 1 "hit an output token limit" - --question "$Q" --paths small.txt
-FAKE_CLAUDE_MODE=garbage br "non-JSON output" 1 "non-JSON output. $FB_MSG" - --question "$Q" --paths small.txt
+FAKE_CLAUDE_MODE=garbage br "non-JSON output" 1 "non-JSON output: <html>oops</html>. $FB_MSG" - --question "$Q" --paths small.txt
 FAKE_CLAUDE_MODE=empty br "empty answer" 1 "empty answer. $FB_MSG" - --question "$Q" --paths small.txt
 grep -q '"hook":"bulk-read".*"result":"timeout"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: failure not logged"
 # validation: nothing reaches claude
@@ -330,7 +428,7 @@ brx "sensitive directory" "not delegated" --question "$Q" --paths secrets/db.yam
 SHUNT_EXCLUDE="*.log" brx "excluded path" "not delegated" --question "$Q" --paths vendor.log
 brx "binary" "binary or non-text" --question "$Q" --paths blob.bin
 SHUNT_MAX_PAYLOAD_BYTES=5000 brx "oversized request" "split" --question "$Q" --paths big.txt
-SHUNT_MAX_FILES=2 brx "too many files" "over SHUNT_MAX_FILES=2" --question "$Q" --paths small.txt big.txt l350.txt
+SHUNT_MAX_FILES=2 brx "too many files" "over SHUNT_MAX_FILES=2" --question "$Q" --paths small.txt big.txt t7992.txt
 SHUNT_DEPTH=1 brx "depth guard" "refusing to run inside a bulk-read child" --question "$Q" --paths small.txt
 SHUNT_CLAUDE_BIN="$TMP/no-such-claude" brx "claude binary missing" "was not found; set SHUNT_CLAUDE_BIN" --question "$Q" --paths small.txt
 # the refusal list, table-driven: each spelling alone and as the second path
@@ -424,13 +522,38 @@ br "umask 077: kubeconfig without a token is sent" 0 - - --question "$Q" --paths
 printf 'auth:\n  token: abc\n' > "$F/notconfig.yaml"
 br "umask 077: token line without kind: Config is sent" 0 - - --question "$Q" --paths notconfig.yaml
 umask 022
-seq 1 2000 > "$F/locked.txt"; chmod 000 "$F/locked.txt"
+fill 2000 > "$F/locked.txt"; chmod 000 "$F/locked.txt"
 check "unreadable file allowed silently" 0 - $R "$(rd "$F/locked.txt")"
 [ -s "$TMP/err" ] && bad "unreadable file printed '$(cat "$TMP/err")'" || ok
 chmod 644 "$F/locked.txt"
 grep -q '"hook":"bulk-read".*"result":"private"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "private refusal not logged"
 grep -q '"hook":"bulk-read".*"result":"secret"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "secret refusal not logged"
 grep -q '"hook":"bulk-read".*"result":"sensitive"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "sensitive refusal not logged"
+# ── v2: bulk-read plumbing ──
+FAKE_CLAUDE_MODE=notloggedin br "'Not logged in' on stdout reaches the message" 1 "claude exited 1: Not logged in" - --question "$Q" --paths small.txt
+NOJQ_PATH=""
+IFS=: read -ra pdirs <<< "$PATH"
+for d in "${pdirs[@]}"; do [ -x "$d/jq" ] || NOJQ_PATH="$NOJQ_PATH:$d"; done
+rm -f "$FAKE_DIR"/*
+(cd "$F" && PATH="$FB$NOJQ_PATH" "$BULK" --question "$Q" --paths small.txt) >"$TMP/out" 2>"$TMP/err"; code=$?
+[ "$code" -eq 1 ] && grep -q "jq was not found" "$TMP/err" && ok || bad "bulk-read without jq: exit=$code stderr='$(cat "$TMP/err")'"
+[ -e "$FAKE_DIR/argv" ] && bad "bulk-read without jq: claude ran" || ok
+HERDR_PANE_ID=w1 HERDR_WORKSPACE_ID=ws HERDR_CLAUDE_WORKER_SETTINGS=/x CLAUDE_CODE_SESSION_ID=parent CLAUDE_CODE_CHILD_SESSION=1 \
+  CLAUDE_CODE_MESSAGING_SOCKET=/s CLAUDE_CODE_MESSAGING_TOKEN=tok CLAUDE_EFFORT=max \
+  br "identity variables set in the parent" 0 - - --question "$Q" --paths small.txt
+for v in HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_CLAUDE_WORKER_SETTINGS CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION \
+  CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_EFFORT; do
+  grep -q "^$v=" "$FAKE_DIR/fullenv" && bad "bulk-read: $v reached the child" || ok
+done
+grep -qx "SHUNT_DISABLE=1" "$FAKE_DIR/env" && ok || bad "bulk-read: SHUNT_DISABLE lost with the scrub"
+br "second call" 0 - - --question "$Q" --paths small.txt
+grep -qx "PWD=$XDG_CACHE_HOME/shunt-bulk-read" "$FAKE_DIR/env" && ok || bad "bulk-read: second call used another cwd"
+[ -z "$(ls -A "$XDG_CACHE_HOME/shunt-bulk-read")" ] && ok || bad "bulk-read: the child cwd is not empty"
+grep -q '"hook":"bulk-read".*"result":"ok".*"event":"delegated".*"bytes_sent":[1-9][0-9]*.*"exit_status":0.*"claude_exit":0.*"cost_usd":0.0012' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: delegated event not logged"
+grep -q '"hook":"bulk-read".*"result":"timeout".*"event":"delegated".*"exit_status":1' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: failed delegation not logged with exit status"
+fill 4100 > "$F/over-cap.txt"
+brx "default payload cap is 200000 bytes" "over SHUNT_MAX_PAYLOAD_BYTES=200000" --question "$Q" --paths over-cap.txt
+grep -q '"hook":"bulk-read".*"result":"invalid".*"event":"refused".*"bytes_sent":0' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: refusal not logged as refused"
 grep -q '"hook":"bulk-read".*"result":"invalid"' "$XDG_STATE_HOME"/claude-hooks/*.jsonl && ok || bad "bulk-read: validation failure not logged"
 [ -n "$(ls -A "$TMP/tmpd")" ] && bad "bulk-read: temp dir left behind" || ok
 

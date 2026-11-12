@@ -70,8 +70,10 @@ seen_before() {
   hash=$(printf '%s' "$2" | sha256sum | cut -c1-32) || return 2
   [ -n "$hash" ] || return 2
   if [ -f "$file" ]; then
-    while IFS= read -r line; do [ "$line" = "$hash" ] && return 0; done < "$file"
+    while IFS= read -r line; do
+      if [ "$line" = "$hash" ]; then return 0; fi
+    done 2>/dev/null < "$file" || return 2
   fi
-  printf '%s\n' "$hash" >> "$file" 2>/dev/null || return 2
+  printf '%s\n' "$hash" 2>/dev/null >> "$file" || return 2   # 2> first: a failed >> must stay silent
   return 1
 }
