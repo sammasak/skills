@@ -100,6 +100,122 @@ check "kubectl get pvc allowed" 0 - - \
   validate-bash.sh "$(j b1 '{"command":"kubectl get pvc -A"}')"
 check "kubectl delete mention in echo allowed" 0 - - \
   validate-bash.sh "$(j b1 '{"command":"echo 'kubectl delete pvc x' >> runbook.md"}')"
+# 3a. one plain server/client dry run of it deletes nothing and is allowed
+check "server dry-run delete pvc allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl -n monitoring delete pvc data-0 --dry-run=server"}')"
+check "impersonated server dry-run allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl -n monitoring delete pvc data-0 --dry-run=server --as=system:serviceaccount:flux-system:kustomize-controller"}')"
+check "impersonation before the verb allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl --as=system:serviceaccount:flux-system:kustomize-controller --namespace=monitoring delete pvc data-0 --dry-run=server"}')"
+check "client dry-run delete namespace allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete namespace staging --dry-run=client"}')"
+check "dry-run flag before the kind allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete --dry-run=server pv data-volume-7"}')"
+check "-n after the verb allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 -n herman --dry-run=server --output=name"}')"
+check "kind/name form allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc/data-0 pvc -n herman --dry-run=server"}')"
+# 3b. anything else stays blocked (fail closed)
+check "block message names the dry-run allowance" 2 "Only a single plain dry run is allowed" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0"}')"
+check "bare --dry-run blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run"}')"
+check "--dry-run=none blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=none"}')"
+check "--dry-run without = blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run server"}')"
+check "--dry-run=true blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=true"}')"
+check "--dry-run=servers blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=servers"}')"
+check "uppercase dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --DRY-RUN=server"}')"
+check "--dry-run variable blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=$MODE"}')"
+check "variable next to dry-run blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=server $EXTRA"}')"
+check "quoted dry-run value blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=\"server\""}')"
+check "later --dry-run=none override blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=server --dry-run=none"}')"
+check "repeated dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=server --dry-run=client"}')"
+check "quoted override flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc data-0 --dry-run=server \"--dry-run=none\""}')"
+check "underscore --dry_run=none override blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server --dry_run=none"}')"
+check "underscore --dry_run=server spelling blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry_run=server"}')"
+check "override hidden behind 2>&1 blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server 2>&1 --dry-run=none"}')"
+check "override hidden behind 2>|f blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server 2>|f --dry-run=none"}')"
+check "override hidden behind &>f blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server &>f --dry-run=none"}')"
+check "-n swallowing the dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete ns x -n --dry-run=server"}')"
+check "--namespace swallowing the dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete ns x --namespace --dry-run=server"}')"
+check "--cache-dir swallowing the dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --cache-dir --dry-run=server"}')"
+check "--as swallowing the dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --as --dry-run=server"}')"
+check "-o swallowing the dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x -o --dry-run=server"}')"
+check "unlisted flag next to dry-run blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server --force"}')"
+check "-f next to dry-run blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server -f more.yaml"}')"
+check "dry-run flag after -- blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x -- --dry-run=server"}')"
+check "vertical tab before dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x y\u000b--dry-run=server"}')"
+check "carriage return before dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x y\r--dry-run=server"}')"
+check "form feed before dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x y\f--dry-run=server"}')"
+check "em space before dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x y\u2003--dry-run=server"}')"
+check "no-break space before dry-run flag blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x y\u00a0--dry-run=server"}')"
+check "tab separator blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x\t--dry-run=server"}')"
+check "double space blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x  --dry-run=server"}')"
+check "dry-run then real delete blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server; kubectl delete pvc x"}')"
+check "real delete then dry-run blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x && kubectl delete pvc x --dry-run=server"}')"
+check "flag-before-verb real delete after dry-run blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete ns x --dry-run=client | cat; kubectl -n ns delete pvc x"}')"
+check "two dry-run segments blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc a --dry-run=server; kubectl delete ns x --dry-run=server"}')"
+check "dry-run with 2>&1 blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete ns staging --dry-run=server 2>&1"}')"
+check "dry-run piped blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete ns staging --dry-run=server | tail -5"}')"
+check "dry-run flag only in echo segment blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "echo --dry-run=server; kubectl delete pvc x"}')"
+check "dry-run flag only in comment blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x # --dry-run=server"}')"
+check "dry-run flag on next line blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x\n--dry-run=server"}')"
+check "real delete on a second line blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server\nkubectl delete pvc y"}')"
+check "continuation-line real delete after dry-run blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x --dry-run=server\nkubectl \\\n  delete pvc y"}')"
+check "dry-run flag as redirect target blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x > --dry-run=server"}')"
+check "dry-run flag in command substitution blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x $(echo --dry-run=server)"}')"
+check "wrapper before kubectl blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "sudo kubectl delete pvc x --dry-run=server"}')"
+check "plugin word before the verb blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl foo delete pvc x --dry-run=server"}')"
+check "two delete words blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc delete --dry-run=server"}')"
+check "dry-run mention in a name blocked" 2 "BLOCKED: destructive kubectl" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc dry-run --dry-run=server"}')"
 # 4. SOPS from /tmp
 check "sops from /tmp blocked" 2 "BLOCKED: SOPS" - \
   validate-bash.sh "$(j b1 '{"command":"sops -e /tmp/secret.yaml"}')"

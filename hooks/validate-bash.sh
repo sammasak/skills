@@ -50,8 +50,35 @@ if echo "$S" | grep -qE "(^|[|&;[:space:]])(sudo[[:space:]]+)?rm[[:space:]]+[^|&
 fi
 
 # 3. destructive kubectl delete of a stateful kind (Kyverno also denies these).
-if echo "$S" | grep -qiE "kubectl[[:space:]]+([^|&;]+[[:space:]]+)?delete[[:space:]]+([^|&;]*[[:space:]])?(pvc|persistentvolumeclaims?|persistentvolumes?|pv|namespaces?|ns)([[:space:]]|\$)"; then
-  block "destructive kubectl delete (pvc/pv/namespace) needs the human; Kyverno also denies it."
+#    A dry run deletes nothing, so it is exempt, but only when the WHOLE raw
+#    command is one plain kubectl call that fits the strict grammar below; no
+#    compound command, pipe, redirect, quote, variable or newline ever fits.
+#    Everything else that matches is blocked as before (fail closed).
+KDEL="kubectl[[:space:]]+([^|&;]+[[:space:]]+)?delete[[:space:]]+([^|&;]*[[:space:]])?(pvc|persistentvolumeclaims?|persistentvolumes?|pv|namespaces?|ns)([[:space:]]|\$)"
+
+# Grammar (byte-wise, LC_ALL=C, tokens split by exactly one ASCII space):
+#   kubectl FLAG* delete (WORD|FLAG)+
+#   WORD  bare word (kind, name); never starts with `-`
+#   FLAG  `-n WORD`, or an attached-value flag from a fixed list. No other
+#         token may start with `-`, so no flag can take the next token as its
+#         value and no second spelling of the dry-run flag can override it.
+# plus exactly one dry-run mention (--dry-run=server|client) and one `delete`.
+kubectl_delete_is_dry_run() {
+  local LC_ALL=C
+  local w='[A-Za-z0-9][A-Za-z0-9._/-]*' v='[A-Za-z0-9._:/-]+' f re t n=0
+  f="(-n $w|--(namespace|as|as-group|context|output)=$v|--dry-run=(server|client))"
+  re="^kubectl( $f)* delete( ($w|$f))+\$"
+  [[ "$CMD" =~ $re ]] || return 1
+  [ "$(echo "$CMD" | grep -oiE 'dry[-_]?run' | wc -l)" -eq 1 ] || return 1
+  [[ "$CMD" == *" --dry-run="* ]] || return 1
+  for t in $CMD; do
+    [ "$t" = delete ] && n=$((n + 1))
+  done
+  [ "$n" -eq 1 ]
+}
+
+if echo "$S" | grep -qiE "$KDEL" && ! kubectl_delete_is_dry_run; then
+  block "destructive kubectl delete (pvc/pv/namespace) needs the human; Kyverno also denies it. Only a single plain dry run is allowed: kubectl [-n NS] delete KIND NAME --dry-run=server|client [--as=USER], with no pipe, redirect, quote or other flag."
 fi
 
 # 4. SOPS encrypt from /tmp loses the repo's recipient set.
