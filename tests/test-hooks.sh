@@ -204,6 +204,10 @@ check "NUL in a harmless command blocked" 2 "BLOCKED: the command contains a NUL
   validate-bash.sh "$(j b1 '{"command": "echo hi\u0000"}')"
 check "NUL-only command blocked" 2 "BLOCKED: the command contains a NUL" - \
   validate-bash.sh "$(j b1 '{"command": "\u0000"}')"
+check "literal backslash then NUL in a dry-run delete blocked" 2 "BLOCKED: the command contains a NUL" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x \\\u0000--dry-run=server"}')"
+check "literal backslash then NUL in a harmless command blocked" 2 "BLOCKED: the command contains a NUL" - \
+  validate-bash.sh "$(j b1 '{"command": "echo a\\\u0000b"}')"
 check "escaped backslash then u0000 (literal text) allowed" 0 - - \
   validate-bash.sh "$(j b1 '{"command": "printf %s \\u0000"}')"
 check "NUL outside the command field ignored" 0 - - \
