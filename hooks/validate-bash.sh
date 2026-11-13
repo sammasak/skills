@@ -26,14 +26,20 @@ source "$SCRIPT_DIR/lib/log.sh" 2>/dev/null || true
 read_hook_input
 START_MS=$(($(date +%s%N) / 1000000))
 
-CMD=$(hook_command)
-[ -z "$CMD" ] && exit 0
-
 block() {
   echo "BLOCKED: $1" >&2
   log_hook "validate-bash" "blocked" "$(( ($(date +%s%N) / 1000000) - START_MS ))" 2>/dev/null || true
   exit 2
 }
+
+# 0. A NUL (\u0000) in the command is dropped by the shell extraction below, so
+#    the guards would judge a different command. Checked inside jq, before that.
+if echo "$HOOK_INPUT" | jq -e '.tool_input.command // "" | explode | any(. == 0)' >/dev/null 2>&1; then
+  block "the command contains a NUL character (\\u0000); remove it."
+fi
+
+CMD=$(hook_command)
+[ -z "$CMD" ] && exit 0
 
 SQ="'"
 S=$(echo "$CMD" | sed -z "s/${SQ}[^${SQ}]*${SQ}/Q/g; s/\"[^\"]*\"/Q/g")
