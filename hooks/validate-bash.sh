@@ -50,40 +50,35 @@ if echo "$S" | grep -qE "(^|[|&;[:space:]])(sudo[[:space:]]+)?rm[[:space:]]+[^|&
 fi
 
 # 3. destructive kubectl delete of a stateful kind (Kyverno also denies these).
-#    A dry run deletes nothing, so a segment (split on | & ; newline) that is a
-#    plain dry run is dropped before the check: exactly one dry-run flag, spelled
-#    --dry-run=server or --dry-run=client, and nothing in the segment that could
-#    hide or override it (quotes, variables, comments, redirects, escapes, a bare
-#    `--`; only a trailing 2>&1 is tolerated). Every other segment is checked as
-#    before, so a real delete next to a dry run is still blocked.
+#    A dry run deletes nothing, so it is exempt, but only when the WHOLE raw
+#    command is one plain kubectl call that fits the strict grammar below; no
+#    compound command, pipe, redirect, quote, variable or newline ever fits.
+#    Everything else that matches is blocked as before (fail closed).
 KDEL="kubectl[[:space:]]+([^|&;]+[[:space:]]+)?delete[[:space:]]+([^|&;]*[[:space:]])?(pvc|persistentvolumeclaims?|persistentvolumes?|pv|namespaces?|ns)([[:space:]]|\$)"
-if echo "$S" | grep -qiE "$KDEL"; then
-  # Quotes become a quote character here (not Q), so a quoted span fails the
-  # plain-characters test below instead of passing as a literal letter.
-  # Continuation lines are joined so a delete split over two lines is still seen.
-  K=$(echo "$CMD" | sed -z "s/${SQ}[^${SQ}]*${SQ}/${SQ}/g; s/\"[^\"]*\"/${SQ}/g; s/\\\\\\n/ /g" | tr '|&' ';;')
-  REST=""
-  while IFS= read -r line || [ -n "$line" ]; do
-    while :; do
-      seg="${line%%;*}"
-      core=$(echo "$seg" | sed -E 's/[[:space:]]2>[[:space:]]*$//')
-      if echo "$core" | grep -qiE "$KDEL" \
-        && echo "$core" | grep -qE '^[A-Za-z0-9_./:=,@[:space:]-]*$' \
-        && ! echo "$core" | grep -qE '(^|[[:space:]])--([[:space:]]|$)' \
-        && [ "$(echo "$core" | grep -oiE 'dry-?run' | wc -l)" -eq 1 ] \
-        && echo "$core" | grep -qE '[[:space:]]--dry-run=(server|client)([[:space:]]|$)'; then
-        seg=""
-      fi
-      REST+="$seg"
-      [ "$line" = "${line#*;}" ] && break
-      REST+=";"
-      line="${line#*;}"
-    done
-    REST+=$'\n'
-  done <<<"$K"
-  if echo "$REST" | grep -qiE "$KDEL"; then
-    block "destructive kubectl delete (pvc/pv/namespace) needs the human; Kyverno also denies it. A plain --dry-run=server or --dry-run=client run of it is allowed."
-  fi
+
+# Grammar (byte-wise, LC_ALL=C, tokens split by exactly one ASCII space):
+#   kubectl FLAG* delete (WORD|FLAG)+
+#   WORD  bare word (kind, name); never starts with `-`
+#   FLAG  `-n WORD`, or an attached-value flag from a fixed list. No other
+#         token may start with `-`, so no flag can take the next token as its
+#         value and no second spelling of the dry-run flag can override it.
+# plus exactly one dry-run mention (--dry-run=server|client) and one `delete`.
+kubectl_delete_is_dry_run() {
+  local LC_ALL=C
+  local w='[A-Za-z0-9][A-Za-z0-9._/-]*' v='[A-Za-z0-9._:/-]+' f re t n=0
+  f="(-n $w|--(namespace|as|as-group|context|output)=$v|--dry-run=(server|client))"
+  re="^kubectl( $f)* delete( ($w|$f))+\$"
+  [[ "$CMD" =~ $re ]] || return 1
+  [ "$(echo "$CMD" | grep -oiE 'dry[-_]?run' | wc -l)" -eq 1 ] || return 1
+  [[ "$CMD" == *" --dry-run="* ]] || return 1
+  for t in $CMD; do
+    [ "$t" = delete ] && n=$((n + 1))
+  done
+  [ "$n" -eq 1 ]
+}
+
+if echo "$S" | grep -qiE "$KDEL" && ! kubectl_delete_is_dry_run; then
+  block "destructive kubectl delete (pvc/pv/namespace) needs the human; Kyverno also denies it. Only a single plain dry run is allowed: kubectl [-n NS] delete KIND NAME --dry-run=server|client [--as=USER], with no pipe, redirect, quote or other flag."
 fi
 
 # 4. SOPS encrypt from /tmp loses the repo's recipient set.
