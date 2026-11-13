@@ -198,6 +198,16 @@ check "dry-run flag only in echo segment blocked" 2 "BLOCKED: destructive kubect
   validate-bash.sh "$(j b1 '{"command": "echo --dry-run=server; kubectl delete pvc x"}')"
 check "dry-run flag only in comment blocked" 2 "BLOCKED: destructive kubectl" - \
   validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x # --dry-run=server"}')"
+check "NUL before dry-run flag blocked" 2 "BLOCKED: the command contains a NUL" - \
+  validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x \u0000--dry-run=server"}')"
+check "NUL in a harmless command blocked" 2 "BLOCKED: the command contains a NUL" - \
+  validate-bash.sh "$(j b1 '{"command": "echo hi\u0000"}')"
+check "NUL-only command blocked" 2 "BLOCKED: the command contains a NUL" - \
+  validate-bash.sh "$(j b1 '{"command": "\u0000"}')"
+check "escaped backslash then u0000 (literal text) allowed" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "printf %s \\u0000"}')"
+check "NUL outside the command field ignored" 0 - - \
+  validate-bash.sh "$(j b1 '{"command": "ls", "description": "a\u0000b"}')"
 check "dry-run flag on next line blocked" 2 "BLOCKED: destructive kubectl" - \
   validate-bash.sh "$(j b1 '{"command": "kubectl delete pvc x\n--dry-run=server"}')"
 check "real delete on a second line blocked" 2 "BLOCKED: destructive kubectl" - \
