@@ -84,8 +84,9 @@ attrs() { rec "$1" '[.body.resourceLogs[0].scopeLogs[0].logRecords[0].attributes
 expect() { [ "$3" = "$2" ] && ok || bad "$1 (got '$3' want '$2')"; }
 
 E="HARNESS_OTLP_ENDPOINT=$EP"
-mkdir -p "$CLAUDE_CONFIG_DIR/skills/herdr" "$TMP/proj/.claude/skills/local-skill"
-touch "$CLAUDE_CONFIG_DIR/skills/herdr/SKILL.md" "$TMP/proj/.claude/skills/local-skill/SKILL.md"
+PLUG="$CLAUDE_CONFIG_DIR/plugins/cache/claude-plugins-official/superpowers/7.0.0/skills/brainstorming"
+mkdir -p "$CLAUDE_CONFIG_DIR/skills/herdr" "$TMP/proj/.claude/skills/local-skill" "$PLUG"
+touch "$CLAUDE_CONFIG_DIR/skills/herdr/SKILL.md" "$TMP/proj/.claude/skills/local-skill/SKILL.md" "$PLUG/SKILL.md"
 
 # ── the Skill tool: identity, resource attributes, payload shape ──
 run "Skill tool emits" emitted "$(tool s1 superpowers:brainstorming Explore)" "$E" "HARNESS_RESOURCE_ATTRIBUTES=host.name=lenovo-21cb001pmx, worker.name=push"
@@ -112,11 +113,22 @@ run "built-in command is not a skill" no-skill "$(prompt s7 "/clear")" "$E"
 run "project skill of another cwd is not a skill" no-skill "$(prompt s8 "/local-skill x")" "$E"
 run "plain prompt" no-skill "$(prompt s9 "please run /herdr PROMPTSECRET")" "$E"
 run "path-like prompt" no-skill "$(prompt s10 "/etc/passwd PROMPTSECRET")" "$E"
+run "unknown plugin:skill is not a skill" no-skill "$(prompt s20 "/foo:PROMPTSECRET")" "$E"
+run "unknown skill of a known plugin" no-skill "$(prompt s21 "/superpowers:PROMPTSECRET")" "$E"
+run "dot names" no-skill "$(prompt s22 "/..:.. x")" "$E"
+run "later line is not a typed skill" no-skill "$(prompt s23 $'hello\n/herdr x')" "$E"
+run "non-string prompt" no-skill '{"session_id":"s24","hook_event_name":"UserPromptSubmit","prompt":{"a":"/herdr"}}' "$E"
+run "no HOME and no config dir" no-skill "$(prompt s25 "/herdr")" -u HOME -u CLAUDE_CONFIG_DIR "$E"
 
 # ── other tools, bad names, switches and bad input ──
 run "another tool" no-skill '{"session_id":"s11","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"skill":"herdr","command":"ARGSECRET"}}' "$E"
 run "name with other characters" no-skill "$(tool s12 'her dr;x')" "$E"
 run "empty skill name" no-skill "$(tool s13 "")" "$E"
+run "81-character name" no-skill "$(tool s26 "$(printf 'a%.0s' $(seq 81))")" "$E"
+run "non-string skill" no-skill '{"session_id":"s27","hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":123}}' "$E"
+run "string tool_input" no-skill '{"session_id":"s28","hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":"herdr"}' "$E"
+run "non-string session" unparsed '{"session_id":{"a":1},"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":"herdr"}}' "$E"
+run "top-level array" unparsed '[1]' "$E"
 run "another hook event" no-skill '{"session_id":"s14","hook_event_name":"Stop"}' "$E"
 run "endpoint unset sends nothing" no-endpoint "$(tool s15 herdr)"
 run "disable switch" disabled "$(tool s16 herdr)" "$E" HARNESS_SKILL_USE_DISABLE=1

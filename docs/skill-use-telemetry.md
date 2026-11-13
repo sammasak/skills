@@ -20,8 +20,9 @@ One OTLP/HTTP JSON log record, POSTed to `$HARNESS_OTLP_ENDPOINT/v1/logs`:
 
 The Skill tool's `args` are never read. Of a prompt only a leading `/name` token is read, and it counts
 only when a skill is installed under that name (`$CLAUDE_CONFIG_DIR/skills/<name>/SKILL.md`, the project's
-`.claude/skills/<name>/SKILL.md`, or a namespaced `plugin:skill`); built-in commands such as `/clear` are
-skipped. Names must match `[A-Za-z0-9_.:-]{1,80}`.
+`.claude/skills/<name>/SKILL.md`, or `plugin:skill` found in `$CLAUDE_CONFIG_DIR/plugins/cache`); built-in
+commands such as `/clear`, custom commands and any other typed text are skipped. Names are `name` or
+`plugin:name`, letters, digits, `_`, `.` and `-`, at most 80 characters.
 
 ## Configuration
 

@@ -27,35 +27,41 @@ done_use() { # done_use <result>: log the result and exit 0
 command -v curl >/dev/null 2>&1 || exit 0
 
 # NUL-separated fields, as in emit-work-ref.sh. Of a prompt only a leading
-# /name token is read, inside jq: the prompt text never reaches a shell variable.
+# /name token leaves jq; the rest is never exported or put on a command line.
 FIELDS=()
 while IFS= read -r -d '' f; do FIELDS+=("$f"); done < <(printf '%s' "$INPUT" | jq -j '
-  [ (.session_id // ""), (.cwd // ""), (.agent_type // ""), (.hook_event_name // ""),
-    (if .tool_name == "Skill" then (.tool_input.skill // "") else "" end),
-    ((.prompt // "" | if type == "string" then . else "" end
-      | capture("^/(?<n>[A-Za-z0-9_.:-]{1,80})(\\s|$)").n) // "")
-  ] | map(tostring + "\u0000") | add' 2>/dev/null)
+  def s: if type == "string" then . else "" end;
+  [ (.session_id | s), (.cwd | s), (.agent_type | s), (.hook_event_name | s),
+    (if .tool_name == "Skill" then (.tool_input | objects | .skill | s) // "" else "" end),
+    ((.prompt | s | capture("^/(?<n>[A-Za-z0-9_.:-]{1,80})(\\s|$)").n) // "")
+  ] | map(. + "\u0000") | add' 2>/dev/null)
 [ "${#FIELDS[@]}" -eq 6 ] || done_use unparsed
 SID=${FIELDS[0]} CWD=${FIELDS[1]} AGENT=${FIELDS[2]} EVENT=${FIELDS[3]} TOOL_SKILL=${FIELDS[4]} SLASH=${FIELDS[5]}
 CLAUDE_SESSION_ID=$SID
 [ -n "$SID" ] || done_use unparsed
 
-NAME_RE='^[A-Za-z0-9_.:-]{1,80}$'
+# name or plugin:name, each part starting with a letter or digit (so never . or ..)
+NAME_RE='^[A-Za-z0-9][A-Za-z0-9_.-]*(:[A-Za-z0-9][A-Za-z0-9_.-]*)?$'
 case "$EVENT" in
   PreToolUse)
     NAME=${TOOL_SKILL#/} TRIGGER=model
-    [[ "$NAME" =~ $NAME_RE ]] || done_use no-skill
+    { [ "${#NAME}" -le 80 ] && [[ "$NAME" =~ $NAME_RE ]]; } || done_use no-skill
     ;;
   UserPromptSubmit)
     NAME=$SLASH TRIGGER=user-slash
-    [ -n "$NAME" ] || done_use no-skill
-    # A typed /name is a skill only when one is installed under that name
-    # (plugin skills are namespaced plugin:skill); built-in commands are not.
+    [[ "$NAME" =~ $NAME_RE ]] || done_use no-skill
+    # A typed /name is a skill only when one is installed under that name: a user
+    # or project skill, or plugin:skill in the plugin cache. Built-in commands and
+    # any other typed text are not, so nothing else of a prompt is ever sent.
     CONF="${CLAUDE_CONFIG_DIR:-${HOME:+$HOME/.claude}}"
-    if [[ "$NAME" != *:* ]] && [ ! -e "$CONF/skills/$NAME/SKILL.md" ] \
-      && { [ -z "$CWD" ] || [ ! -e "$CWD/.claude/skills/$NAME/SKILL.md" ]; }; then
-      done_use no-skill
+    FOUND=""
+    if [[ "$NAME" == *:* ]]; then
+      [ -n "$CONF" ] && FOUND=$(compgen -G "$CONF/plugins/cache/*/${NAME%%:*}/*/skills/${NAME#*:}/SKILL.md" 2>/dev/null)
+    elif { [ -n "$CONF" ] && [ -e "$CONF/skills/$NAME/SKILL.md" ]; } \
+      || { [ -n "$CWD" ] && [ -e "$CWD/.claude/skills/$NAME/SKILL.md" ]; }; then
+      FOUND=1
     fi
+    [ -n "$FOUND" ] || done_use no-skill
     ;;
   *) done_use no-skill ;;
 esac
@@ -72,6 +78,6 @@ PAYLOAD=$(jq -cn --arg now "$(date +%s%N)" --arg ra "${HARNESS_RESOURCE_ATTRIBUT
         "invocation_trigger": $trigger, "agent_type": $agent} | kv)}]}]}]}' 2>/dev/null) || done_use unparsed
 
 # Detached, every fd redirected: the hook returns now and nothing holds its stdout open.
-curl -s -o /dev/null --max-time 2 -H 'Content-Type: application/json' --data-binary @- \
+curl -q -s -o /dev/null --proto '=http,https' --max-time 2 -H 'Content-Type: application/json' --data-binary @- \
   "${HARNESS_OTLP_ENDPOINT%/}/v1/logs" <<<"$PAYLOAD" >/dev/null 2>&1 &
 done_use emitted
