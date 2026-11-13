@@ -9,12 +9,15 @@ Replace the fixed spec+quality two-step with emergent categories. An assessor re
 files and selects the 3–5 most relevant categories from the catalog. One specialist per
 category reviews in parallel. The controller aggregates and decides.
 
-**Prerequisites:** verify these files exist before starting:
+**Prerequisites (check first, before any other step):** these files live in the private
+vault and are absent where `~/knowledge` is not mounted (e.g. worker environments):
 - `~/knowledge/workflows/recursive-review/prompts/assessor.md`
 - `~/knowledge/workflows/recursive-review/prompts/reviewer.md`
 - `~/knowledge/workflows/recursive-review/categories.yaml`
 
-If any are missing, abort and tell the user.
+Run `ls` on all three. If any is missing, STOP: report each missing path and that the
+orchestrated review cannot run in this environment. Do not fall back to a single reviewer
+and call the result an orchestrated review, or report its grade as one.
 
 **`categories.yaml` structure** — three top-level keys (`code:`, `docs:`, `configs:`), each containing named categories with `description`, `default_weight`, and `applicable_to` glob list. The assessor selects applicable categories per chunk and re-normalizes weights. Pass the full file contents verbatim as `{{CATEGORIES_YAML}}`.
 
