@@ -35,6 +35,10 @@ in
       description = "emit-work-ref hook against temp git repos and a loopback OTLP receiver (no gh, no model)";
       exec = "bash tests/test-work-ref.sh";
     };
+    "skills:test:skill-use" = {
+      description = "emit-skill-use hook against a loopback OTLP receiver (no model)";
+      exec = "bash tests/test-skill-use.sh";
+    };
     "skills:test:manifests".exec = "bash tests/test-plugin-manifests.sh";
     "skills:test:bundles".exec = "bash tests/test-bundles.sh";
     "skills:test:bundle-sandbox" = {

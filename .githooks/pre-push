@@ -32,3 +32,4 @@ cd "$(git rev-parse --show-toplevel)"
 nix shell nixpkgs#shellcheck nixpkgs#yq-go --command bash tests/test-hooks.sh
 bash tests/test-shunt.sh
 bash tests/test-work-ref.sh
+bash tests/test-skill-use.sh
