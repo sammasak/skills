@@ -50,8 +50,40 @@ if echo "$S" | grep -qE "(^|[|&;[:space:]])(sudo[[:space:]]+)?rm[[:space:]]+[^|&
 fi
 
 # 3. destructive kubectl delete of a stateful kind (Kyverno also denies these).
-if echo "$S" | grep -qiE "kubectl[[:space:]]+([^|&;]+[[:space:]]+)?delete[[:space:]]+([^|&;]*[[:space:]])?(pvc|persistentvolumeclaims?|persistentvolumes?|pv|namespaces?|ns)([[:space:]]|\$)"; then
-  block "destructive kubectl delete (pvc/pv/namespace) needs the human; Kyverno also denies it."
+#    A dry run deletes nothing, so a segment (split on | & ; newline) that is a
+#    plain dry run is dropped before the check: exactly one dry-run flag, spelled
+#    --dry-run=server or --dry-run=client, and nothing in the segment that could
+#    hide or override it (quotes, variables, comments, redirects, escapes, a bare
+#    `--`; only a trailing 2>&1 is tolerated). Every other segment is checked as
+#    before, so a real delete next to a dry run is still blocked.
+KDEL="kubectl[[:space:]]+([^|&;]+[[:space:]]+)?delete[[:space:]]+([^|&;]*[[:space:]])?(pvc|persistentvolumeclaims?|persistentvolumes?|pv|namespaces?|ns)([[:space:]]|\$)"
+if echo "$S" | grep -qiE "$KDEL"; then
+  # Quotes become a quote character here (not Q), so a quoted span fails the
+  # plain-characters test below instead of passing as a literal letter.
+  # Continuation lines are joined so a delete split over two lines is still seen.
+  K=$(echo "$CMD" | sed -z "s/${SQ}[^${SQ}]*${SQ}/${SQ}/g; s/\"[^\"]*\"/${SQ}/g; s/\\\\\\n/ /g" | tr '|&' ';;')
+  REST=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    while :; do
+      seg="${line%%;*}"
+      core=$(echo "$seg" | sed -E 's/[[:space:]]2>[[:space:]]*$//')
+      if echo "$core" | grep -qiE "$KDEL" \
+        && echo "$core" | grep -qE '^[A-Za-z0-9_./:=,@[:space:]-]*$' \
+        && ! echo "$core" | grep -qE '(^|[[:space:]])--([[:space:]]|$)' \
+        && [ "$(echo "$core" | grep -oiE 'dry-?run' | wc -l)" -eq 1 ] \
+        && echo "$core" | grep -qE '[[:space:]]--dry-run=(server|client)([[:space:]]|$)'; then
+        seg=""
+      fi
+      REST+="$seg"
+      [ "$line" = "${line#*;}" ] && break
+      REST+=";"
+      line="${line#*;}"
+    done
+    REST+=$'\n'
+  done <<<"$K"
+  if echo "$REST" | grep -qiE "$KDEL"; then
+    block "destructive kubectl delete (pvc/pv/namespace) needs the human; Kyverno also denies it. A plain --dry-run=server or --dry-run=client run of it is allowed."
+  fi
 fi
 
 # 4. SOPS encrypt from /tmp loses the repo's recipient set.
